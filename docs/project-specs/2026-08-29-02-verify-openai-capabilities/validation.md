@@ -78,7 +78,7 @@ interruption recovery as the authoritative project gate.
 - [x] `uv run pytest` — 15 passed with one existing Starlette deprecation warning after the English/voice changes; `uv run pytest experiments/openai-capabilities/tests` — 13 passed.
 - [x] `pnpm lint` from `frontend/` — not applicable; no `frontend/**` file changed.
 - [x] `pnpm build` from `frontend/` — not applicable; no `frontend/**` file changed.
-- [x] `git diff --check` — passed; review scope is the authorized phase directory plus `experiments/openai-capabilities/**` (the pre-existing `plan.md` edit remains user-owned).
+- [x] `git diff --check` — passed after merging current `origin/main`; the Phase 02 delta contains only the authorized phase directory and `experiments/openai-capabilities/**`.
 - [x] Final secret/privacy and diff review passed after browser evidence review and the shared-spec merge. Credentialed JSON artifacts remain ignored and unstaged; the synthetic WAV has been deleted.
 
 Additional local smoke evidence: `node --check experiments/openai-capabilities/web/app.js` passed;
@@ -86,6 +86,11 @@ the loopback server returned `200` with all primary controls, `/token` returned 
 without a key, and a token request without the harness header returned `403`. The reviewed browser
 artifact contains only allowlisted event metadata and the operator supplied the English/naturalness
 assessment that redacted events intentionally omit.
+
+After merging current `origin/main`, `make check` repeated Ruff and all 15 Python tests successfully,
+then stopped because `pnpm` is unavailable on `PATH`. No Phase 02 file exists under `frontend/**`,
+and the merged Phase 01 frontend baseline is outside this phase delta, so frontend lint/build remain
+not applicable rather than reported as passed.
 
 ## Gate decision
 
