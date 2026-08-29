@@ -103,7 +103,7 @@ Every layer has a deterministic local gate and a separately reported provider tr
 | API contracts | FastAPI tests, committed OpenAPI output, `make generate`, and frontend type checking/build. |
 | Frontend | ESLint, TypeScript, production build, component-level interaction tests where valuable, and browser smoke tests. |
 | Rendered journey | Browser checks for responsive layout, console errors, network failures, permission denial, loading, reconnect, and fallback states. |
-| AI and voice | Mocked event tests plus a separate credentialed matrix for Spanish, mixed language, noise, contradiction, barge-in, and disconnects. |
+| AI and voice | Mocked event tests plus a separate credentialed matrix for English, natural pacing, noise, contradiction, barge-in, and disconnects. |
 | Telephony | Mocked adapters and signature tests, followed by separately marked calls to authorized test destinations. |
 | Security | Secret and personal-data diff review, origin and authorization tests, redacted-log checks, and recording-access review. |
 
