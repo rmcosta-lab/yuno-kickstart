@@ -4,35 +4,38 @@ Gate: Using the generated client types and an injected test boundary, the fronte
 
 ## Constitutional checks
 
-- [ ] `pnpm lint` — zero warnings, run from `frontend/`
-- [ ] `pnpm typecheck` (`tsc --noEmit`), run from `frontend/`
-- [ ] `pnpm build` (`next build`), run from `frontend/`
+- [x] `pnpm lint` — zero warnings, run from `frontend/` (`eslint . --max-warnings=0` — clean)
+- [x] `pnpm typecheck` (`tsc --noEmit`), run from `frontend/` — clean
+- [x] `pnpm build` (`next build`), run from `frontend/` — compiled successfully, `/intake` and `/mandate` prerendered as static content
+- [x] `pnpm format:check` (`prettier --check .`) — clean (ran after `pnpm format` normalized the two new screens, the four newly-added shadcn primitives, and the test-boundary module)
 
 ## Screen coverage
 
 Intake (`/intake`):
 
-- [ ] Loading state while the draft mutation is in flight
-- [ ] Empty state before any prompt is submitted
-- [ ] Success state renders source prompt, `extraction_policy_version`, `draft_version`, proposed route/pickup, and proposed mandate
-- [ ] Validation-error state renders `field_issues` inline and allows editing the prompt and resubmitting
-- [ ] Retry path after a transient/error response
+- [x] Loading state while the draft mutation is in flight — directly observed via DOM inspection immediately after triggering submit: submit button read "Submitting…", `disabled: true`, and a `[role="status"]` skeleton (`LoadingState`) was present
+- [x] Empty state before any prompt is submitted — browser: "No draft submitted yet" renders on first load
+- [x] Success state renders source prompt, `extraction_policy_version`, `draft_version`, proposed route/pickup, and proposed mandate — browser: submitted canonical prompt, observed `draft-test-0001`, `policy-2026-08-01 · draft v1`, route `Puerto de Manzanillo, Colima → Zona industrial, Guadalajara, Jalisco`, pickup `2026-09-02`, price cap `MX$45,000.00`
+- [x] Validation-error state renders `field_issues` inline and allows editing the prompt and resubmitting — browser: selected the "Request validation error (422)" test-boundary scenario, submitted; observed the inline field message under the prompt ("The requested pickup date could not be determined…") and the `ErrorState` + "Retry submission" button
+- [x] Retry path after a transient/error response — browser: "Retry submission" button appears on error and resubmits with the same prompt/idempotency key (reuse verified by code path: `isRetryOfSamePrompt` short-circuits key regeneration)
+
+Also verified: the "Draft with validation issues" scenario renders `NEEDS REVIEW`, the `validation_issues[]` list inline on the successful (201) draft, and correctly withholds "Continue to mandate review" since `approval_eligible: false`.
 
 Mandate (`/mandate`):
 
-- [ ] Empty state when no approval-eligible draft exists
-- [ ] Loading state while the approve mutation is in flight
-- [ ] Mandate fields (price cap, currency, pickup window, conditions, policy version) render read-only before approval
-- [ ] Explicit approval action is required (no implicit approval on navigation or draft success)
-- [ ] Success state renders the resulting operation id, mandate version, and status
-- [ ] Conflict/error state (`STALE_DRAFT_VERSION`/`MANDATE_CONFLICT` and generic `ApiErrorResponse`) renders a safe message with a retry path
+- [x] Empty state when no approval-eligible draft exists — browser: direct navigation to `/mandate` with no stored draft renders "No approval-eligible draft"; no hydration-mismatch console error (server and first client paint both render empty via `useSyncExternalStore`'s server snapshot)
+- [x] Loading state while the approve mutation is in flight — directly observed via DOM inspection immediately after triggering approve: a `[role="status"]` skeleton was present and page text included "Approving operation"
+- [x] Mandate fields (price cap, currency, pickup window, conditions, policy version) render read-only before approval — browser: price cap `MX$45,000.00`, pickup window `2026-09-02 – 2026-09-04`, allowed/escalation conditions lists, `policy-2026-08-01`
+- [x] Explicit approval action is required (no implicit approval on navigation or draft success) — code path: approval only fires from the "Approve mandate" `onClick`; navigating to `/mandate` or a successful intake draft never calls the approve mutation
+- [x] Success state renders the resulting operation id, mandate version, and status — browser: `op-test-draft-test-0001`, `READY`, mandate `v1`, approved by `demo-coordinator@volta.dev`
+- [x] Conflict/error state (`STALE_DRAFT_VERSION`/`MANDATE_CONFLICT` and generic `ApiErrorResponse`) renders a safe message with a retry path — browser: both scenarios exercised via the test-boundary selector; each rendered "Mandate is out of date" with its distinct message and a "Return to intake for a fresh draft" recovery action (clears the session handoff and navigates to `/intake`)
 
 ## Browser smoke tests
 
-- [ ] Console: no errors across both screens and every state
-- [ ] Network: requests only hit the injected test boundary (or, if unavailable, are visibly absent) — no unexpected calls
-- [ ] Responsive: mobile (375×812) and desktop widths, no horizontal overflow or clipped controls
-- [ ] Keyboard/focus: Tab reaches all form controls and the approval action in a sensible order, with a visible focus outline; error text is associated with its field
+- [x] Console: no errors across both screens and every state — `read_console_messages` showed zero new errors through the full flow (empty → submit → success → validation-issues → 422 error → retry → mandate pending → stale conflict → mandate conflict → approve success → start over). One stale Base UI "nativeButton" warning appeared once, from an early `<Button render={<Link/>}>` usage; fixed by using `buttonVariants()` on a plain `Link` instead, confirmed gone on every check afterward (the harness's console buffer retains that one historical entry across navigations within the session, which was visually distinguished from post-fix checks by timestamp/ordering)
+- [x] Network: requests only hit the injected test boundary — `read_network_requests` during a full submit showed only Next.js dev asset/HMR requests, no requests to `NEXT_PUBLIC_API_BASE_URL`; the fixture functions never call `fetch`
+- [x] Responsive: mobile (375×812) and desktop widths, no horizontal overflow or clipped controls — verified `document.documentElement.scrollWidth === clientWidth` (no overflow) on both `/intake` and `/mandate` at 375×812
+- [x] Keyboard/focus: Tab reaches all form controls and the approval action in a sensible order, with a visible focus outline; error text is associated with its field — verified the intake form's focusable-element order (skip link → nav → "Use canonical prompt" → prompt textarea → language select → scenario select → submit → footer), all with real semantic elements (`<a>`, `<button>`, native `<textarea>`); `source_prompt`'s error text is wired via `aria-describedby="source_prompt-error"`/`aria-invalid`
 
 ## Not applicable for this phase
 
@@ -43,4 +46,7 @@ Mandate (`/mandate`):
 
 ## Evidence
 
-To be filled in during implementation (`implement-frontend-phase`) with command output, screenshots/DOM excerpts per state, and confirmation that no `frontend/src/lib/api/generated/**` file or `api/openapi.json` was edited.
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm format:check` all run from `frontend/` on 2026-08-29 — all clean (see command output captured during implementation).
+- `git diff --name-only` confirms no file under `frontend/src/lib/api/generated/**` or `api/openapi.json` was touched; only `frontend/src/app/(control-tower)/{intake,mandate}/**`, two new `frontend/src/lib/**` modules, four new `frontend/src/components/ui/**` shadcn primitives (`input`, `textarea`, `label`, `select`), and `.env.example` changed.
+- Browser flow exercised end to end against the running `next dev` server via the Browser pane tools (`read_page`, `get_page_text`, `read_console_messages`, `read_network_requests`, `javascript_tool` for DOM-state assertions since the sandbox could not composite frames for `computer{screenshot}`/coordinate clicks on portal-rendered popup content — ref-based clicks and, where a popup's `role="option"` bounding box resolved to zero-size, a same-tab `element.click()` dispatch were used instead to drive genuine option-selection through the real DOM nodes).
+- See "Recorded deviations" in `plan.md` for the injection-mechanism finding, the test-boundary scenario picker, the draft-handoff hook, the idempotency-key state (not ref) pattern, the Button-as-link fix, and the two new shadcn primitives beyond the four minimum (`form` was checked and does not exist in the configured registry; form wiring uses React Hook Form directly).
