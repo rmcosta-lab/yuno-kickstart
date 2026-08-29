@@ -1,0 +1,18 @@
+[project]
+name = "yuno-backend"
+version = "0.1.0"
+description = "Provider-neutral domain and application core for Yuno × Nauta"
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.30.0",
+    "httpx>=0.28.1",
+    "sqlalchemy[asyncio]>=2.0.44",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "yuno_backend"
+module-root = "src"

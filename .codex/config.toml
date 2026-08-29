@@ -1,10 +1,60 @@
+# Documentation lookup. Complete OAuth in the Codex session that uses this server.
 [mcp_servers.context7]
 type = "http"
 url = "https://mcp.context7.com/mcp/oauth"
 
+# Yuno's official local MCP forwards credentials from the environment.
+[mcp_servers.yuno]
+command = "npx"
+args = ["-y", "@yuno-payments/yuno-mcp@latest"]
+env_vars = [
+  "YUNO_ACCOUNT_CODE",
+  "YUNO_PUBLIC_API_KEY",
+  "YUNO_PRIVATE_SECRET_KEY",
+  "YUNO_COUNTRY_CODE",
+  "YUNO_CURRENCY",
+]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--isolated"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.shadcn]
+command = "npx"
+args = ["-y", "shadcn@latest", "mcp"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+# Supply the token through the environment. Never commit it.
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"
 bearer_token_env_var = "GITHUB_PAT_TOKEN"
 enabled = true
 tool_timeout_sec = 60
 default_tools_approval_mode = "writes"
+
+# Documentation-only access needs no project reference. Add a development project
+# and OAuth session before enabling database or debugging feature groups.
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?read_only=true&features=docs"
+enabled = true
+tool_timeout_sec = 60
+
+[mcp_servers.vercel]
+url = "https://mcp.vercel.com"
+enabled = true
+tool_timeout_sec = 60

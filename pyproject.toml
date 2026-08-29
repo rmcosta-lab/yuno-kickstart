@@ -1,24 +1,42 @@
 [project]
 name = "yuno-kickstart"
 version = "0.1.0"
-description = "Add your description here"
+description = "Yuno × Nauta hackathon monorepo"
 readme = "README.md"
-authors = [
-    { name = "Rodrigo Costa", email = "rmcosta@outlook.com" }
-]
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi[standard]>=0.141.1",
+    "yuno-api",
+    "yuno-backend",
 ]
 
-[project.scripts]
-yuno-kickstart = "yuno_kickstart:main"
+[tool.uv]
+package = false
 
-[build-system]
-requires = ["uv_build>=0.12.1,<0.13.0"]
-build-backend = "uv_build"
+[tool.uv.sources]
+yuno-api = { workspace = true }
+yuno-backend = { workspace = true }
+
+[tool.uv.workspace]
+members = ["api", "backend"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
     "pyyaml>=6.0.3",
+    "ruff>=0.14.5",
 ]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+testpaths = ["api/tests", "backend/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["frontend", "api/openapi.json"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "FAST"]

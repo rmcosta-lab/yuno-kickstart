@@ -1,0 +1,1 @@
+"""Public Pydantic HTTP contracts."""

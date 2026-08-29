@@ -2,6 +2,108 @@
 
 Monorepo do projeto Yuno × Nauta, organizado em frontend Next.js, interface de programação de aplicações (API)/backend for frontend (BFF) FastAPI e backend/core Python.
 
+## Bootstrap quickstart
+
+This baseline runs a Next.js frontend, a FastAPI boundary, a plain Python core, and local PostgreSQL. It includes the payment adapter contracts but intentionally leaves challenge-specific business logic open.
+
+### Install the prerequisites
+
+Use these tools for local development:
+
+- Python 3.12 or later; `.python-version` selects Python 3.13
+- [uv](https://docs.astral.sh/uv/)
+- Node.js with [pnpm](https://pnpm.io/)
+- Docker with Docker Compose
+
+### Configure and install the repository
+
+Create a local environment file, then install both workspaces:
+
+```bash
+cp .env.example .env
+make install
+```
+
+Keep the Yuno fields empty until you have sandbox credentials. The mock payment gateway supports local tests without external calls.
+
+### Start the local services
+
+Start PostgreSQL once:
+
+```bash
+make postgres-up
+```
+
+Run the API and frontend in separate terminals:
+
+```bash
+make dev-api
+```
+
+```bash
+make dev-frontend
+```
+
+If the Next.js watcher reports `EMFILE` in a low-descriptor environment, use polling for that session:
+
+```bash
+WATCHPACK_POLLING=true make dev-frontend
+```
+
+Open `http://localhost:3000` for the app and `http://localhost:8000/docs` for the API documentation.
+
+## Application architecture
+
+The browser calls only the FastAPI boundary. FastAPI imports the backend package directly, which keeps deployment small while preserving code boundaries.
+
+```text
+Browser / Next.js
+        │ HTTPS / generated client
+        ▼
+API / FastAPI
+        │ typed Python calls
+        ▼
+Backend / Core ── PostgreSQL
+        │
+        └────────── Yuno API
+```
+
+Read [the architecture guide](docs/architecture.md) for layer ownership and the contract flow. The [bootstrap visual concept](docs/design/bootstrap-concept.png) records the frontend design reference used during setup.
+
+## Generate and verify contracts
+
+FastAPI’s OpenAPI document is the browser contract. Regenerate it and the Orval client after changing Pydantic models:
+
+```bash
+make generate
+```
+
+Run every required check before handing off a change:
+
+```bash
+make check
+```
+
+That target runs Ruff, pytest, the frontend linter, the TypeScript checker, and the production frontend build. Rendered frontend changes also require browser, console, network, and responsive smoke tests.
+
+## Protect payment credentials
+
+Use `https://api-sandbox.y.uno` until production access is explicitly approved. `YUNO_PRIVATE_SECRET_KEY` and `YUNO_WEBHOOK_HMAC_SECRET` stay server-side, and neither name may use the `NEXT_PUBLIC_` prefix.
+
+Never store or log card numbers, card verification values, private keys, authorization headers, or complete sensitive payloads. The Yuno Web SDK handles browser-side payment tokenization with the public key.
+
+## Activate development MCP servers
+
+The project-scoped `.codex/config.toml` declares official Model Context Protocol (MCP) servers for Yuno, GitHub, browser validation, shadcn, Supabase documentation, and Vercel. It contains no credentials.
+
+Export required tokens through your environment and complete provider OAuth when prompted. Restart Codex after configuration changes, then verify the active session:
+
+```bash
+codex mcp list
+```
+
+The Supabase entry is documentation-only until a development project is selected. Keep every external mutation inside an explicitly authorized task.
+
 ## Skills do projeto
 
 As skills do projeto ficam em `.agents/skills/<nome>/SKILL.md`. Essa é a única fonte de skills mantida pelo repositório.

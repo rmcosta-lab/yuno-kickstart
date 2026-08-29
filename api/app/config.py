@@ -1,0 +1,34 @@
+"""Environment-driven API settings."""
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    app_env: Literal["development", "test", "production"] = "development"
+    api_title: str = "Yuno × Nauta API"
+    api_version: str = "0.1.0"
+    cors_origins: list[str] = ["http://localhost:3000"]
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    @field_validator("cors_origins")
+    @classmethod
+    def require_explicit_cors_origins(cls, origins: list[str]) -> list[str]:
+        if not origins or "*" in origins:
+            message = "CORS_ORIGINS must contain explicit origins"
+            raise ValueError(message)
+        return origins
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
