@@ -8,8 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from yuno_backend.volta.persistence.errors import PersistenceConflict, PersistenceUnavailable
 from yuno_backend.volta.persistence.repositories import (
     SqlAlchemyAuditEventRepository,
+    SqlAlchemyCommitmentRepository,
+    SqlAlchemyIdempotencyRepository,
     SqlAlchemyIntakeDraftRepository,
+    SqlAlchemyNegotiationRepository,
     SqlAlchemyOperationRepository,
+    SqlAlchemyQuoteRepository,
 )
 
 __all__ = ["SqlAlchemyOperationUnitOfWork"]
@@ -22,6 +26,10 @@ class SqlAlchemyOperationUnitOfWork:
         self.intake_drafts: SqlAlchemyIntakeDraftRepository
         self.operations: SqlAlchemyOperationRepository
         self.audit_events: SqlAlchemyAuditEventRepository
+        self.negotiations: SqlAlchemyNegotiationRepository
+        self.quotes: SqlAlchemyQuoteRepository
+        self.commitments: SqlAlchemyCommitmentRepository
+        self.idempotency: SqlAlchemyIdempotencyRepository
 
     async def __aenter__(self) -> "SqlAlchemyOperationUnitOfWork":
         if self._session is not None:
@@ -36,6 +44,10 @@ class SqlAlchemyOperationUnitOfWork:
         self.intake_drafts = SqlAlchemyIntakeDraftRepository(self._session)
         self.operations = SqlAlchemyOperationRepository(self._session)
         self.audit_events = SqlAlchemyAuditEventRepository(self._session)
+        self.negotiations = SqlAlchemyNegotiationRepository(self._session)
+        self.quotes = SqlAlchemyQuoteRepository(self._session)
+        self.commitments = SqlAlchemyCommitmentRepository(self._session)
+        self.idempotency = SqlAlchemyIdempotencyRepository(self._session)
         return self
 
     async def __aexit__(
@@ -54,6 +66,10 @@ class SqlAlchemyOperationUnitOfWork:
             del self.intake_drafts
             del self.operations
             del self.audit_events
+            del self.negotiations
+            del self.quotes
+            del self.commitments
+            del self.idempotency
 
     async def commit(self) -> None:
         session = self._require_session()

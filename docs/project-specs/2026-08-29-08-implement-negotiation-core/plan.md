@@ -61,6 +61,7 @@ One backend writer owns all implementation paths because the service, migration,
 - No manifest, lockfile, API contract, generated client, mission, stack, roadmap, challenge-plan, `.env.example`, Docker Compose, deployment, or provider change is expected.
 - Fases 10, 11, and 14 consume the Phase 08 boundary after merge. They must refresh from `main` and extend it rather than introduce a competing negotiation or persistence path.
 - The opaque evidence UUID is the deliberate Phase 08/14 seam. If implementation requires recording metadata or referential evidence enforcement now, pause and coordinate instead of broadening this phase.
+- Contract clarification recorded during implementation: application commands preserve the accepted printable-ASCII `Idempotency-Key` string exactly; no UUID conversion is permitted. The Phase 08 commitment remains response-incomplete for the nested evidence object until Fase 14, so downstream integration must not invent evidence fields.
 - No shared specification change or temporary prerequisite is known. If one appears, record the wait here, notify affected phase owners, and route a broad decision through `manage-shared-specs`.
 - OpenAPI/Orval generation is not run because this phase preserves the accepted contract. Any contract mismatch is a blocker for coordination, not permission to edit generated artifacts.
 

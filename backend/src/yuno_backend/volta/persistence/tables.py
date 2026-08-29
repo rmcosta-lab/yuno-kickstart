@@ -48,8 +48,7 @@ _intake_drafts = Table(
     PrimaryKeyConstraint("id", name="pk_volta_intake_drafts"),
     CheckConstraint("version > 0", name="ck_volta_intake_drafts_version_positive"),
     CheckConstraint(
-        "maximum_amount > '-Infinity'::numeric "
-        "AND maximum_amount < 'Infinity'::numeric",
+        "maximum_amount > '-Infinity'::numeric AND maximum_amount < 'Infinity'::numeric",
         name="ck_volta_intake_drafts_amount_finite",
     ),
     CheckConstraint(
@@ -204,7 +203,9 @@ _audit_events = Table(
         "(char_length(metadata ->> 'draft_version') = 16 AND "
         "metadata ->> 'draft_version' <= '9007199254740991')))) "
         ") OR "
-        "(event_type <> 'OPERATION_APPROVED' AND metadata = '{}'::jsonb)",
+        "(event_type IN ('NEGOTIATION_STARTED', 'PRE_CONTACT_ESCALATED', "
+        "'QUOTE_RECORDED', 'QUOTE_REJECTED', 'COMMITMENT_ACTIVATED', "
+        "'COMMITMENT_SUPERSEDED') AND metadata = '{}'::jsonb)",
         name="ck_volta_audit_events_metadata_schema",
     ),
     ForeignKeyConstraint(
@@ -227,3 +228,298 @@ Index(
     _audit_events.c.event_id,
 )
 Index("ix_volta_audit_events_correlation_id", _audit_events.c.correlation_id)
+
+_negotiations = Table(
+    "volta_negotiations",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_version", Integer, nullable=False),
+    Column("mandate_version", Integer, nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_negotiations"),
+    UniqueConstraint("operation_id", name="uq_volta_negotiations_operation"),
+    UniqueConstraint("id", "operation_id", name="uq_volta_negotiations_id_operation"),
+    ForeignKeyConstraint(
+        ["operation_id"], ["volta_operations.id"], name="fk_volta_negotiations_operation"
+    ),
+    CheckConstraint("operation_version > 0", name="ck_volta_negotiations_operation_version"),
+    CheckConstraint("mandate_version > 0", name="ck_volta_negotiations_mandate_version"),
+)
+
+_carrier_sessions = Table(
+    "volta_carrier_sessions",
+    _metadata,
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("negotiation_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("carrier_id", UUID(as_uuid=True), nullable=False),
+    Column("carrier_display_label", Text, nullable=False),
+    Column("route_origin", Text, nullable=False),
+    Column("route_destination", Text, nullable=False),
+    Column("available_snapshot", Boolean, nullable=False),
+    Column("fixed_priority", Integer, nullable=False),
+    Column("selection_rank", Integer, nullable=False),
+    Column("channel", Text, nullable=False),
+    Column("state", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("call_id", name="pk_volta_carrier_sessions"),
+    UniqueConstraint("negotiation_id", "carrier_id", name="uq_volta_sessions_negotiation_carrier"),
+    UniqueConstraint(
+        "call_id", "operation_id", "carrier_id", name="uq_volta_sessions_call_operation_carrier"
+    ),
+    ForeignKeyConstraint(
+        ["negotiation_id", "operation_id"],
+        ["volta_negotiations.id", "volta_negotiations.operation_id"],
+        name="fk_volta_sessions_negotiation_operation",
+    ),
+    CheckConstraint("fixed_priority > 0", name="ck_volta_sessions_priority_positive"),
+    CheckConstraint("selection_rank BETWEEN 1 AND 3", name="ck_volta_sessions_rank"),
+    CheckConstraint(
+        "channel IN ('BROWSER_TEXT', 'BROWSER_VOICE')", name="ck_volta_sessions_channel"
+    ),
+    CheckConstraint(
+        "state IN ('SELECTED', 'ACTIVE', 'COMPLETED', 'FAILED')", name="ck_volta_sessions_state"
+    ),
+)
+
+_pre_contact_escalations = Table(
+    "volta_pre_contact_escalations",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("negotiation_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("reason_code", Text, nullable=False),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_pre_contact_escalations"),
+    UniqueConstraint("operation_id", name="uq_volta_pre_contact_escalations_operation"),
+    ForeignKeyConstraint(
+        ["negotiation_id", "operation_id"],
+        ["volta_negotiations.id", "volta_negotiations.operation_id"],
+        name="fk_volta_pre_contact_escalations_negotiation_operation",
+    ),
+    CheckConstraint(
+        "reason_code = 'no_eligible_carrier'", name="ck_volta_pre_contact_escalations_reason"
+    ),
+)
+
+_quotes = Table(
+    "volta_quotes",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("carrier_id", UUID(as_uuid=True), nullable=False),
+    Column("carrier_priority", Integer, nullable=False),
+    Column("amount", Numeric, nullable=False),
+    Column("currency", Text, nullable=False),
+    Column("pickup_window_start", Date, nullable=False),
+    Column("pickup_window_end", Date, nullable=False),
+    Column("conditions", ARRAY(Text), nullable=False),
+    Column("valid_until", DateTime(timezone=True), nullable=False),
+    Column("mandate_version", Integer, nullable=False),
+    Column("eligibility", Text, nullable=False),
+    Column("rejection_reasons", ARRAY(Text), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_quotes"),
+    UniqueConstraint("id", "operation_id", name="uq_volta_quotes_id_operation"),
+    UniqueConstraint(
+        "id", "operation_id", "call_id", "carrier_id", name="uq_volta_quotes_identity_scope"
+    ),
+    ForeignKeyConstraint(
+        ["call_id", "operation_id", "carrier_id"],
+        [
+            "volta_carrier_sessions.call_id",
+            "volta_carrier_sessions.operation_id",
+            "volta_carrier_sessions.carrier_id",
+        ],
+        name="fk_volta_quotes_session_scope",
+    ),
+    CheckConstraint("carrier_priority > 0", name="ck_volta_quotes_priority_positive"),
+    CheckConstraint("mandate_version > 0", name="ck_volta_quotes_mandate_version"),
+    CheckConstraint(
+        "amount >= 0 AND amount < 'Infinity'::numeric", name="ck_volta_quotes_amount_finite"
+    ),
+    CheckConstraint(
+        "pickup_window_end >= pickup_window_start", name="ck_volta_quotes_window_order"
+    ),
+    CheckConstraint("eligibility IN ('ELIGIBLE', 'REJECTED')", name="ck_volta_quotes_eligibility"),
+    CheckConstraint(
+        "(eligibility = 'ELIGIBLE' AND cardinality(rejection_reasons) = 0) OR "
+        "(eligibility = 'REJECTED' AND cardinality(rejection_reasons) > 0)",
+        name="ck_volta_quotes_rejection_consistency",
+    ),
+)
+
+_commitments = Table(
+    "volta_commitments",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("quote_id", UUID(as_uuid=True), nullable=False),
+    Column("carrier_id", UUID(as_uuid=True), nullable=False),
+    Column("amount", Numeric, nullable=False),
+    Column("currency", Text, nullable=False),
+    Column("pickup_window_start", Date, nullable=False),
+    Column("pickup_window_end", Date, nullable=False),
+    Column("conditions", ARRAY(Text), nullable=False),
+    Column("mandate_version", Integer, nullable=False),
+    Column("evidence_id", UUID(as_uuid=True), nullable=False),
+    Column("lifecycle", Text, nullable=False),
+    Column("disposition", Text, nullable=False),
+    Column("replaces_commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("replaced_by_commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("superseded_at", DateTime(timezone=True), nullable=True),
+    PrimaryKeyConstraint("id", name="pk_volta_commitments"),
+    UniqueConstraint("id", "operation_id", name="uq_volta_commitments_id_operation"),
+    UniqueConstraint("quote_id", name="uq_volta_commitments_quote"),
+    ForeignKeyConstraint(
+        ["quote_id", "operation_id", "call_id", "carrier_id"],
+        [
+            "volta_quotes.id",
+            "volta_quotes.operation_id",
+            "volta_quotes.call_id",
+            "volta_quotes.carrier_id",
+        ],
+        name="fk_volta_commitments_quote_scope",
+    ),
+    ForeignKeyConstraint(
+        ["replaces_commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_commitments_replaces_operation",
+    ),
+    ForeignKeyConstraint(
+        ["replaced_by_commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_commitments_replaced_by_operation",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    CheckConstraint("mandate_version > 0", name="ck_volta_commitments_mandate_version"),
+    CheckConstraint(
+        "amount >= 0 AND amount < 'Infinity'::numeric", name="ck_volta_commitments_amount_finite"
+    ),
+    CheckConstraint(
+        "pickup_window_end >= pickup_window_start", name="ck_volta_commitments_window_order"
+    ),
+    CheckConstraint("lifecycle = 'CANDIDATE'", name="ck_volta_commitments_lifecycle"),
+    CheckConstraint(
+        "disposition IN ('ACTIVE', 'SUPERSEDED')", name="ck_volta_commitments_disposition"
+    ),
+    CheckConstraint(
+        "(disposition = 'ACTIVE' AND superseded_at IS NULL AND "
+        "replaced_by_commitment_id IS NULL) OR (disposition = 'SUPERSEDED' AND "
+        "superseded_at IS NOT NULL AND replaced_by_commitment_id IS NOT NULL)",
+        name="ck_volta_commitments_disposition_state",
+    ),
+    CheckConstraint(
+        "replaces_commitment_id IS NULL OR replaces_commitment_id <> id",
+        name="ck_volta_commitments_not_self_replacing",
+    ),
+    CheckConstraint(
+        "replaced_by_commitment_id IS NULL OR replaced_by_commitment_id <> id",
+        name="ck_volta_commitments_not_self_replaced",
+    ),
+)
+
+_mutation_idempotency = Table(
+    "volta_mutation_idempotency",
+    _metadata,
+    Column("operation_name", Text, nullable=False),
+    Column("idempotency_key", Text, nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("fingerprint", Text, nullable=False),
+    Column("negotiation_id", UUID(as_uuid=True), nullable=True),
+    Column("quote_id", UUID(as_uuid=True), nullable=True),
+    Column("commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("operation_name", "idempotency_key", name="pk_volta_mutation_idempotency"),
+    UniqueConstraint(
+        "operation_name", "negotiation_id", name="uq_volta_mutation_idempotency_negotiation"
+    ),
+    UniqueConstraint("operation_name", "quote_id", name="uq_volta_mutation_idempotency_quote"),
+    UniqueConstraint(
+        "operation_name", "commitment_id", name="uq_volta_mutation_idempotency_commitment"
+    ),
+    ForeignKeyConstraint(
+        ["operation_id"], ["volta_operations.id"], name="fk_volta_mutation_idempotency_operation"
+    ),
+    CheckConstraint(
+        "operation_name IN ('start_negotiation', 'record_quote', 'create_commitment')",
+        name="ck_volta_mutation_idempotency_operation_name",
+    ),
+    CheckConstraint(
+        "(operation_name = 'start_negotiation' AND negotiation_id IS NOT NULL AND "
+        "quote_id IS NULL AND commitment_id IS NULL) OR "
+        "(operation_name = 'record_quote' AND negotiation_id IS NULL AND "
+        "quote_id IS NOT NULL AND commitment_id IS NULL) OR "
+        "(operation_name = 'create_commitment' AND negotiation_id IS NULL AND "
+        "quote_id IS NULL AND commitment_id IS NOT NULL)",
+        name="ck_volta_mutation_idempotency_result_mapping",
+    ),
+    ForeignKeyConstraint(
+        ["negotiation_id", "operation_id"],
+        ["volta_negotiations.id", "volta_negotiations.operation_id"],
+        name="fk_volta_mutation_idempotency_negotiation_operation",
+    ),
+    ForeignKeyConstraint(
+        ["quote_id", "operation_id"],
+        ["volta_quotes.id", "volta_quotes.operation_id"],
+        name="fk_volta_mutation_idempotency_quote_operation",
+    ),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_mutation_idempotency_commitment_operation",
+    ),
+    CheckConstraint(
+        "char_length(idempotency_key) BETWEEN 8 AND 128 AND idempotency_key ~ '^[ -~]+$'",
+        name="ck_volta_mutation_idempotency_key",
+    ),
+    CheckConstraint(
+        "fingerprint ~ '^[0-9a-f]{64}$'", name="ck_volta_mutation_idempotency_fingerprint"
+    ),
+)
+
+Index("ix_volta_sessions_negotiation", _carrier_sessions.c.negotiation_id)
+Index("ix_volta_pre_contact_escalations_negotiation", _pre_contact_escalations.c.negotiation_id)
+Index(
+    "ix_volta_quotes_operation_comparison",
+    _quotes.c.operation_id,
+    _quotes.c.eligibility,
+    _quotes.c.valid_until,
+)
+Index("ix_volta_quotes_call", _quotes.c.call_id)
+Index(
+    "ix_volta_commitments_operation_history",
+    _commitments.c.operation_id,
+    _commitments.c.created_at,
+    _commitments.c.id,
+)
+Index("ix_volta_commitments_replaces", _commitments.c.replaces_commitment_id)
+Index("ix_volta_commitments_replaced_by", _commitments.c.replaced_by_commitment_id)
+Index(
+    "uq_volta_commitments_one_active",
+    _commitments.c.operation_id,
+    unique=True,
+    postgresql_where=_commitments.c.disposition == "ACTIVE",
+)
+Index("ix_volta_mutation_idempotency_operation", _mutation_idempotency.c.operation_id)
+Index(
+    "ix_volta_mutation_idempotency_negotiation",
+    _mutation_idempotency.c.negotiation_id,
+    postgresql_where=_mutation_idempotency.c.negotiation_id.is_not(None),
+)
+Index(
+    "ix_volta_mutation_idempotency_quote",
+    _mutation_idempotency.c.quote_id,
+    postgresql_where=_mutation_idempotency.c.quote_id.is_not(None),
+)
+Index(
+    "ix_volta_mutation_idempotency_commitment",
+    _mutation_idempotency.c.commitment_id,
+    postgresql_where=_mutation_idempotency.c.commitment_id.is_not(None),
+)
