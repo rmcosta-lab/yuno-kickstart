@@ -34,6 +34,11 @@ export type ApprovalScenario =
 
 const FIXTURE_LATENCY_MS = 500;
 const EXTRACTION_POLICY_VERSION = "policy-2026-08-01";
+// Matches the canonical scenario in docs/decisions/challenge-plan.md:
+// "Find ground transport for Thursday from Manzanillo to Guadalajara for at
+// most MXN 9,000."
+const CANONICAL_PICKUP_DATE = "2026-09-03";
+const CANONICAL_MAXIMUM_AMOUNT_MINOR = 900_000;
 
 const wait = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -110,13 +115,13 @@ export const createOperationDraftFixture = async (
       origin: "Puerto de Manzanillo, Colima",
       destination: "Zona industrial, Guadalajara, Jalisco",
     },
-    proposed_pickup_date: "2026-09-02",
+    proposed_pickup_date: CANONICAL_PICKUP_DATE,
     proposed_mandate: {
       currency: "MXN",
-      maximum_amount_minor: 4_500_000,
+      maximum_amount_minor: CANONICAL_MAXIMUM_AMOUNT_MINOR,
       pickup_window: {
-        start_date: "2026-09-02",
-        end_date: "2026-09-04",
+        start_date: CANONICAL_PICKUP_DATE,
+        end_date: CANONICAL_PICKUP_DATE,
       },
       allowed_conditions: ["40ft dry container", "Standard handling"],
       escalation_conditions: [
@@ -180,10 +185,10 @@ export const approveOperationFixture = async (
       approval_actor: request.approval_actor,
       approved_at: now,
       currency: "MXN",
-      maximum_amount_minor: 4_500_000,
+      maximum_amount_minor: CANONICAL_MAXIMUM_AMOUNT_MINOR,
       pickup_window: {
-        start_date: "2026-09-02",
-        end_date: "2026-09-04",
+        start_date: CANONICAL_PICKUP_DATE,
+        end_date: CANONICAL_PICKUP_DATE,
       },
       allowed_conditions: ["40ft dry container", "Standard handling"],
       escalation_conditions: [

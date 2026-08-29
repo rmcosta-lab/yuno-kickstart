@@ -114,21 +114,27 @@ export function MandateApproval() {
     }
 
     if (INTAKE_TEST_BOUNDARY_ENABLED) {
-      boundaryMutation.mutate({
-        draft_id: draft.draft_id,
-        expected_draft_version: draft.draft_version,
-      });
+      boundaryMutation.mutate(
+        {
+          draft_id: draft.draft_id,
+          expected_draft_version: draft.draft_version,
+        },
+        { onSuccess: () => clearApprovalEligibleDraft() },
+      );
       return;
     }
 
-    generatedMutation.mutate({
-      data: {
-        approval_actor: DEMO_APPROVAL_ACTOR,
-        draft_id: draft.draft_id,
-        expected_draft_version: draft.draft_version,
+    generatedMutation.mutate(
+      {
+        data: {
+          approval_actor: DEMO_APPROVAL_ACTOR,
+          draft_id: draft.draft_id,
+          expected_draft_version: draft.draft_version,
+        },
+        headers: { "Idempotency-Key": keyEntry.key },
       },
-      headers: { "Idempotency-Key": keyEntry.key },
-    });
+      { onSuccess: () => clearApprovalEligibleDraft() },
+    );
   };
 
   const startOver = () => {
@@ -170,6 +176,10 @@ export function MandateApproval() {
               </dd>
             </div>
           </dl>
+          <p className="font-mono text-xs text-muted-foreground">
+            {DEMO_APPROVAL_ACTOR} is a demo identity placeholder, not a login
+            system.
+          </p>
           <Button variant="outline" onClick={startOver}>
             Start a new intake
           </Button>

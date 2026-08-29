@@ -45,7 +45,18 @@ Single frontend writer for this phase (no parallel workstream split needed — t
 - **Idempotency-key storage.** Kept in component state (not a ref) for both screens. An early ref-based draft (`useRef`, mutated inside the render body / read inside a function passed to `handleSubmit`) was rejected by the same `eslint-plugin-react-hooks` "refs" rule (ref reads/writes are only allowed inside effects or real event-handler execution, not woven into values passed to another function during render). The key is now computed and stored via `useState`, updated only from inside the actual submit/approve event handlers, and reused across a retry of the same prompt/draft, regenerated otherwise — same idempotency behavior, ESLint-clean.
 - **Button-as-link.** `frontend/src/components/ui/button.tsx` wraps Base UI's `Button`, which defaults `nativeButton=true` and warns in the console if its `render` target isn't a real `<button>` (e.g. a `next/link` `<a>`). The "Continue to mandate review" and "Back to intake" links use the exported `buttonVariants()`/plain Tailwind classes on a `Link` directly instead of `<Button render={<Link .../>}>`, avoiding the warning while keeping the same visual treatment.
 - **Shared config.** Added `NEXT_PUBLIC_INTAKE_USE_TEST_BOUNDARY=true` to the root `.env.example` (directly required only by this phase; no other phase depends on it before merge, per `AGENTS.md`'s shared-spec rule).
-- **New shadcn primitives.** `frontend/src/components/ui/{input,textarea,label,select}.tsx` did not exist in the configured `base-nova` registry output yet; added via `pnpm dlx shadcn@latest add input textarea label select` (no hand-built replacements). No `form` primitive existed in the registry to add; form wiring uses React Hook Form's `register`/`Controller` directly against the existing primitives instead.
+- **New shadcn primitives.** `frontend/src/components/ui/{textarea,label,select}.tsx` did not exist in the configured `base-nova` registry output yet; added via `pnpm dlx shadcn@latest add input textarea label select` (no hand-built replacements). `input.tsx` was added in the same command but never ended up consumed by either screen, so it was removed during the deep-review pass below rather than kept as unused surface area. No `form` primitive existed in the registry to add; form wiring uses React Hook Form's `register`/`Controller` directly against the existing primitives instead.
+
+## Deep-review fixes applied
+
+A `deep-review` pass (three parallel lenses, independently verified) returned 7 findings, 0 high / 3 medium / 4 low. All 7 were fixed:
+
+- Idempotency key in `intake-form.tsx` is no longer reused once the prior attempt with that key has settled successfully (`isSuccess` now gates retry detection), and retry detection now compares the full logical submission (`source_prompt` **and** `requested_language`), not the prompt text alone.
+- `mandate-approval.tsx`'s `approve()` now clears the session-storage draft handoff in the mutation's `onSuccess` callback (both the boundary and generated-hook paths), instead of only on the explicit "Start a new intake"/"Return to intake" actions — a consumed, approved draft can no longer resurface as a re-approvable "PENDING APPROVAL" card after navigating away and back.
+- `CANONICAL_PROMPT` (and the matching fixture values in `intake-test-boundary.ts`) now match the canonical scenario documented in `challenge-plan.md`/`mission.md` (Thursday pickup, MXN 9,000 cap) instead of an invented 45,000 MXN/three-business-day scenario.
+- `source_prompt`'s `aria-invalid` now also reflects a server-returned `field_issues` entry for that field, not only the client-side Zod error.
+- The mandate success card now repeats the "demo identity placeholder, not a login system" disclaimer next to `approval_actor`, matching the pending-approval card.
+- The unused `frontend/src/components/ui/input.tsx` primitive was removed.
 
 ## Checks
 

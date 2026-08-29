@@ -39,7 +39,7 @@ import { LoadingState } from "@/components/control-tower/loading-state";
 import { StatusBadge } from "@/components/control-tower/status-badge";
 
 const CANONICAL_PROMPT =
-  "Move one 40-foot dry container from the port of Manzanillo to a warehouse in Guadalajara. Pickup within the next three business days, budget ceiling of 45,000 MXN, standard handling conditions.";
+  "Find ground transport for Thursday from the port of Manzanillo to our warehouse in Guadalajara for at most MXN 9,000. One 40-foot dry container, standard handling conditions.";
 
 const intakeFormSchema = z.object({
   source_prompt: z
@@ -88,9 +88,7 @@ export function IntakeForm() {
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() =>
     crypto.randomUUID(),
   );
-  const [lastAttemptPrompt, setLastAttemptPrompt] = useState<string | null>(
-    null,
-  );
+  const [lastAttempt, setLastAttempt] = useState<IntakeFormValues | null>(null);
 
   const {
     control,
@@ -138,15 +136,24 @@ export function IntakeForm() {
     ? boundaryMutation.data
     : generatedMutation.data?.data;
 
+  const sourcePromptServerIssues = fieldIssueMessages(
+    "source_prompt",
+    apiError instanceof ApiHttpError ? apiError.data.field_issues : undefined,
+  );
+
   const onSubmit = (values: IntakeFormValues) => {
-    const isRetryOfSamePrompt = lastAttemptPrompt === values.source_prompt;
-    const keyForThisAttempt = isRetryOfSamePrompt
+    const isRetryOfUnsettledAttempt =
+      !isSuccess &&
+      lastAttempt !== null &&
+      lastAttempt.source_prompt === values.source_prompt &&
+      lastAttempt.requested_language === values.requested_language;
+    const keyForThisAttempt = isRetryOfUnsettledAttempt
       ? idempotencyKey
       : crypto.randomUUID();
-    if (!isRetryOfSamePrompt) {
+    if (!isRetryOfUnsettledAttempt) {
       setIdempotencyKey(keyForThisAttempt);
     }
-    setLastAttemptPrompt(values.source_prompt);
+    setLastAttempt(values);
 
     if (INTAKE_TEST_BOUNDARY_ENABLED) {
       boundaryMutation.mutate(values, {
@@ -204,7 +211,11 @@ export function IntakeForm() {
               <Textarea
                 id="source_prompt"
                 rows={6}
-                aria-invalid={Boolean(errors.source_prompt) || undefined}
+                aria-invalid={
+                  Boolean(errors.source_prompt) ||
+                  sourcePromptServerIssues.length > 0 ||
+                  undefined
+                }
                 aria-describedby="source_prompt-error"
                 {...register("source_prompt")}
               />
@@ -214,12 +225,7 @@ export function IntakeForm() {
                     {errors.source_prompt.message}
                   </p>
                 ) : null}
-                {fieldIssueMessages(
-                  "source_prompt",
-                  apiError instanceof ApiHttpError
-                    ? apiError.data.field_issues
-                    : undefined,
-                ).map((issue) => (
+                {sourcePromptServerIssues.map((issue) => (
                   <p
                     key={issue.message}
                     className="text-sm text-destructive"
