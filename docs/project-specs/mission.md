@@ -41,7 +41,7 @@ P0.1 repeats the outbound negotiation over at least one real, authorized public 
 
 ## Success signals
 
-P0 is successful when the browser journey is reproducible in Spanish, survives a mixed-language interruption, and demonstrates all of the following:
+P0 is successful when the browser journey is reproducible in English, survives an English barge-in, and demonstrates all of the following:
 
 - one to three eligible carriers selected without model discretion;
 - concurrent workflow sessions with an auditable quote comparison;
@@ -90,7 +90,7 @@ P1 turns the working browser checkpoint into a reliable final submission:
 - Harden loading, error, reconnect, and provider-failure states.
 - Present audit evidence, privacy boundaries, and known gaps so judges can inspect them.
 - Finish the public setup guide, architecture diagram, presentation, and recorded fallback.
-- Run the Spanish, mixed-language, noise, interruption, and disconnect trial matrix.
+- Run the English, natural-pacing, noise, interruption, and disconnect trial matrix.
 
 ### P2: future sophistication
 
@@ -107,7 +107,7 @@ The plan depends on these assumptions:
 
 - The Volta drayage case remains the selected challenge unless an explicit shared decision replaces it.
 - The team can obtain OpenAI Realtime access and provision Twilio for authorized destinations early enough to complete P0.1.
-- Spanish is the primary trial language; the judges' expected language will be confirmed before the final rehearsal.
+- The team confirmed English as the primary trial and demo language on 2026-08-29.
 - Team members or judges can act as carrier dispatchers and consent to AI disclosure and private demo recording.
 - Synthetic names, phone numbers, rates, and routes are sufficient to demonstrate the workflow.
 - A deployment target can provide HTTPS, secure WebSockets, server-only secrets, PostgreSQL connectivity, and private audio access.
