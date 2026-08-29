@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from yuno_backend.volta.audit import AuditEvent
 from yuno_backend.volta.mandates import (
     IntakeDraft,
     MandateProposal,
@@ -18,6 +19,9 @@ NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 DRAFT_ID = UUID("00000000-0000-0000-0000-000000000501")
 OPERATION_ID = UUID("00000000-0000-0000-0000-000000000502")
 MANDATE_ID = UUID("00000000-0000-0000-0000-000000000503")
+STATUS_ID = UUID("00000000-0000-0000-0000-000000000504")
+AUDIT_ID = UUID("00000000-0000-0000-0000-000000000505")
+CORRELATION_ID = UUID("00000000-0000-0000-0000-000000000506")
 
 
 @dataclass
@@ -50,17 +54,63 @@ class InMemoryOperationRepository:
 
 
 @dataclass
+class InMemoryAuditEventRepository:
+    values: dict[UUID, AuditEvent] = field(default_factory=dict)
+    add_calls: int = 0
+
+    async def add(self, event: AuditEvent) -> None:
+        self.add_calls += 1
+        self.values[event.event_id] = event
+
+    async def list_by_operation(self, operation_id: UUID) -> tuple[AuditEvent, ...]:
+        return tuple(
+            sorted(
+                (event for event in self.values.values() if event.operation_id == operation_id),
+                key=lambda event: (event.occurred_at, event.event_id),
+            )
+        )
+
+
+@dataclass
 class InMemoryUnitOfWork:
     intake_drafts: InMemoryDraftRepository = field(default_factory=InMemoryDraftRepository)
     operations: InMemoryOperationRepository = field(default_factory=InMemoryOperationRepository)
+    audit_events: InMemoryAuditEventRepository = field(
+        default_factory=InMemoryAuditEventRepository
+    )
     commit_calls: int = 0
     rollback_calls: int = 0
+    _snapshots: tuple[
+        dict[UUID, IntakeDraft], dict[UUID, Operation], dict[UUID, AuditEvent]
+    ] | None = None
+
+    async def __aenter__(self) -> "InMemoryUnitOfWork":
+        if self._snapshots is not None:
+            raise RuntimeError("unit of work is already active")
+        self._snapshots = (
+            dict(getattr(self.intake_drafts, "values", {})),
+            dict(getattr(self.operations, "values", {})),
+            dict(getattr(self.audit_events, "values", {})),
+        )
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        if self._snapshots is not None:
+            await self.rollback()
 
     async def commit(self) -> None:
         self.commit_calls += 1
+        self._snapshots = None
 
     async def rollback(self) -> None:
+        if self._snapshots is None:
+            return
         self.rollback_calls += 1
+        drafts, operations, events = self._snapshots
+        self.intake_drafts.values = drafts
+        self.operations.values = operations
+        self.audit_events.values = events
+        self._snapshots = None
 
 
 @dataclass(frozen=True)

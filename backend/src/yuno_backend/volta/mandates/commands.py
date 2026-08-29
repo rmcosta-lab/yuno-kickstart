@@ -22,6 +22,7 @@ class ApproveOperationCommand:
     draft_id: UUID
     expected_draft_version: int
     approval_actor: str
+    correlation_id: UUID
 
 
 @dataclass(frozen=True, slots=True)

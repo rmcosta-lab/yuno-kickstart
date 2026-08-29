@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+from yuno_backend.volta.errors import InvalidDomainValue
+
 __all__ = [
     "DraftNotApprovable",
     "DraftNotFound",
@@ -10,15 +12,6 @@ __all__ = [
     "OperationAlreadyApproved",
     "StaleDraftVersion",
 ]
-
-
-class InvalidDomainValue(ValueError):
-    """A domain value violates a local, provider-neutral invariant."""
-
-    def __init__(self, field: str, reason_code: str) -> None:
-        self.field = field
-        self.reason_code = reason_code
-        super().__init__(f"invalid domain value: {field} ({reason_code})")
 
 
 class DraftNotFound(LookupError):
