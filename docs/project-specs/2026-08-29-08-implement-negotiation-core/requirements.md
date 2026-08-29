@@ -110,4 +110,3 @@ The existing `MandatePolicy`, operation/audit models, and approval services rema
 | `backend/pyproject.toml`, `uv.lock`, root `Makefile` | No planned Fase 08 writer | Existing dependencies and commands are sufficient; treat any discovered need as a coordinated manifest/lockfile decision. |
 | `api/**`, `frontend/**`, `api/openapi.json`, generated clients | No Fase 08 writer | No HTTP, generated contract, or UI change is authorized. |
 | Shared mission, stack, roadmap, challenge plan, deployment and provider files | No Fase 08 writer | No shared decision is required; route a broad discovery through `manage-shared-specs`. |
-

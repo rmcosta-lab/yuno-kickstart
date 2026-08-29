@@ -70,4 +70,3 @@ One backend writer owns all implementation paths because the service, migration,
 - Do not store or log real contact data, raw prompts, conditions text in audit metadata, evidence references in audit metadata, provider payloads, credentials, private audio, SQL values, or driver errors.
 - Do not import FastAPI, Pydantic API schemas, SQLAlchemy, or provider types into negotiation domain/application modules.
 - Do not implement recording, recap, brief, recovery, notification, mandate replacement, frontend, API wiring, OpenAI, or telephony behavior.
-

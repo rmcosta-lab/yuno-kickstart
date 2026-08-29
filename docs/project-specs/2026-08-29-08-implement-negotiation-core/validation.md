@@ -68,4 +68,3 @@ Record exact evidence only after executing it. Keep every unexecuted criterion u
 - [ ] Browser and rendered UI validation are recorded as not applicable because this phase changes no frontend surface.
 - [ ] OpenAPI/Orval generation is recorded as not applicable because this phase changes no HTTP contract.
 - [ ] OpenAI, Twilio, Yuno, webhook, Supabase-project, credentialed sandbox, phone, payment, financial, and external provider checks are recorded as not applicable and are not executed.
-
