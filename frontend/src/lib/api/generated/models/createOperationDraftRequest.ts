@@ -8,11 +8,6 @@
 import type { RequestedLanguage } from "./requestedLanguage";
 
 export type CreateOperationDraftRequest = {
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  extraction_policy_version: string;
   requested_language: RequestedLanguage;
   /**
    * @minLength 1

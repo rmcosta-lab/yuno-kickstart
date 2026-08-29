@@ -13,7 +13,10 @@ export type CreateCallBriefRequest = {
    * @items.maxLength 500
    */
   changes?: string[];
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
   /**
    * @maxItems 50

@@ -11,9 +11,15 @@ import type { RecoveryScenario } from "./recoveryScenario";
 
 export type RecoverySimulationResponse = {
   active_commitment?: CommitmentResponse | null;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   after_operation_version: number;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   before_operation_version: number;
   correlation_id: string;
   created_at: string;

@@ -4,6 +4,7 @@
 
 1. **Freeze the transport vocabulary**
    - Add small shared enums and scalar conventions for UUIDs, UTC timestamps, ISO dates, integer minor-unit money, versions, states, and opaque cursors.
+   - Reject coercive JSON integers and cap every exposed integer at JavaScript's safe maximum.
    - Add the uniform safe error, field issue, request ID, idempotency, and stale-version contract before feature models.
    - Confirm that server-owned lifecycle and disposition fields never appear in create requests.
 
@@ -27,7 +28,7 @@
 
 5. **Generate and integrate the browser contract**
    - Run `make generate-openapi`, review `api/openapi.json`, then run Orval through `make generate`.
-   - Review generated names and ensure mutation/query functions expose required headers, versions, typed successes, and typed bodies without manual edits.
+   - Review generated names and ensure only `GET` operations are queries, every `POST` operation is a mutation, and functions expose required headers, versions, typed successes, typed API errors, status, and response headers without manual edits.
    - Run generation again and require no diff on the second run.
 
 6. **Run final checks and scope review**
@@ -43,7 +44,7 @@
 | Transport policies and route declarations | Fase 04 API writer | Contract routers, dependencies, error handling, `api/app/main.py`, `.env.example` | Shared errors and headers are fixed. |
 | API contract tests | Fase 04 API writer | `api/tests/**` | Each model/route group exists; tests stay adjacent to changes. |
 | OpenAPI and Orval generation | Fase 04 API writer | `api/openapi.json`, `frontend/src/lib/api/generated/**` | Route contract tests pass. |
-| Typed Orval header generation | Fase 04 API writer | `frontend/orval.config.ts` | OpenAPI review confirms required header parameters; coordinator assigns this exact file exclusively. |
+| Typed Orval transport generation | Fase 04 API writer | `frontend/orval.config.ts`, `frontend/src/lib/api/volta-fetch.ts`, `api/tests/test_generated_client.py` | OpenAPI review confirms required headers and errors; coordinator assigns these exact files exclusively. |
 | Phase coordination and final integration | `CaioRuas24010` | Phase spec, diff review, final validation | All workstreams complete. |
 
 There is one writer for every affected path. Generated frontend artifacts remain owned by the API writer in this phase; a frontend worker may review their usability but must not edit them. No backend workstream exists because application services and domain behavior are explicitly deferred.
@@ -61,6 +62,8 @@ There is one writer for every affected path. Generated frontend artifacts remain
 - No new dependency is expected. If one becomes necessary, the coordinator owns the manifest and matching lockfile as a pair, records the reason here, checks open pull requests touching them, and refreshes the branch before generation.
 - Phase 04 is the sole initial writer for `api/openapi.json` and `frontend/src/lib/api/generated/**`. Later API contract phases must refresh after this phase merges.
 - Orval 8 omits OpenAPI header parameters from named generated arguments unless `output.headers` is enabled. The coordinator inspected both local worktrees and the active remote phase branches on 2026-08-29 and found no concurrent change to `frontend/orval.config.ts`. That exact configuration file is therefore assigned exclusively to the Fase 04 API writer so required idempotency and version headers compile into the generated client. This is a compatible generator setting, not a dependency, stack, or shared-architecture change; manifests and lockfiles remain unchanged.
+- Deep review DR-02/DR-03 exposed that the global query override made every `POST` refetchable and that the generated fetchers treated non-2xx bodies as successes. After refreshing current remote coordination state and finding no competing Phase 04 pull request or writer, the coordinator assigned `frontend/src/lib/api/volta-fetch.ts` and `api/tests/test_generated_client.py` to the same Orval writer. The handwritten module is only a generic transport/error boundary; FastAPI/OpenAPI still own every DTO and no dependency or UI source changes.
+- The generated response envelope makes status and headers observable and therefore changes the existing health hook's selected value. The coordinator exclusively owns the minimal `frontend/src/components/health-experience.tsx` adaptation from `response.status` to `response.data.status`; its UI, query lifecycle, and visual behavior remain unchanged.
 - Shared-spec pull request #2 merged while this phase was active and made English the primary demo language. The coordinator refreshed this branch from `origin/main` at commit `519a3de`; `RequestedLanguage.EN_US` was already part of the accepted transport enum, so the contract shape and generated client require no change. Canonical API fixtures now use `EN_US`, while `ES_MX` remains an explicitly supported contract value. Later consumers must follow the merged English journey.
 - No temporary prerequisite is known. If one appears, record the wait here rather than weakening the gate.
 

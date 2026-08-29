@@ -8,7 +8,10 @@
 
 export type CreateSimulatedRecapRequest = {
   commitment_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
   /**
    * @minLength 1

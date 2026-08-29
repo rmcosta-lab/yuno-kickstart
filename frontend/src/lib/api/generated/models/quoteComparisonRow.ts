@@ -5,13 +5,24 @@
  * Thin HTTP contract boundary for the Volta hackathon demo.
  * OpenAPI spec version: 0.1.0
  */
+import type { MoneyTerms } from "./moneyTerms";
+import type { QuoteEligibility } from "./quoteEligibility";
 
 export type QuoteComparisonRow = {
-  /** @minimum 0 */
-  amount_minor: number;
+  call_id: string;
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  carrier_display_name: string;
   carrier_id: string;
-  currency: "MXN";
-  eligible: boolean;
+  created_at: string;
+  eligibility: QuoteEligibility;
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
+  mandate_version: number;
   quote_id: string;
   /**
    * @maxItems 25
@@ -20,4 +31,6 @@ export type QuoteComparisonRow = {
    */
   rejection_reasons?: string[];
   selected: boolean;
+  terms: MoneyTerms;
+  valid_until: string;
 };

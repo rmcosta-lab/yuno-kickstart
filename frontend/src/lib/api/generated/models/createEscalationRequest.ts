@@ -18,7 +18,10 @@ export type CreateEscalationRequest = {
    * @maxLength 500
    */
   conflict: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
   /**
    * @minLength 1

@@ -18,6 +18,9 @@ export type NegotiationSummary = {
    * @maximum 3
    */
   selected_carrier_count: number;
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   valid_quote_count: number;
 };

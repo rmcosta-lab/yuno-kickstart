@@ -1,7 +1,7 @@
 """P0 browser request and response contracts for the Volta journey."""
 
 from datetime import date
-from typing import Annotated, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -16,6 +16,7 @@ from app.schemas.common import (
     LongText,
     MinorAmount,
     MoneyTerms,
+    NonNegativeCount,
     NonNegativeMilliseconds,
     OpaqueCursor,
     OperationStatus,
@@ -28,9 +29,12 @@ from app.schemas.common import (
     ResponseModel,
     RouteDetails,
     SafeIdentifier,
+    SafeMetadataInteger,
     ShortText,
     SimulatedDirection,
     StrictRequestModel,
+    ThreeItemCount,
+    ThreeItemRank,
     UtcTimestamp,
 )
 
@@ -51,7 +55,6 @@ class ProposedMandate(ResponseModel):
 class CreateOperationDraftRequest(StrictRequestModel):
     source_prompt: LongText
     requested_language: RequestedLanguage
-    extraction_policy_version: SafeIdentifier
 
 
 class OperationDraftResponse(ResponseModel):
@@ -91,7 +94,7 @@ class CarrierResponse(ResponseModel):
     carrier_id: UUID
     display_name: ShortText
     eligible: bool
-    deterministic_rank: Annotated[int, Field(ge=1, le=3)]
+    deterministic_rank: ThreeItemRank
     ranking_evidence: list[ShortText] = Field(default_factory=list, max_length=10)
 
 
@@ -107,9 +110,9 @@ class CarrierSessionResponse(ResponseModel):
 
 class NegotiationSummary(ResponseModel):
     negotiation_id: UUID
-    selected_carrier_count: Annotated[int, Field(ge=0, le=3)]
-    active_session_count: Annotated[int, Field(ge=0, le=3)]
-    valid_quote_count: Annotated[int, Field(ge=0)]
+    selected_carrier_count: ThreeItemCount
+    active_session_count: ThreeItemCount
+    valid_quote_count: NonNegativeCount
 
 
 class CommitmentEvidenceResponse(ResponseModel):
@@ -152,30 +155,31 @@ class EscalationResponse(ResponseModel):
     resolved_at: UtcTimestamp | None = None
 
 
+class RecoveryDecisionState(ResponseModel):
+    operation_version: PositiveVersion
+    operation_status: OperationStatus
+    active_commitment_id: UUID | None = None
+    carrier_id: UUID | None = None
+    agreed_terms: MoneyTerms | None = None
+
+
+class RecoveryDecisionResponse(ResponseModel):
+    before: RecoveryDecisionState
+    after: RecoveryDecisionState
+    reason: ShortText
+
+
 class CoordinatorNotificationResponse(ResponseModel):
     notification_id: UUID
     operation_id: UUID
+    operation_version: PositiveVersion
+    recovery_decision: RecoveryDecisionResponse
     message: ShortText
     acknowledged: bool
     acknowledged_by: ShortText | None = None
     acknowledged_at: UtcTimestamp | None = None
     correlation_id: UUID
     created_at: UtcTimestamp
-
-
-class OperationResponse(ResponseModel):
-    operation_id: UUID
-    route: RouteDetails
-    cargo_label: ShortText
-    status: OperationStatus
-    operation_version: PositiveVersion
-    active_mandate: MandateResponse
-    negotiation_summary: NegotiationSummary | None = None
-    active_commitment: CommitmentResponse | None = None
-    open_escalation: EscalationResponse | None = None
-    notifications: list[CoordinatorNotificationResponse] = Field(default_factory=list)
-    created_at: UtcTimestamp
-    updated_at: UtcTimestamp
 
 
 class StartNegotiationRequest(StrictRequestModel):
@@ -218,6 +222,26 @@ class QuoteResponse(ResponseModel):
     eligibility: QuoteEligibility
     rejection_reasons: list[ShortText] = Field(default_factory=list, max_length=25)
     created_at: UtcTimestamp
+
+
+class OperationResponse(ResponseModel):
+    operation_id: UUID
+    route: RouteDetails
+    cargo_label: ShortText
+    status: OperationStatus
+    operation_version: PositiveVersion
+    active_mandate: MandateResponse
+    negotiation_summary: NegotiationSummary | None = None
+    sessions: list[CarrierSessionResponse] = Field(default_factory=list, max_length=3)
+    quotes: list[QuoteResponse] = Field(default_factory=list, max_length=100)
+    active_commitment: CommitmentResponse | None = None
+    open_escalation: EscalationResponse | None = None
+    notifications: list[CoordinatorNotificationResponse] = Field(
+        default_factory=list,
+        max_length=100,
+    )
+    created_at: UtcTimestamp
+    updated_at: UtcTimestamp
 
 
 class CreateCommitmentEvidenceRequest(StrictRequestModel):
@@ -313,7 +337,7 @@ class AcknowledgeNotificationRequest(StrictRequestModel):
     acknowledged_by: ShortText
 
 
-SafeMetadataValue = str | int | bool | None
+SafeMetadataValue = str | SafeMetadataInteger | bool | None
 
 
 class AuditEventResponse(ResponseModel):
@@ -328,16 +352,26 @@ class AuditEventResponse(ResponseModel):
 
 class QuoteComparisonRow(ResponseModel):
     quote_id: UUID
+    call_id: UUID
     carrier_id: UUID
-    amount_minor: MinorAmount
-    currency: CurrencyCode
-    eligible: bool
+    carrier_display_name: ShortText
+    terms: MoneyTerms
+    valid_until: UtcTimestamp
+    mandate_version: PositiveVersion
+    eligibility: QuoteEligibility
     selected: bool
     rejection_reasons: list[ShortText] = Field(default_factory=list, max_length=25)
+    created_at: UtcTimestamp
 
 
 class AuditTimelineResponse(ResponseModel):
     operation_id: UUID
-    events: list[AuditEventResponse]
-    quote_comparison: list[QuoteComparisonRow]
+    events: list[AuditEventResponse] = Field(max_length=100)
+    quote_comparison: list[QuoteComparisonRow] = Field(max_length=100)
+    commitment_history: list[CommitmentResponse] = Field(max_length=100)
+    recaps: list[WrittenRecapResponse] = Field(max_length=100)
+    briefs: list[CallBriefResponse] = Field(max_length=100)
+    recoveries: list[RecoverySimulationResponse] = Field(max_length=100)
+    escalations: list[EscalationResponse] = Field(max_length=100)
+    notifications: list[CoordinatorNotificationResponse] = Field(max_length=100)
     next_cursor: OpaqueCursor | None = None

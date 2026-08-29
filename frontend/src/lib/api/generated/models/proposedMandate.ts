@@ -21,7 +21,10 @@ export type ProposedMandate = {
    * @items.maxLength 500
    */
   escalation_conditions?: string[];
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   maximum_amount_minor: number;
   pickup_window: PickupWindow;
 };

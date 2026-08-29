@@ -7,9 +7,18 @@ from uuid import UUID
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
-PositiveVersion = Annotated[int, Field(ge=1)]
-MinorAmount = Annotated[int, Field(ge=0)]
-NonNegativeMilliseconds = Annotated[int, Field(ge=0)]
+JS_SAFE_MAX = 9_007_199_254_740_991
+
+PositiveVersion = Annotated[int, Field(strict=True, ge=1, le=JS_SAFE_MAX)]
+MinorAmount = Annotated[int, Field(strict=True, ge=0, le=JS_SAFE_MAX)]
+NonNegativeMilliseconds = Annotated[int, Field(strict=True, ge=0, le=JS_SAFE_MAX)]
+NonNegativeCount = Annotated[int, Field(strict=True, ge=0, le=JS_SAFE_MAX)]
+ThreeItemCount = Annotated[int, Field(strict=True, ge=0, le=3)]
+ThreeItemRank = Annotated[int, Field(strict=True, ge=1, le=3)]
+SafeMetadataInteger = Annotated[
+    int,
+    Field(strict=True, ge=0, le=JS_SAFE_MAX),
+]
 ShortText = Annotated[str, Field(min_length=1, max_length=500)]
 LongText = Annotated[str, Field(min_length=1, max_length=10_000)]
 SafeIdentifier = Annotated[str, Field(min_length=1, max_length=255)]

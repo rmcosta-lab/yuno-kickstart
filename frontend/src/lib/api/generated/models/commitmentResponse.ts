@@ -19,7 +19,10 @@ export type CommitmentResponse = {
   disposition: CommitmentDisposition;
   evidence: CommitmentEvidenceResponse;
   lifecycle: EvidenceLifecycle;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   mandate_version: number;
   operation_id: string;
   quote_id: string;

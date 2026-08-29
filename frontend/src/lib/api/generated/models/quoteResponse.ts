@@ -13,7 +13,10 @@ export type QuoteResponse = {
   carrier_id: string;
   created_at: string;
   eligibility: QuoteEligibility;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   mandate_version: number;
   operation_id: string;
   quote_id: string;

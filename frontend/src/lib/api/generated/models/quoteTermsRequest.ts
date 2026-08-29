@@ -8,7 +8,10 @@
 import type { PickupWindow } from "./pickupWindow";
 
 export type QuoteTermsRequest = {
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   amount_minor: number;
   /**
    * @maxItems 25

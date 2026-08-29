@@ -36,4 +36,5 @@ class ApiErrorResponse(ResponseModel):
     request_id: str = Field(min_length=1, max_length=128)
     field_issues: list[FieldIssue] | None = None
     resource_id: UUID | None = None
+    current_draft_version: PositiveVersion | None = None
     current_operation_version: PositiveVersion | None = None

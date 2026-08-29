@@ -26,9 +26,15 @@ export type ReplaceMandateRequest = {
    * @items.maxLength 500
    */
   escalation_conditions?: string[];
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   maximum_amount_minor: number;
   pickup_window: PickupWindow;
   resolved_escalation_id: string;

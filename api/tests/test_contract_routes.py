@@ -134,6 +134,7 @@ def test_default_service_returns_honest_not_implemented_after_validation() -> No
         "request_id": response.headers["x-request-id"],
         "field_issues": None,
         "resource_id": None,
+        "current_draft_version": None,
         "current_operation_version": None,
     }
 
@@ -142,6 +143,16 @@ def test_authentication_is_rejected_before_contract_delegation() -> None:
     fake = DeterministicFake()
     with build_client(fake) as client:
         missing = client.post("/v1/operation-drafts", json={"unknown": "submitted-secret"})
+        malformed = client.post(
+            "/v1/operation-drafts",
+            headers={"Authorization": "submitted-secret"},
+            json={"unknown": "submitted-secret"},
+        )
+        wrong_scheme = client.post(
+            "/v1/operation-drafts",
+            headers={"Authorization": "Basic submitted-secret"},
+            json={"unknown": "submitted-secret"},
+        )
         invalid = client.post(
             "/v1/operation-drafts",
             headers={"Authorization": "Bearer submitted-secret"},
@@ -150,9 +161,14 @@ def test_authentication_is_rejected_before_contract_delegation() -> None:
 
     assert missing.status_code == 401
     assert missing.json()["code"] == "AUTHENTICATION_REQUIRED"
-    assert invalid.status_code == 401
-    assert invalid.json()["code"] == "AUTHENTICATION_INVALID"
-    assert "submitted-secret" not in missing.text + invalid.text
+    assert missing.headers["www-authenticate"] == "Bearer"
+    for response in (malformed, wrong_scheme, invalid):
+        assert response.status_code == 401
+        assert response.json()["code"] == "AUTHENTICATION_INVALID"
+        assert response.headers["www-authenticate"] == "Bearer"
+    assert "submitted-secret" not in (
+        missing.text + malformed.text + wrong_scheme.text + invalid.text
+    )
     assert fake.calls == []
 
 
@@ -201,23 +217,30 @@ def test_idempotency_replay_and_changed_request_conflict_are_fake_driven() -> No
 
 
 @pytest.mark.parametrize(
-    ("operation_id", "code", "current_version"),
+    (
+        "operation_id",
+        "code",
+        "current_draft_version",
+        "current_operation_version",
+    ),
     [
-        ("approve_operation", ApiErrorCode.STALE_DRAFT_VERSION, None),
-        ("start_negotiation", ApiErrorCode.STALE_OPERATION_VERSION, 4),
+        ("approve_operation", ApiErrorCode.STALE_DRAFT_VERSION, 3, None),
+        ("start_negotiation", ApiErrorCode.STALE_OPERATION_VERSION, None, 4),
     ],
 )
 def test_stale_version_errors_map_without_internal_state(
     operation_id: str,
     code: ApiErrorCode,
-    current_version: int | None,
+    current_draft_version: int | None,
+    current_operation_version: int | None,
 ) -> None:
     fake = DeterministicFake()
     fake.error = ContractServiceError(
         status_code=409,
         code=code,
         message="The submitted version is stale.",
-        current_operation_version=current_version,
+        current_draft_version=current_draft_version,
+        current_operation_version=current_operation_version,
     )
     method, path, _ = ROUTES[operation_id]
 
@@ -231,7 +254,8 @@ def test_stale_version_errors_map_without_internal_state(
 
     assert response.status_code == 409
     assert response.json()["code"] == code
-    assert response.json()["current_operation_version"] == current_version
+    assert response.json()["current_draft_version"] == current_draft_version
+    assert response.json()["current_operation_version"] == current_operation_version
     assert "ContractServiceError" not in response.text
 
 
@@ -268,10 +292,23 @@ def test_unexpected_error_is_translated_without_exception_details() -> None:
     fake = DeterministicFake()
     fake.error = RuntimeError("submitted-secret and internal stack detail")
     with build_client(fake) as client:
-        response = client.get(f"/v1/operations/{IDS['operation']}", headers=AUTH)
+        response = client.get(
+            f"/v1/operations/{IDS['operation']}",
+            headers={
+                **AUTH,
+                "Origin": "http://localhost:3000",
+                "X-Request-ID": "unexpected-error-1",
+            },
+        )
 
     assert response.status_code == 500
     assert response.json()["code"] == "INTERNAL_ERROR"
+    assert response.json()["request_id"] == "unexpected-error-1"
+    assert response.headers["x-request-id"] == "unexpected-error-1"
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    exposed_headers = response.headers["access-control-expose-headers"].lower()
+    assert "x-request-id" in exposed_headers
+    assert "idempotency-replayed" in exposed_headers
     assert "submitted-secret" not in response.text
     assert "RuntimeError" not in response.text
 
@@ -348,6 +385,9 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
     assert len(operations) == 14
     assert len(set(operations)) == 14
     assert "example" not in json.dumps(schema["components"]["securitySchemes"]["HTTPBearer"])
+    error_properties = schema["components"]["schemas"]["ApiErrorResponse"]["properties"]
+    assert "current_draft_version" in error_properties
+    assert "current_operation_version" in error_properties
 
     approve_schema = _request_schema(schema, operations["approve_operation"])
     assert "expected_draft_version" in approve_schema["required"]

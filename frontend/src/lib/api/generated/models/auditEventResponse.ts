@@ -19,6 +19,9 @@ export type AuditEventResponse = {
   event_type: string;
   metadata?: AuditEventResponseMetadata;
   occurred_at: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   operation_version: number;
 };

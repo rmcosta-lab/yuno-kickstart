@@ -28,9 +28,15 @@ export type MandateResponse = {
    */
   escalation_conditions?: string[];
   mandate_id: string;
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   maximum_amount_minor: number;
   pickup_window: PickupWindow;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   version: number;
 };

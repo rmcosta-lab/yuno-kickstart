@@ -35,6 +35,7 @@ class ContractServiceError(Exception):
         message: str,
         field_issues: list[FieldIssue] | None = None,
         resource_id: str | None = None,
+        current_draft_version: int | None = None,
         current_operation_version: int | None = None,
     ) -> None:
         super().__init__(message)
@@ -43,6 +44,7 @@ class ContractServiceError(Exception):
         self.safe_message = message
         self.field_issues = field_issues
         self.resource_id = resource_id
+        self.current_draft_version = current_draft_version
         self.current_operation_version = current_operation_version
 
 

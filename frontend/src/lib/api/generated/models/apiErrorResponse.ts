@@ -10,6 +10,7 @@ import type { FieldIssue } from "./fieldIssue";
 
 export type ApiErrorResponse = {
   code: ApiErrorCode;
+  current_draft_version?: number | null;
   current_operation_version?: number | null;
   field_issues?: FieldIssue[] | null;
   /**

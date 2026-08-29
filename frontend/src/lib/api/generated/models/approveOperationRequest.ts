@@ -13,6 +13,9 @@ export type ApproveOperationRequest = {
    */
   approval_actor: string;
   draft_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_draft_version: number;
 };

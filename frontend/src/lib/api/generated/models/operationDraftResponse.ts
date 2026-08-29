@@ -14,7 +14,10 @@ export type OperationDraftResponse = {
   approval_eligible: boolean;
   created_at: string;
   draft_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   draft_version: number;
   /**
    * @minLength 1

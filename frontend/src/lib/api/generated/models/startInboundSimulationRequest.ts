@@ -9,7 +9,10 @@ import type { RecoveryScenario } from "./recoveryScenario";
 
 export type StartInboundSimulationRequest = {
   active_commitment_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
   scenario: RecoveryScenario;
 };

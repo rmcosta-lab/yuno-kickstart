@@ -5,15 +5,18 @@
  * Thin HTTP contract boundary for the Volta hackathon demo.
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
@@ -60,6 +63,10 @@ import type {
   WrittenRecapResponse,
 } from "./models";
 
+import { voltaFetch } from "../volta-fetch";
+import type { ErrorType } from "../volta-fetch";
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
 const withQueryKey = <T extends object, K>(
   query: T,
   queryKey: K,
@@ -78,6 +85,14 @@ const withQueryKey = <T extends object, K>(
   return result;
 };
 
+export type getHealthResponse200 = {
+  data: HealthResponse;
+  status: 200;
+};
+
+export type getHealthResponseSuccess = getHealthResponse200 & {
+  headers: Headers;
+};
 export const getGetHealthUrl = () => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/health`;
 };
@@ -86,17 +101,12 @@ export const getGetHealthUrl = () => {
  * @summary Check API health
  */
 export const getHealth = async (
-  options?: RequestInit,
-): Promise<HealthResponse> => {
-  const res = await fetch(getGetHealthUrl(), {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getHealthResponseSuccess> => {
+  return voltaFetch<getHealthResponseSuccess>(getGetHealthUrl(), {
     ...options,
     method: "GET",
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: HealthResponse = body ? JSON.parse(body) : {};
-  return data;
 };
 
 export const getGetHealthQueryKey = () => {
@@ -107,20 +117,20 @@ export const getGetHealthQueryKey = () => {
 
 export const getGetHealthQueryOptions = <
   TData = Awaited<ReturnType<typeof getHealth>>,
-  TError = unknown,
+  TError = ErrorType<unknown>,
 >(options?: {
   query?: Partial<
     UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>
   >;
-  fetch?: RequestInit;
+  request?: SecondParameter<typeof voltaFetch>;
 }) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey = queryOptions?.queryKey ?? getGetHealthQueryKey();
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealth>>> = ({
     signal,
-  }) => getHealth({ signal, ...fetchOptions });
+  }) => getHealth({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof getHealth>>,
@@ -132,11 +142,11 @@ export const getGetHealthQueryOptions = <
 export type GetHealthQueryResult = NonNullable<
   Awaited<ReturnType<typeof getHealth>>
 >;
-export type GetHealthQueryError = unknown;
+export type GetHealthQueryError = ErrorType<unknown>;
 
 export function useGetHealth<
   TData = Awaited<ReturnType<typeof getHealth>>,
-  TError = unknown,
+  TError = ErrorType<unknown>,
 >(
   options: {
     query: Partial<
@@ -150,7 +160,7 @@ export function useGetHealth<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & {
@@ -158,7 +168,7 @@ export function useGetHealth<
 };
 export function useGetHealth<
   TData = Awaited<ReturnType<typeof getHealth>>,
-  TError = unknown,
+  TError = ErrorType<unknown>,
 >(
   options?: {
     query?: Partial<
@@ -172,7 +182,7 @@ export function useGetHealth<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -180,13 +190,13 @@ export function useGetHealth<
 };
 export function useGetHealth<
   TData = Awaited<ReturnType<typeof getHealth>>,
-  TError = unknown,
+  TError = ErrorType<unknown>,
 >(
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -198,13 +208,13 @@ export function useGetHealth<
 
 export function useGetHealth<
   TData = Awaited<ReturnType<typeof getHealth>>,
-  TError = unknown,
+  TError = ErrorType<unknown>,
 >(
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof getHealth>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -220,6 +230,67 @@ export function useGetHealth<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type createCallBriefResponse201 = {
+  data: CallBriefResponse;
+  status: 201;
+};
+
+export type createCallBriefResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createCallBriefResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createCallBriefResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type createCallBriefResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createCallBriefResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createCallBriefResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createCallBriefResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createCallBriefResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type createCallBriefResponseSuccess = createCallBriefResponse201 & {
+  headers: Headers;
+};
+export type createCallBriefResponseError = (
+  | createCallBriefResponse401
+  | createCallBriefResponse403
+  | createCallBriefResponse404
+  | createCallBriefResponse409
+  | createCallBriefResponse422
+  | createCallBriefResponse429
+  | createCallBriefResponse500
+  | createCallBriefResponse501
+) & {
+  headers: Headers;
+};
+
 export const getCreateCallBriefUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/briefs`;
 };
@@ -231,8 +302,8 @@ export const createCallBrief = async (
   callId: string,
   createCallBriefRequest: CreateCallBriefRequest,
   headers: CreateCallBriefHeaders,
-  options?: RequestInit,
-): Promise<CallBriefResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createCallBriefResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -241,201 +312,157 @@ export const createCallBrief = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getCreateCallBriefUrl(callId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<createCallBriefResponseSuccess>(
+    getCreateCallBriefUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createCallBriefRequest),
     },
-    body: JSON.stringify(createCallBriefRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CallBriefResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getCreateCallBriefQueryKey = (
-  callId: string,
-  createCallBriefRequest?: CreateCallBriefRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/briefs`,
-    createCallBriefRequest,
-  ] as const;
-};
-
-export const getCreateCallBriefQueryOptions = <
-  TData = Awaited<ReturnType<typeof createCallBrief>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCallBriefRequest: CreateCallBriefRequest,
-  headers: CreateCallBriefHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCallBrief>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getCreateCallBriefQueryKey(callId, createCallBriefRequest);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof createCallBrief>>> = ({
-    signal,
-  }) =>
-    createCallBrief(callId, createCallBriefRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getCreateCallBriefMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createCallBrief>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    CreateCallBriefMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCallBrief>>,
+  TError,
+  CreateCallBriefMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createCallBrief"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCallBrief>>,
+    CreateCallBriefMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return createCallBrief(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type CreateCallBriefQueryResult = NonNullable<
+export type CreateCallBriefMutationResult = NonNullable<
   Awaited<ReturnType<typeof createCallBrief>>
 >;
-export type CreateCallBriefQueryError = ApiErrorResponse;
+export type CreateCallBriefMutationBody = CreateCallBriefRequest;
+export type CreateCallBriefMutationError = ErrorType<ApiErrorResponse>;
+export type CreateCallBriefMutationVariables = {
+  callId: string;
+  data: CreateCallBriefRequest;
+  headers: CreateCallBriefHeaders;
+};
 
-export function useCreateCallBrief<
-  TData = Awaited<ReturnType<typeof createCallBrief>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCallBriefRequest: CreateCallBriefRequest,
-  headers: CreateCallBriefHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCallBrief>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createCallBrief>>,
-          TError,
-          Awaited<ReturnType<typeof createCallBrief>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateCallBrief<
-  TData = Awaited<ReturnType<typeof createCallBrief>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCallBriefRequest: CreateCallBriefRequest,
-  headers: CreateCallBriefHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCallBrief>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createCallBrief>>,
-          TError,
-          Awaited<ReturnType<typeof createCallBrief>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateCallBrief<
-  TData = Awaited<ReturnType<typeof createCallBrief>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCallBriefRequest: CreateCallBriefRequest,
-  headers: CreateCallBriefHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCallBrief>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Create Call Brief
  */
-
-export function useCreateCallBrief<
-  TData = Awaited<ReturnType<typeof createCallBrief>>,
-  TError = ApiErrorResponse,
+export const useCreateCallBrief = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createCallBriefRequest: CreateCallBriefRequest,
-  headers: CreateCallBriefHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCallBrief>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createCallBrief>>,
+      TError,
+      CreateCallBriefMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getCreateCallBriefQueryOptions(
-    callId,
-    createCallBriefRequest,
-    headers,
-    options,
-  );
+): UseMutationResult<
+  Awaited<ReturnType<typeof createCallBrief>>,
+  TError,
+  CreateCallBriefMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateCallBriefMutationOptions(options), queryClient);
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type createCandidateCommitmentResponse201 = {
+  data: CommitmentResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type createCandidateCommitmentResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createCandidateCommitmentResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createCandidateCommitmentResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type createCandidateCommitmentResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createCandidateCommitmentResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createCandidateCommitmentResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createCandidateCommitmentResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createCandidateCommitmentResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type createCandidateCommitmentResponseSuccess =
+  createCandidateCommitmentResponse201 & {
+    headers: Headers;
+  };
+export type createCandidateCommitmentResponseError = (
+  | createCandidateCommitmentResponse401
+  | createCandidateCommitmentResponse403
+  | createCandidateCommitmentResponse404
+  | createCandidateCommitmentResponse409
+  | createCandidateCommitmentResponse422
+  | createCandidateCommitmentResponse429
+  | createCandidateCommitmentResponse500
+  | createCandidateCommitmentResponse501
+) & {
+  headers: Headers;
+};
 
 export const getCreateCandidateCommitmentUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/commitments`;
@@ -448,8 +475,8 @@ export const createCandidateCommitment = async (
   callId: string,
   createCommitmentRequest: CreateCommitmentRequest,
   headers: CreateCandidateCommitmentHeaders,
-  options?: RequestInit,
-): Promise<CommitmentResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createCandidateCommitmentResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -458,201 +485,160 @@ export const createCandidateCommitment = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getCreateCandidateCommitmentUrl(callId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<createCandidateCommitmentResponseSuccess>(
+    getCreateCandidateCommitmentUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createCommitmentRequest),
     },
-    body: JSON.stringify(createCommitmentRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CommitmentResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getCreateCandidateCommitmentQueryKey = (
-  callId: string,
-  createCommitmentRequest?: CreateCommitmentRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/commitments`,
-    createCommitmentRequest,
-  ] as const;
-};
-
-export const getCreateCandidateCommitmentQueryOptions = <
-  TData = Awaited<ReturnType<typeof createCandidateCommitment>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentRequest: CreateCommitmentRequest,
-  headers: CreateCandidateCommitmentHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCandidateCommitment>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getCreateCandidateCommitmentQueryKey(callId, createCommitmentRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof createCandidateCommitment>>
-  > = ({ signal }) =>
-    createCandidateCommitment(callId, createCommitmentRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getCreateCandidateCommitmentMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createCandidateCommitment>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    CreateCandidateCommitmentMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCandidateCommitment>>,
+  TError,
+  CreateCandidateCommitmentMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createCandidateCommitment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCandidateCommitment>>,
+    CreateCandidateCommitmentMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return createCandidateCommitment(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type CreateCandidateCommitmentQueryResult = NonNullable<
+export type CreateCandidateCommitmentMutationResult = NonNullable<
   Awaited<ReturnType<typeof createCandidateCommitment>>
 >;
-export type CreateCandidateCommitmentQueryError = ApiErrorResponse;
+export type CreateCandidateCommitmentMutationBody = CreateCommitmentRequest;
+export type CreateCandidateCommitmentMutationError =
+  ErrorType<ApiErrorResponse>;
+export type CreateCandidateCommitmentMutationVariables = {
+  callId: string;
+  data: CreateCommitmentRequest;
+  headers: CreateCandidateCommitmentHeaders;
+};
 
-export function useCreateCandidateCommitment<
-  TData = Awaited<ReturnType<typeof createCandidateCommitment>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentRequest: CreateCommitmentRequest,
-  headers: CreateCandidateCommitmentHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCandidateCommitment>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createCandidateCommitment>>,
-          TError,
-          Awaited<ReturnType<typeof createCandidateCommitment>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateCandidateCommitment<
-  TData = Awaited<ReturnType<typeof createCandidateCommitment>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentRequest: CreateCommitmentRequest,
-  headers: CreateCandidateCommitmentHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCandidateCommitment>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createCandidateCommitment>>,
-          TError,
-          Awaited<ReturnType<typeof createCandidateCommitment>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateCandidateCommitment<
-  TData = Awaited<ReturnType<typeof createCandidateCommitment>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentRequest: CreateCommitmentRequest,
-  headers: CreateCandidateCommitmentHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCandidateCommitment>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Create Candidate Commitment
  */
-
-export function useCreateCandidateCommitment<
-  TData = Awaited<ReturnType<typeof createCandidateCommitment>>,
-  TError = ApiErrorResponse,
+export const useCreateCandidateCommitment = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createCommitmentRequest: CreateCommitmentRequest,
-  headers: CreateCandidateCommitmentHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createCandidateCommitment>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createCandidateCommitment>>,
+      TError,
+      CreateCandidateCommitmentMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getCreateCandidateCommitmentQueryOptions(
-    callId,
-    createCommitmentRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createCandidateCommitment>>,
+  TError,
+  CreateCandidateCommitmentMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getCreateCandidateCommitmentMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type createEscalationResponse201 = {
+  data: EscalationResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type createEscalationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createEscalationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createEscalationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type createEscalationResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createEscalationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createEscalationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createEscalationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createEscalationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type createEscalationResponseSuccess = createEscalationResponse201 & {
+  headers: Headers;
+};
+export type createEscalationResponseError = (
+  | createEscalationResponse401
+  | createEscalationResponse403
+  | createEscalationResponse404
+  | createEscalationResponse409
+  | createEscalationResponse422
+  | createEscalationResponse429
+  | createEscalationResponse500
+  | createEscalationResponse501
+) & {
+  headers: Headers;
+};
 
 export const getCreateEscalationUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/escalations`;
@@ -665,8 +651,8 @@ export const createEscalation = async (
   callId: string,
   createEscalationRequest: CreateEscalationRequest,
   headers: CreateEscalationHeaders,
-  options?: RequestInit,
-): Promise<EscalationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createEscalationResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -675,201 +661,157 @@ export const createEscalation = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getCreateEscalationUrl(callId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<createEscalationResponseSuccess>(
+    getCreateEscalationUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createEscalationRequest),
     },
-    body: JSON.stringify(createEscalationRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: EscalationResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getCreateEscalationQueryKey = (
-  callId: string,
-  createEscalationRequest?: CreateEscalationRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/escalations`,
-    createEscalationRequest,
-  ] as const;
-};
-
-export const getCreateEscalationQueryOptions = <
-  TData = Awaited<ReturnType<typeof createEscalation>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createEscalationRequest: CreateEscalationRequest,
-  headers: CreateEscalationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createEscalation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getCreateEscalationQueryKey(callId, createEscalationRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof createEscalation>>
-  > = ({ signal }) =>
-    createEscalation(callId, createEscalationRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getCreateEscalationMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createEscalation>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    CreateEscalationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEscalation>>,
+  TError,
+  CreateEscalationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createEscalation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEscalation>>,
+    CreateEscalationMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return createEscalation(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type CreateEscalationQueryResult = NonNullable<
+export type CreateEscalationMutationResult = NonNullable<
   Awaited<ReturnType<typeof createEscalation>>
 >;
-export type CreateEscalationQueryError = ApiErrorResponse;
+export type CreateEscalationMutationBody = CreateEscalationRequest;
+export type CreateEscalationMutationError = ErrorType<ApiErrorResponse>;
+export type CreateEscalationMutationVariables = {
+  callId: string;
+  data: CreateEscalationRequest;
+  headers: CreateEscalationHeaders;
+};
 
-export function useCreateEscalation<
-  TData = Awaited<ReturnType<typeof createEscalation>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createEscalationRequest: CreateEscalationRequest,
-  headers: CreateEscalationHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createEscalation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createEscalation>>,
-          TError,
-          Awaited<ReturnType<typeof createEscalation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateEscalation<
-  TData = Awaited<ReturnType<typeof createEscalation>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createEscalationRequest: CreateEscalationRequest,
-  headers: CreateEscalationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createEscalation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createEscalation>>,
-          TError,
-          Awaited<ReturnType<typeof createEscalation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateEscalation<
-  TData = Awaited<ReturnType<typeof createEscalation>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createEscalationRequest: CreateEscalationRequest,
-  headers: CreateEscalationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createEscalation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Create Escalation
  */
-
-export function useCreateEscalation<
-  TData = Awaited<ReturnType<typeof createEscalation>>,
-  TError = ApiErrorResponse,
+export const useCreateEscalation = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createEscalationRequest: CreateEscalationRequest,
-  headers: CreateEscalationHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createEscalation>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createEscalation>>,
+      TError,
+      CreateEscalationMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getCreateEscalationQueryOptions(
-    callId,
-    createEscalationRequest,
-    headers,
-    options,
-  );
+): UseMutationResult<
+  Awaited<ReturnType<typeof createEscalation>>,
+  TError,
+  CreateEscalationMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateEscalationMutationOptions(options), queryClient);
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type attachCommitmentEvidenceResponse201 = {
+  data: CommitmentEvidenceResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type attachCommitmentEvidenceResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type attachCommitmentEvidenceResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type attachCommitmentEvidenceResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type attachCommitmentEvidenceResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type attachCommitmentEvidenceResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type attachCommitmentEvidenceResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type attachCommitmentEvidenceResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type attachCommitmentEvidenceResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type attachCommitmentEvidenceResponseSuccess =
+  attachCommitmentEvidenceResponse201 & {
+    headers: Headers;
+  };
+export type attachCommitmentEvidenceResponseError = (
+  | attachCommitmentEvidenceResponse401
+  | attachCommitmentEvidenceResponse403
+  | attachCommitmentEvidenceResponse404
+  | attachCommitmentEvidenceResponse409
+  | attachCommitmentEvidenceResponse422
+  | attachCommitmentEvidenceResponse429
+  | attachCommitmentEvidenceResponse500
+  | attachCommitmentEvidenceResponse501
+) & {
+  headers: Headers;
+};
 
 export const getAttachCommitmentEvidenceUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/evidence`;
@@ -882,8 +824,8 @@ export const attachCommitmentEvidence = async (
   callId: string,
   createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
   headers: AttachCommitmentEvidenceHeaders,
-  options?: RequestInit,
-): Promise<CommitmentEvidenceResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<attachCommitmentEvidenceResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -892,204 +834,160 @@ export const attachCommitmentEvidence = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getAttachCommitmentEvidenceUrl(callId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<attachCommitmentEvidenceResponseSuccess>(
+    getAttachCommitmentEvidenceUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createCommitmentEvidenceRequest),
     },
-    body: JSON.stringify(createCommitmentEvidenceRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CommitmentEvidenceResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getAttachCommitmentEvidenceQueryKey = (
-  callId: string,
-  createCommitmentEvidenceRequest?: CreateCommitmentEvidenceRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/evidence`,
-    createCommitmentEvidenceRequest,
-  ] as const;
-};
-
-export const getAttachCommitmentEvidenceQueryOptions = <
-  TData = Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
-  headers: AttachCommitmentEvidenceHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getAttachCommitmentEvidenceQueryKey(
-      callId,
-      createCommitmentEvidenceRequest,
-    );
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof attachCommitmentEvidence>>
-  > = ({ signal }) =>
-    attachCommitmentEvidence(callId, createCommitmentEvidenceRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getAttachCommitmentEvidenceMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof attachCommitmentEvidence>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    AttachCommitmentEvidenceMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof attachCommitmentEvidence>>,
+  TError,
+  AttachCommitmentEvidenceMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["attachCommitmentEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof attachCommitmentEvidence>>,
+    AttachCommitmentEvidenceMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return attachCommitmentEvidence(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type AttachCommitmentEvidenceQueryResult = NonNullable<
+export type AttachCommitmentEvidenceMutationResult = NonNullable<
   Awaited<ReturnType<typeof attachCommitmentEvidence>>
 >;
-export type AttachCommitmentEvidenceQueryError = ApiErrorResponse;
+export type AttachCommitmentEvidenceMutationBody =
+  CreateCommitmentEvidenceRequest;
+export type AttachCommitmentEvidenceMutationError = ErrorType<ApiErrorResponse>;
+export type AttachCommitmentEvidenceMutationVariables = {
+  callId: string;
+  data: CreateCommitmentEvidenceRequest;
+  headers: AttachCommitmentEvidenceHeaders;
+};
 
-export function useAttachCommitmentEvidence<
-  TData = Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
-  headers: AttachCommitmentEvidenceHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-          TError,
-          Awaited<ReturnType<typeof attachCommitmentEvidence>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useAttachCommitmentEvidence<
-  TData = Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
-  headers: AttachCommitmentEvidenceHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-          TError,
-          Awaited<ReturnType<typeof attachCommitmentEvidence>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useAttachCommitmentEvidence<
-  TData = Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
-  headers: AttachCommitmentEvidenceHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Attach Commitment Evidence
  */
-
-export function useAttachCommitmentEvidence<
-  TData = Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-  TError = ApiErrorResponse,
+export const useAttachCommitmentEvidence = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createCommitmentEvidenceRequest: CreateCommitmentEvidenceRequest,
-  headers: AttachCommitmentEvidenceHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof attachCommitmentEvidence>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof attachCommitmentEvidence>>,
+      TError,
+      AttachCommitmentEvidenceMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getAttachCommitmentEvidenceQueryOptions(
-    callId,
-    createCommitmentEvidenceRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof attachCommitmentEvidence>>,
+  TError,
+  AttachCommitmentEvidenceMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getAttachCommitmentEvidenceMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type recordQuoteResponse201 = {
+  data: QuoteResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type recordQuoteResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type recordQuoteResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type recordQuoteResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type recordQuoteResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type recordQuoteResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type recordQuoteResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type recordQuoteResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type recordQuoteResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type recordQuoteResponseSuccess = recordQuoteResponse201 & {
+  headers: Headers;
+};
+export type recordQuoteResponseError = (
+  | recordQuoteResponse401
+  | recordQuoteResponse403
+  | recordQuoteResponse404
+  | recordQuoteResponse409
+  | recordQuoteResponse422
+  | recordQuoteResponse429
+  | recordQuoteResponse500
+  | recordQuoteResponse501
+) & {
+  headers: Headers;
+};
 
 export const getRecordQuoteUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/quotes`;
@@ -1102,8 +1000,8 @@ export const recordQuote = async (
   callId: string,
   createQuoteRequest: CreateQuoteRequest,
   headers: RecordQuoteHeaders,
-  options?: RequestInit,
-): Promise<QuoteResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<recordQuoteResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -1112,7 +1010,7 @@ export const recordQuote = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getRecordQuoteUrl(callId), {
+  return voltaFetch<recordQuoteResponseSuccess>(getRecordQuoteUrl(callId), {
     ...options,
     method: "POST",
     headers: {
@@ -1122,171 +1020,144 @@ export const recordQuote = async (
     },
     body: JSON.stringify(createQuoteRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: QuoteResponse = body ? JSON.parse(body) : {};
-  return data;
 };
 
-export const getRecordQuoteQueryKey = (
-  callId: string,
-  createQuoteRequest?: CreateQuoteRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/quotes`,
-    createQuoteRequest,
-  ] as const;
-};
-
-export const getRecordQuoteQueryOptions = <
-  TData = Awaited<ReturnType<typeof recordQuote>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createQuoteRequest: CreateQuoteRequest,
-  headers: RecordQuoteHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof recordQuote>>, TError, TData>
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getRecordQuoteQueryKey(callId, createQuoteRequest);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof recordQuote>>> = ({
-    signal,
-  }) =>
-    recordQuote(callId, createQuoteRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getRecordQuoteMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof recordQuote>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    RecordQuoteMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof recordQuote>>,
+  TError,
+  RecordQuoteMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["recordQuote"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof recordQuote>>,
+    RecordQuoteMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return recordQuote(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type RecordQuoteQueryResult = NonNullable<
+export type RecordQuoteMutationResult = NonNullable<
   Awaited<ReturnType<typeof recordQuote>>
 >;
-export type RecordQuoteQueryError = ApiErrorResponse;
+export type RecordQuoteMutationBody = CreateQuoteRequest;
+export type RecordQuoteMutationError = ErrorType<ApiErrorResponse>;
+export type RecordQuoteMutationVariables = {
+  callId: string;
+  data: CreateQuoteRequest;
+  headers: RecordQuoteHeaders;
+};
 
-export function useRecordQuote<
-  TData = Awaited<ReturnType<typeof recordQuote>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createQuoteRequest: CreateQuoteRequest,
-  headers: RecordQuoteHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof recordQuote>>, TError, TData>
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof recordQuote>>,
-          TError,
-          Awaited<ReturnType<typeof recordQuote>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useRecordQuote<
-  TData = Awaited<ReturnType<typeof recordQuote>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createQuoteRequest: CreateQuoteRequest,
-  headers: RecordQuoteHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof recordQuote>>, TError, TData>
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof recordQuote>>,
-          TError,
-          Awaited<ReturnType<typeof recordQuote>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useRecordQuote<
-  TData = Awaited<ReturnType<typeof recordQuote>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createQuoteRequest: CreateQuoteRequest,
-  headers: RecordQuoteHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof recordQuote>>, TError, TData>
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Record Quote
  */
-
-export function useRecordQuote<
-  TData = Awaited<ReturnType<typeof recordQuote>>,
-  TError = ApiErrorResponse,
+export const useRecordQuote = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createQuoteRequest: CreateQuoteRequest,
-  headers: RecordQuoteHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof recordQuote>>, TError, TData>
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof recordQuote>>,
+      TError,
+      RecordQuoteMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getRecordQuoteQueryOptions(
-    callId,
-    createQuoteRequest,
-    headers,
-    options,
-  );
+): UseMutationResult<
+  Awaited<ReturnType<typeof recordQuote>>,
+  TError,
+  RecordQuoteMutationVariables,
+  TContext
+> => {
+  return useMutation(getRecordQuoteMutationOptions(options), queryClient);
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type createSimulatedRecapResponse201 = {
+  data: WrittenRecapResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type createSimulatedRecapResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createSimulatedRecapResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createSimulatedRecapResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type createSimulatedRecapResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createSimulatedRecapResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createSimulatedRecapResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createSimulatedRecapResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createSimulatedRecapResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type createSimulatedRecapResponseSuccess =
+  createSimulatedRecapResponse201 & {
+    headers: Headers;
+  };
+export type createSimulatedRecapResponseError = (
+  | createSimulatedRecapResponse401
+  | createSimulatedRecapResponse403
+  | createSimulatedRecapResponse404
+  | createSimulatedRecapResponse409
+  | createSimulatedRecapResponse422
+  | createSimulatedRecapResponse429
+  | createSimulatedRecapResponse500
+  | createSimulatedRecapResponse501
+) & {
+  headers: Headers;
+};
 
 export const getCreateSimulatedRecapUrl = (callId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/recaps`;
@@ -1299,8 +1170,8 @@ export const createSimulatedRecap = async (
   callId: string,
   createSimulatedRecapRequest: CreateSimulatedRecapRequest,
   headers: CreateSimulatedRecapHeaders,
-  options?: RequestInit,
-): Promise<WrittenRecapResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createSimulatedRecapResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -1309,201 +1180,160 @@ export const createSimulatedRecap = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getCreateSimulatedRecapUrl(callId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<createSimulatedRecapResponseSuccess>(
+    getCreateSimulatedRecapUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createSimulatedRecapRequest),
     },
-    body: JSON.stringify(createSimulatedRecapRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: WrittenRecapResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getCreateSimulatedRecapQueryKey = (
-  callId: string,
-  createSimulatedRecapRequest?: CreateSimulatedRecapRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/recaps`,
-    createSimulatedRecapRequest,
-  ] as const;
-};
-
-export const getCreateSimulatedRecapQueryOptions = <
-  TData = Awaited<ReturnType<typeof createSimulatedRecap>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createSimulatedRecapRequest: CreateSimulatedRecapRequest,
-  headers: CreateSimulatedRecapHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createSimulatedRecap>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getCreateSimulatedRecapQueryKey(callId, createSimulatedRecapRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof createSimulatedRecap>>
-  > = ({ signal }) =>
-    createSimulatedRecap(callId, createSimulatedRecapRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: callId !== null && callId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getCreateSimulatedRecapMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createSimulatedRecap>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    CreateSimulatedRecapMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSimulatedRecap>>,
+  TError,
+  CreateSimulatedRecapMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createSimulatedRecap"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSimulatedRecap>>,
+    CreateSimulatedRecapMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return createSimulatedRecap(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type CreateSimulatedRecapQueryResult = NonNullable<
+export type CreateSimulatedRecapMutationResult = NonNullable<
   Awaited<ReturnType<typeof createSimulatedRecap>>
 >;
-export type CreateSimulatedRecapQueryError = ApiErrorResponse;
+export type CreateSimulatedRecapMutationBody = CreateSimulatedRecapRequest;
+export type CreateSimulatedRecapMutationError = ErrorType<ApiErrorResponse>;
+export type CreateSimulatedRecapMutationVariables = {
+  callId: string;
+  data: CreateSimulatedRecapRequest;
+  headers: CreateSimulatedRecapHeaders;
+};
 
-export function useCreateSimulatedRecap<
-  TData = Awaited<ReturnType<typeof createSimulatedRecap>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createSimulatedRecapRequest: CreateSimulatedRecapRequest,
-  headers: CreateSimulatedRecapHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createSimulatedRecap>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createSimulatedRecap>>,
-          TError,
-          Awaited<ReturnType<typeof createSimulatedRecap>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateSimulatedRecap<
-  TData = Awaited<ReturnType<typeof createSimulatedRecap>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createSimulatedRecapRequest: CreateSimulatedRecapRequest,
-  headers: CreateSimulatedRecapHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createSimulatedRecap>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createSimulatedRecap>>,
-          TError,
-          Awaited<ReturnType<typeof createSimulatedRecap>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateSimulatedRecap<
-  TData = Awaited<ReturnType<typeof createSimulatedRecap>>,
-  TError = ApiErrorResponse,
->(
-  callId: string,
-  createSimulatedRecapRequest: CreateSimulatedRecapRequest,
-  headers: CreateSimulatedRecapHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createSimulatedRecap>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Create Simulated Recap
  */
-
-export function useCreateSimulatedRecap<
-  TData = Awaited<ReturnType<typeof createSimulatedRecap>>,
-  TError = ApiErrorResponse,
+export const useCreateSimulatedRecap = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  callId: string,
-  createSimulatedRecapRequest: CreateSimulatedRecapRequest,
-  headers: CreateSimulatedRecapHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createSimulatedRecap>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSimulatedRecap>>,
+      TError,
+      CreateSimulatedRecapMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getCreateSimulatedRecapQueryOptions(
-    callId,
-    createSimulatedRecapRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSimulatedRecap>>,
+  TError,
+  CreateSimulatedRecapMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getCreateSimulatedRecapMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type acknowledgeNotificationResponse200 = {
+  data: CoordinatorNotificationResponse;
+  status: 200;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type acknowledgeNotificationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type acknowledgeNotificationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type acknowledgeNotificationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type acknowledgeNotificationResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type acknowledgeNotificationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type acknowledgeNotificationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type acknowledgeNotificationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type acknowledgeNotificationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type acknowledgeNotificationResponseSuccess =
+  acknowledgeNotificationResponse200 & {
+    headers: Headers;
+  };
+export type acknowledgeNotificationResponseError = (
+  | acknowledgeNotificationResponse401
+  | acknowledgeNotificationResponse403
+  | acknowledgeNotificationResponse404
+  | acknowledgeNotificationResponse409
+  | acknowledgeNotificationResponse422
+  | acknowledgeNotificationResponse429
+  | acknowledgeNotificationResponse500
+  | acknowledgeNotificationResponse501
+) & {
+  headers: Headers;
+};
 
 export const getAcknowledgeNotificationUrl = (notificationId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/notifications/${notificationId}/acknowledgements`;
@@ -1516,8 +1346,8 @@ export const acknowledgeNotification = async (
   notificationId: string,
   acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
   headers: AcknowledgeNotificationHeaders,
-  options?: RequestInit,
-): Promise<CoordinatorNotificationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<acknowledgeNotificationResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -1526,206 +1356,160 @@ export const acknowledgeNotification = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getAcknowledgeNotificationUrl(notificationId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<acknowledgeNotificationResponseSuccess>(
+    getAcknowledgeNotificationUrl(notificationId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(acknowledgeNotificationRequest),
     },
-    body: JSON.stringify(acknowledgeNotificationRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CoordinatorNotificationResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getAcknowledgeNotificationQueryKey = (
-  notificationId: string,
-  acknowledgeNotificationRequest?: AcknowledgeNotificationRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/notifications/${notificationId}/acknowledgements`,
-    acknowledgeNotificationRequest,
-  ] as const;
-};
-
-export const getAcknowledgeNotificationQueryOptions = <
-  TData = Awaited<ReturnType<typeof acknowledgeNotification>>,
-  TError = ApiErrorResponse,
->(
-  notificationId: string,
-  acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
-  headers: AcknowledgeNotificationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof acknowledgeNotification>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getAcknowledgeNotificationQueryKey(
-      notificationId,
-      acknowledgeNotificationRequest,
-    );
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof acknowledgeNotification>>
-  > = ({ signal }) =>
-    acknowledgeNotification(
-      notificationId,
-      acknowledgeNotificationRequest,
-      headers,
-      { signal, ...fetchOptions },
-    );
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: notificationId !== null && notificationId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getAcknowledgeNotificationMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof acknowledgeNotification>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    AcknowledgeNotificationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof acknowledgeNotification>>,
+  TError,
+  AcknowledgeNotificationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["acknowledgeNotification"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof acknowledgeNotification>>,
+    AcknowledgeNotificationMutationVariables
+  > = (props) => {
+    const { notificationId, data, headers } = props ?? {};
+
+    return acknowledgeNotification(
+      notificationId,
+      data,
+      headers,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type AcknowledgeNotificationQueryResult = NonNullable<
+export type AcknowledgeNotificationMutationResult = NonNullable<
   Awaited<ReturnType<typeof acknowledgeNotification>>
 >;
-export type AcknowledgeNotificationQueryError = ApiErrorResponse;
+export type AcknowledgeNotificationMutationBody =
+  AcknowledgeNotificationRequest;
+export type AcknowledgeNotificationMutationError = ErrorType<ApiErrorResponse>;
+export type AcknowledgeNotificationMutationVariables = {
+  notificationId: string;
+  data: AcknowledgeNotificationRequest;
+  headers: AcknowledgeNotificationHeaders;
+};
 
-export function useAcknowledgeNotification<
-  TData = Awaited<ReturnType<typeof acknowledgeNotification>>,
-  TError = ApiErrorResponse,
->(
-  notificationId: string,
-  acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
-  headers: AcknowledgeNotificationHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof acknowledgeNotification>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof acknowledgeNotification>>,
-          TError,
-          Awaited<ReturnType<typeof acknowledgeNotification>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useAcknowledgeNotification<
-  TData = Awaited<ReturnType<typeof acknowledgeNotification>>,
-  TError = ApiErrorResponse,
->(
-  notificationId: string,
-  acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
-  headers: AcknowledgeNotificationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof acknowledgeNotification>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof acknowledgeNotification>>,
-          TError,
-          Awaited<ReturnType<typeof acknowledgeNotification>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useAcknowledgeNotification<
-  TData = Awaited<ReturnType<typeof acknowledgeNotification>>,
-  TError = ApiErrorResponse,
->(
-  notificationId: string,
-  acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
-  headers: AcknowledgeNotificationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof acknowledgeNotification>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Acknowledge Notification
  */
-
-export function useAcknowledgeNotification<
-  TData = Awaited<ReturnType<typeof acknowledgeNotification>>,
-  TError = ApiErrorResponse,
+export const useAcknowledgeNotification = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  notificationId: string,
-  acknowledgeNotificationRequest: AcknowledgeNotificationRequest,
-  headers: AcknowledgeNotificationHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof acknowledgeNotification>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof acknowledgeNotification>>,
+      TError,
+      AcknowledgeNotificationMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getAcknowledgeNotificationQueryOptions(
-    notificationId,
-    acknowledgeNotificationRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof acknowledgeNotification>>,
+  TError,
+  AcknowledgeNotificationMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getAcknowledgeNotificationMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type createOperationDraftResponse201 = {
+  data: OperationDraftResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type createOperationDraftResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createOperationDraftResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createOperationDraftResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createOperationDraftResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createOperationDraftResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createOperationDraftResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createOperationDraftResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type createOperationDraftResponseSuccess =
+  createOperationDraftResponse201 & {
+    headers: Headers;
+  };
+export type createOperationDraftResponseError = (
+  | createOperationDraftResponse401
+  | createOperationDraftResponse403
+  | createOperationDraftResponse409
+  | createOperationDraftResponse422
+  | createOperationDraftResponse429
+  | createOperationDraftResponse500
+  | createOperationDraftResponse501
+) & {
+  headers: Headers;
+};
 
 export const getCreateOperationDraftUrl = () => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operation-drafts`;
@@ -1737,8 +1521,8 @@ export const getCreateOperationDraftUrl = () => {
 export const createOperationDraft = async (
   createOperationDraftRequest: CreateOperationDraftRequest,
   headers: CreateOperationDraftHeaders,
-  options?: RequestInit,
-): Promise<OperationDraftResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createOperationDraftResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -1747,189 +1531,158 @@ export const createOperationDraft = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getCreateOperationDraftUrl(), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<createOperationDraftResponseSuccess>(
+    getCreateOperationDraftUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createOperationDraftRequest),
     },
-    body: JSON.stringify(createOperationDraftRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: OperationDraftResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getCreateOperationDraftQueryKey = (
-  createOperationDraftRequest?: CreateOperationDraftRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operation-drafts`,
-    createOperationDraftRequest,
-  ] as const;
-};
-
-export const getCreateOperationDraftQueryOptions = <
-  TData = Awaited<ReturnType<typeof createOperationDraft>>,
-  TError = ApiErrorResponse,
->(
-  createOperationDraftRequest: CreateOperationDraftRequest,
-  headers: CreateOperationDraftHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createOperationDraft>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getCreateOperationDraftQueryKey(createOperationDraftRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof createOperationDraft>>
-  > = ({ signal }) =>
-    createOperationDraft(createOperationDraftRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+export const getCreateOperationDraftMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof createOperationDraft>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    CreateOperationDraftMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOperationDraft>>,
+  TError,
+  CreateOperationDraftMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createOperationDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOperationDraft>>,
+    CreateOperationDraftMutationVariables
+  > = (props) => {
+    const { data, headers } = props ?? {};
+
+    return createOperationDraft(data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type CreateOperationDraftQueryResult = NonNullable<
+export type CreateOperationDraftMutationResult = NonNullable<
   Awaited<ReturnType<typeof createOperationDraft>>
 >;
-export type CreateOperationDraftQueryError = ApiErrorResponse;
+export type CreateOperationDraftMutationBody = CreateOperationDraftRequest;
+export type CreateOperationDraftMutationError = ErrorType<ApiErrorResponse>;
+export type CreateOperationDraftMutationVariables = {
+  data: CreateOperationDraftRequest;
+  headers: CreateOperationDraftHeaders;
+};
 
-export function useCreateOperationDraft<
-  TData = Awaited<ReturnType<typeof createOperationDraft>>,
-  TError = ApiErrorResponse,
->(
-  createOperationDraftRequest: CreateOperationDraftRequest,
-  headers: CreateOperationDraftHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createOperationDraft>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createOperationDraft>>,
-          TError,
-          Awaited<ReturnType<typeof createOperationDraft>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateOperationDraft<
-  TData = Awaited<ReturnType<typeof createOperationDraft>>,
-  TError = ApiErrorResponse,
->(
-  createOperationDraftRequest: CreateOperationDraftRequest,
-  headers: CreateOperationDraftHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createOperationDraft>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof createOperationDraft>>,
-          TError,
-          Awaited<ReturnType<typeof createOperationDraft>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useCreateOperationDraft<
-  TData = Awaited<ReturnType<typeof createOperationDraft>>,
-  TError = ApiErrorResponse,
->(
-  createOperationDraftRequest: CreateOperationDraftRequest,
-  headers: CreateOperationDraftHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createOperationDraft>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Create Operation Draft
  */
-
-export function useCreateOperationDraft<
-  TData = Awaited<ReturnType<typeof createOperationDraft>>,
-  TError = ApiErrorResponse,
+export const useCreateOperationDraft = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  createOperationDraftRequest: CreateOperationDraftRequest,
-  headers: CreateOperationDraftHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof createOperationDraft>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createOperationDraft>>,
+      TError,
+      CreateOperationDraftMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getCreateOperationDraftQueryOptions(
-    createOperationDraftRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createOperationDraft>>,
+  TError,
+  CreateOperationDraftMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getCreateOperationDraftMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type approveOperationResponse201 = {
+  data: OperationResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type approveOperationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type approveOperationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type approveOperationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type approveOperationResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type approveOperationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type approveOperationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type approveOperationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type approveOperationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type approveOperationResponseSuccess = approveOperationResponse201 & {
+  headers: Headers;
+};
+export type approveOperationResponseError = (
+  | approveOperationResponse401
+  | approveOperationResponse403
+  | approveOperationResponse404
+  | approveOperationResponse409
+  | approveOperationResponse422
+  | approveOperationResponse429
+  | approveOperationResponse500
+  | approveOperationResponse501
+) & {
+  headers: Headers;
+};
 
 export const getApproveOperationUrl = () => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations`;
@@ -1941,8 +1694,8 @@ export const getApproveOperationUrl = () => {
 export const approveOperation = async (
   approveOperationRequest: ApproveOperationRequest,
   headers: ApproveOperationHeaders,
-  options?: RequestInit,
-): Promise<OperationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<approveOperationResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -1951,7 +1704,7 @@ export const approveOperation = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getApproveOperationUrl(), {
+  return voltaFetch<approveOperationResponseSuccess>(getApproveOperationUrl(), {
     ...options,
     method: "POST",
     headers: {
@@ -1961,179 +1714,136 @@ export const approveOperation = async (
     },
     body: JSON.stringify(approveOperationRequest),
   });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: OperationResponse = body ? JSON.parse(body) : {};
-  return data;
 };
 
-export const getApproveOperationQueryKey = (
-  approveOperationRequest?: ApproveOperationRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations`,
-    approveOperationRequest,
-  ] as const;
-};
-
-export const getApproveOperationQueryOptions = <
-  TData = Awaited<ReturnType<typeof approveOperation>>,
-  TError = ApiErrorResponse,
->(
-  approveOperationRequest: ApproveOperationRequest,
-  headers: ApproveOperationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof approveOperation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getApproveOperationQueryKey(approveOperationRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof approveOperation>>
-  > = ({ signal }) =>
-    approveOperation(approveOperationRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+export const getApproveOperationMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof approveOperation>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    ApproveOperationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveOperation>>,
+  TError,
+  ApproveOperationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["approveOperation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveOperation>>,
+    ApproveOperationMutationVariables
+  > = (props) => {
+    const { data, headers } = props ?? {};
+
+    return approveOperation(data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type ApproveOperationQueryResult = NonNullable<
+export type ApproveOperationMutationResult = NonNullable<
   Awaited<ReturnType<typeof approveOperation>>
 >;
-export type ApproveOperationQueryError = ApiErrorResponse;
+export type ApproveOperationMutationBody = ApproveOperationRequest;
+export type ApproveOperationMutationError = ErrorType<ApiErrorResponse>;
+export type ApproveOperationMutationVariables = {
+  data: ApproveOperationRequest;
+  headers: ApproveOperationHeaders;
+};
 
-export function useApproveOperation<
-  TData = Awaited<ReturnType<typeof approveOperation>>,
-  TError = ApiErrorResponse,
->(
-  approveOperationRequest: ApproveOperationRequest,
-  headers: ApproveOperationHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof approveOperation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof approveOperation>>,
-          TError,
-          Awaited<ReturnType<typeof approveOperation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useApproveOperation<
-  TData = Awaited<ReturnType<typeof approveOperation>>,
-  TError = ApiErrorResponse,
->(
-  approveOperationRequest: ApproveOperationRequest,
-  headers: ApproveOperationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof approveOperation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof approveOperation>>,
-          TError,
-          Awaited<ReturnType<typeof approveOperation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useApproveOperation<
-  TData = Awaited<ReturnType<typeof approveOperation>>,
-  TError = ApiErrorResponse,
->(
-  approveOperationRequest: ApproveOperationRequest,
-  headers: ApproveOperationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof approveOperation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Approve Operation
  */
-
-export function useApproveOperation<
-  TData = Awaited<ReturnType<typeof approveOperation>>,
-  TError = ApiErrorResponse,
+export const useApproveOperation = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  approveOperationRequest: ApproveOperationRequest,
-  headers: ApproveOperationHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof approveOperation>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof approveOperation>>,
+      TError,
+      ApproveOperationMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getApproveOperationQueryOptions(
-    approveOperationRequest,
-    headers,
-    options,
-  );
+): UseMutationResult<
+  Awaited<ReturnType<typeof approveOperation>>,
+  TError,
+  ApproveOperationMutationVariables,
+  TContext
+> => {
+  return useMutation(getApproveOperationMutationOptions(options), queryClient);
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type getOperationResponse200 = {
+  data: OperationResponse;
+  status: 200;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type getOperationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type getOperationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type getOperationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type getOperationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type getOperationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type getOperationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type getOperationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type getOperationResponseSuccess = getOperationResponse200 & {
+  headers: Headers;
+};
+export type getOperationResponseError = (
+  | getOperationResponse401
+  | getOperationResponse403
+  | getOperationResponse404
+  | getOperationResponse422
+  | getOperationResponse429
+  | getOperationResponse500
+  | getOperationResponse501
+) & {
+  headers: Headers;
+};
 
 export const getGetOperationUrl = (operationId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}`;
@@ -2144,17 +1854,15 @@ export const getGetOperationUrl = (operationId: string) => {
  */
 export const getOperation = async (
   operationId: string,
-  options?: RequestInit,
-): Promise<OperationResponse> => {
-  const res = await fetch(getGetOperationUrl(operationId), {
-    ...options,
-    method: "GET",
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: OperationResponse = body ? JSON.parse(body) : {};
-  return data;
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getOperationResponseSuccess> => {
+  return voltaFetch<getOperationResponseSuccess>(
+    getGetOperationUrl(operationId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getGetOperationQueryKey = (operationId: string) => {
@@ -2165,24 +1873,24 @@ export const getGetOperationQueryKey = (operationId: string) => {
 
 export const getGetOperationQueryOptions = <
   TData = Awaited<ReturnType<typeof getOperation>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof getOperation>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
     queryOptions?.queryKey ?? getGetOperationQueryKey(operationId);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof getOperation>>> = ({
     signal,
-  }) => getOperation(operationId, { signal, ...fetchOptions });
+  }) => getOperation(operationId, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -2199,11 +1907,11 @@ export const getGetOperationQueryOptions = <
 export type GetOperationQueryResult = NonNullable<
   Awaited<ReturnType<typeof getOperation>>
 >;
-export type GetOperationQueryError = ApiErrorResponse;
+export type GetOperationQueryError = ErrorType<ApiErrorResponse>;
 
 export function useGetOperation<
   TData = Awaited<ReturnType<typeof getOperation>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   options: {
@@ -2218,7 +1926,7 @@ export function useGetOperation<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & {
@@ -2226,7 +1934,7 @@ export function useGetOperation<
 };
 export function useGetOperation<
   TData = Awaited<ReturnType<typeof getOperation>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   options?: {
@@ -2241,7 +1949,7 @@ export function useGetOperation<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2249,14 +1957,14 @@ export function useGetOperation<
 };
 export function useGetOperation<
   TData = Awaited<ReturnType<typeof getOperation>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof getOperation>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2268,14 +1976,14 @@ export function useGetOperation<
 
 export function useGetOperation<
   TData = Awaited<ReturnType<typeof getOperation>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   options?: {
     query?: Partial<
       UseQueryOptions<Awaited<ReturnType<typeof getOperation>>, TError, TData>
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2290,6 +1998,61 @@ export function useGetOperation<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+export type getOperationAuditResponse200 = {
+  data: AuditTimelineResponse;
+  status: 200;
+};
+
+export type getOperationAuditResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type getOperationAuditResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type getOperationAuditResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type getOperationAuditResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type getOperationAuditResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type getOperationAuditResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type getOperationAuditResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type getOperationAuditResponseSuccess = getOperationAuditResponse200 & {
+  headers: Headers;
+};
+export type getOperationAuditResponseError = (
+  | getOperationAuditResponse401
+  | getOperationAuditResponse403
+  | getOperationAuditResponse404
+  | getOperationAuditResponse422
+  | getOperationAuditResponse429
+  | getOperationAuditResponse500
+  | getOperationAuditResponse501
+) & {
+  headers: Headers;
+};
 
 export const getGetOperationAuditUrl = (
   operationId: string,
@@ -2316,17 +2079,15 @@ export const getGetOperationAuditUrl = (
 export const getOperationAudit = async (
   operationId: string,
   params?: GetOperationAuditParams,
-  options?: RequestInit,
-): Promise<AuditTimelineResponse> => {
-  const res = await fetch(getGetOperationAuditUrl(operationId, params), {
-    ...options,
-    method: "GET",
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: AuditTimelineResponse = body ? JSON.parse(body) : {};
-  return data;
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getOperationAuditResponseSuccess> => {
+  return voltaFetch<getOperationAuditResponseSuccess>(
+    getGetOperationAuditUrl(operationId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
 };
 
 export const getGetOperationAuditQueryKey = (
@@ -2341,7 +2102,7 @@ export const getGetOperationAuditQueryKey = (
 
 export const getGetOperationAuditQueryOptions = <
   TData = Awaited<ReturnType<typeof getOperationAudit>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   params?: GetOperationAuditParams,
@@ -2353,10 +2114,10 @@ export const getGetOperationAuditQueryOptions = <
         TData
       >
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
 ) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
+  const { query: queryOptions, request: requestOptions } = options ?? {};
 
   const queryKey =
     queryOptions?.queryKey ?? getGetOperationAuditQueryKey(operationId, params);
@@ -2364,7 +2125,7 @@ export const getGetOperationAuditQueryOptions = <
   const queryFn: QueryFunction<
     Awaited<ReturnType<typeof getOperationAudit>>
   > = ({ signal }) =>
-    getOperationAudit(operationId, params, { signal, ...fetchOptions });
+    getOperationAudit(operationId, params, { signal, ...requestOptions });
 
   return {
     queryKey,
@@ -2381,11 +2142,11 @@ export const getGetOperationAuditQueryOptions = <
 export type GetOperationAuditQueryResult = NonNullable<
   Awaited<ReturnType<typeof getOperationAudit>>
 >;
-export type GetOperationAuditQueryError = ApiErrorResponse;
+export type GetOperationAuditQueryError = ErrorType<ApiErrorResponse>;
 
 export function useGetOperationAudit<
   TData = Awaited<ReturnType<typeof getOperationAudit>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   params: undefined | GetOperationAuditParams,
@@ -2405,7 +2166,7 @@ export function useGetOperationAudit<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): DefinedUseQueryResult<TData, TError> & {
@@ -2413,7 +2174,7 @@ export function useGetOperationAudit<
 };
 export function useGetOperationAudit<
   TData = Awaited<ReturnType<typeof getOperationAudit>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   params?: GetOperationAuditParams,
@@ -2433,7 +2194,7 @@ export function useGetOperationAudit<
         >,
         "initialData"
       >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2441,7 +2202,7 @@ export function useGetOperationAudit<
 };
 export function useGetOperationAudit<
   TData = Awaited<ReturnType<typeof getOperationAudit>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   params?: GetOperationAuditParams,
@@ -2453,7 +2214,7 @@ export function useGetOperationAudit<
         TData
       >
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2465,7 +2226,7 @@ export function useGetOperationAudit<
 
 export function useGetOperationAudit<
   TData = Awaited<ReturnType<typeof getOperationAudit>>,
-  TError = ApiErrorResponse,
+  TError = ErrorType<ApiErrorResponse>,
 >(
   operationId: string,
   params?: GetOperationAuditParams,
@@ -2477,7 +2238,7 @@ export function useGetOperationAudit<
         TData
       >
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
 ): UseQueryResult<TData, TError> & {
@@ -2497,6 +2258,68 @@ export function useGetOperationAudit<
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+export type startInboundSimulationResponse201 = {
+  data: RecoverySimulationResponse;
+  status: 201;
+};
+
+export type startInboundSimulationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type startInboundSimulationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type startInboundSimulationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type startInboundSimulationResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type startInboundSimulationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type startInboundSimulationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type startInboundSimulationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type startInboundSimulationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type startInboundSimulationResponseSuccess =
+  startInboundSimulationResponse201 & {
+    headers: Headers;
+  };
+export type startInboundSimulationResponseError = (
+  | startInboundSimulationResponse401
+  | startInboundSimulationResponse403
+  | startInboundSimulationResponse404
+  | startInboundSimulationResponse409
+  | startInboundSimulationResponse422
+  | startInboundSimulationResponse429
+  | startInboundSimulationResponse500
+  | startInboundSimulationResponse501
+) & {
+  headers: Headers;
+};
+
 export const getStartInboundSimulationUrl = (operationId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/inbound-simulations`;
 };
@@ -2508,8 +2331,8 @@ export const startInboundSimulation = async (
   operationId: string,
   startInboundSimulationRequest: StartInboundSimulationRequest,
   headers: StartInboundSimulationHeaders,
-  options?: RequestInit,
-): Promise<RecoverySimulationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<startInboundSimulationResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -2518,206 +2341,159 @@ export const startInboundSimulation = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getStartInboundSimulationUrl(operationId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<startInboundSimulationResponseSuccess>(
+    getStartInboundSimulationUrl(operationId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(startInboundSimulationRequest),
     },
-    body: JSON.stringify(startInboundSimulationRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: RecoverySimulationResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getStartInboundSimulationQueryKey = (
-  operationId: string,
-  startInboundSimulationRequest?: StartInboundSimulationRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/inbound-simulations`,
-    startInboundSimulationRequest,
-  ] as const;
-};
-
-export const getStartInboundSimulationQueryOptions = <
-  TData = Awaited<ReturnType<typeof startInboundSimulation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startInboundSimulationRequest: StartInboundSimulationRequest,
-  headers: StartInboundSimulationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startInboundSimulation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getStartInboundSimulationQueryKey(
-      operationId,
-      startInboundSimulationRequest,
-    );
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof startInboundSimulation>>
-  > = ({ signal }) =>
-    startInboundSimulation(
-      operationId,
-      startInboundSimulationRequest,
-      headers,
-      { signal, ...fetchOptions },
-    );
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: operationId !== null && operationId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getStartInboundSimulationMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof startInboundSimulation>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    StartInboundSimulationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startInboundSimulation>>,
+  TError,
+  StartInboundSimulationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["startInboundSimulation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startInboundSimulation>>,
+    StartInboundSimulationMutationVariables
+  > = (props) => {
+    const { operationId, data, headers } = props ?? {};
+
+    return startInboundSimulation(operationId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type StartInboundSimulationQueryResult = NonNullable<
+export type StartInboundSimulationMutationResult = NonNullable<
   Awaited<ReturnType<typeof startInboundSimulation>>
 >;
-export type StartInboundSimulationQueryError = ApiErrorResponse;
+export type StartInboundSimulationMutationBody = StartInboundSimulationRequest;
+export type StartInboundSimulationMutationError = ErrorType<ApiErrorResponse>;
+export type StartInboundSimulationMutationVariables = {
+  operationId: string;
+  data: StartInboundSimulationRequest;
+  headers: StartInboundSimulationHeaders;
+};
 
-export function useStartInboundSimulation<
-  TData = Awaited<ReturnType<typeof startInboundSimulation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startInboundSimulationRequest: StartInboundSimulationRequest,
-  headers: StartInboundSimulationHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startInboundSimulation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof startInboundSimulation>>,
-          TError,
-          Awaited<ReturnType<typeof startInboundSimulation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStartInboundSimulation<
-  TData = Awaited<ReturnType<typeof startInboundSimulation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startInboundSimulationRequest: StartInboundSimulationRequest,
-  headers: StartInboundSimulationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startInboundSimulation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof startInboundSimulation>>,
-          TError,
-          Awaited<ReturnType<typeof startInboundSimulation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStartInboundSimulation<
-  TData = Awaited<ReturnType<typeof startInboundSimulation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startInboundSimulationRequest: StartInboundSimulationRequest,
-  headers: StartInboundSimulationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startInboundSimulation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Start Inbound Simulation
  */
-
-export function useStartInboundSimulation<
-  TData = Awaited<ReturnType<typeof startInboundSimulation>>,
-  TError = ApiErrorResponse,
+export const useStartInboundSimulation = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  operationId: string,
-  startInboundSimulationRequest: StartInboundSimulationRequest,
-  headers: StartInboundSimulationHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startInboundSimulation>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof startInboundSimulation>>,
+      TError,
+      StartInboundSimulationMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getStartInboundSimulationQueryOptions(
-    operationId,
-    startInboundSimulationRequest,
-    headers,
-    options,
+): UseMutationResult<
+  Awaited<ReturnType<typeof startInboundSimulation>>,
+  TError,
+  StartInboundSimulationMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getStartInboundSimulationMutationOptions(options),
+    queryClient,
   );
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type replaceMandateResponse201 = {
+  data: OperationResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type replaceMandateResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type replaceMandateResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type replaceMandateResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type replaceMandateResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type replaceMandateResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type replaceMandateResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type replaceMandateResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type replaceMandateResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type replaceMandateResponseSuccess = replaceMandateResponse201 & {
+  headers: Headers;
+};
+export type replaceMandateResponseError = (
+  | replaceMandateResponse401
+  | replaceMandateResponse403
+  | replaceMandateResponse404
+  | replaceMandateResponse409
+  | replaceMandateResponse422
+  | replaceMandateResponse429
+  | replaceMandateResponse500
+  | replaceMandateResponse501
+) & {
+  headers: Headers;
+};
 
 export const getReplaceMandateUrl = (operationId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/mandates`;
@@ -2730,8 +2506,8 @@ export const replaceMandate = async (
   operationId: string,
   replaceMandateRequest: ReplaceMandateRequest,
   headers: ReplaceMandateHeaders,
-  options?: RequestInit,
-): Promise<OperationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<replaceMandateResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -2740,181 +2516,156 @@ export const replaceMandate = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getReplaceMandateUrl(operationId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<replaceMandateResponseSuccess>(
+    getReplaceMandateUrl(operationId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(replaceMandateRequest),
     },
-    body: JSON.stringify(replaceMandateRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: OperationResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getReplaceMandateQueryKey = (
-  operationId: string,
-  replaceMandateRequest?: ReplaceMandateRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/mandates`,
-    replaceMandateRequest,
-  ] as const;
-};
-
-export const getReplaceMandateQueryOptions = <
-  TData = Awaited<ReturnType<typeof replaceMandate>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  replaceMandateRequest: ReplaceMandateRequest,
-  headers: ReplaceMandateHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof replaceMandate>>, TError, TData>
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getReplaceMandateQueryKey(operationId, replaceMandateRequest);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof replaceMandate>>> = ({
-    signal,
-  }) =>
-    replaceMandate(operationId, replaceMandateRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: operationId !== null && operationId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getReplaceMandateMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof replaceMandate>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    ReplaceMandateMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof replaceMandate>>,
+  TError,
+  ReplaceMandateMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["replaceMandate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof replaceMandate>>,
+    ReplaceMandateMutationVariables
+  > = (props) => {
+    const { operationId, data, headers } = props ?? {};
+
+    return replaceMandate(operationId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type ReplaceMandateQueryResult = NonNullable<
+export type ReplaceMandateMutationResult = NonNullable<
   Awaited<ReturnType<typeof replaceMandate>>
 >;
-export type ReplaceMandateQueryError = ApiErrorResponse;
+export type ReplaceMandateMutationBody = ReplaceMandateRequest;
+export type ReplaceMandateMutationError = ErrorType<ApiErrorResponse>;
+export type ReplaceMandateMutationVariables = {
+  operationId: string;
+  data: ReplaceMandateRequest;
+  headers: ReplaceMandateHeaders;
+};
 
-export function useReplaceMandate<
-  TData = Awaited<ReturnType<typeof replaceMandate>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  replaceMandateRequest: ReplaceMandateRequest,
-  headers: ReplaceMandateHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof replaceMandate>>, TError, TData>
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof replaceMandate>>,
-          TError,
-          Awaited<ReturnType<typeof replaceMandate>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useReplaceMandate<
-  TData = Awaited<ReturnType<typeof replaceMandate>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  replaceMandateRequest: ReplaceMandateRequest,
-  headers: ReplaceMandateHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof replaceMandate>>, TError, TData>
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof replaceMandate>>,
-          TError,
-          Awaited<ReturnType<typeof replaceMandate>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useReplaceMandate<
-  TData = Awaited<ReturnType<typeof replaceMandate>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  replaceMandateRequest: ReplaceMandateRequest,
-  headers: ReplaceMandateHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof replaceMandate>>, TError, TData>
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Replace Mandate
  */
-
-export function useReplaceMandate<
-  TData = Awaited<ReturnType<typeof replaceMandate>>,
-  TError = ApiErrorResponse,
+export const useReplaceMandate = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  operationId: string,
-  replaceMandateRequest: ReplaceMandateRequest,
-  headers: ReplaceMandateHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<Awaited<ReturnType<typeof replaceMandate>>, TError, TData>
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof replaceMandate>>,
+      TError,
+      ReplaceMandateMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getReplaceMandateQueryOptions(
-    operationId,
-    replaceMandateRequest,
-    headers,
-    options,
-  );
+): UseMutationResult<
+  Awaited<ReturnType<typeof replaceMandate>>,
+  TError,
+  ReplaceMandateMutationVariables,
+  TContext
+> => {
+  return useMutation(getReplaceMandateMutationOptions(options), queryClient);
+};
 
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+export type startNegotiationResponse201 = {
+  data: NegotiationResponse;
+  status: 201;
+};
 
-  return withQueryKey(query, queryOptions.queryKey);
-}
+export type startNegotiationResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type startNegotiationResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type startNegotiationResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type startNegotiationResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type startNegotiationResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type startNegotiationResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type startNegotiationResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type startNegotiationResponse501 = {
+  data: ApiErrorResponse;
+  status: 501;
+};
+
+export type startNegotiationResponseSuccess = startNegotiationResponse201 & {
+  headers: Headers;
+};
+export type startNegotiationResponseError = (
+  | startNegotiationResponse401
+  | startNegotiationResponse403
+  | startNegotiationResponse404
+  | startNegotiationResponse409
+  | startNegotiationResponse422
+  | startNegotiationResponse429
+  | startNegotiationResponse500
+  | startNegotiationResponse501
+) & {
+  headers: Headers;
+};
 
 export const getStartNegotiationUrl = (operationId: string) => {
   return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/negotiations`;
@@ -2927,8 +2678,8 @@ export const startNegotiation = async (
   operationId: string,
   startNegotiationRequest: StartNegotiationRequest,
   headers: StartNegotiationHeaders,
-  options?: RequestInit,
-): Promise<NegotiationResponse> => {
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<startNegotiationResponseSuccess> => {
   const getHeaders = (
     h?: NonNullable<RequestInit["headers"]>,
   ): Record<string, string | readonly string[]> => {
@@ -2937,198 +2688,92 @@ export const startNegotiation = async (
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  const res = await fetch(getStartNegotiationUrl(operationId), {
-    ...options,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-      ...getHeaders(options?.headers),
+  return voltaFetch<startNegotiationResponseSuccess>(
+    getStartNegotiationUrl(operationId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(startNegotiationRequest),
     },
-    body: JSON.stringify(startNegotiationRequest),
-  });
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: NegotiationResponse = body ? JSON.parse(body) : {};
-  return data;
+  );
 };
 
-export const getStartNegotiationQueryKey = (
-  operationId: string,
-  startNegotiationRequest?: StartNegotiationRequest,
-) => {
-  return [
-    "POST",
-    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/negotiations`,
-    startNegotiationRequest,
-  ] as const;
-};
-
-export const getStartNegotiationQueryOptions = <
-  TData = Awaited<ReturnType<typeof startNegotiation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startNegotiationRequest: StartNegotiationRequest,
-  headers: StartNegotiationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startNegotiation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-) => {
-  const { query: queryOptions, fetch: fetchOptions } = options ?? {};
-
-  const queryKey =
-    queryOptions?.queryKey ??
-    getStartNegotiationQueryKey(operationId, startNegotiationRequest);
-
-  const queryFn: QueryFunction<
-    Awaited<ReturnType<typeof startNegotiation>>
-  > = ({ signal }) =>
-    startNegotiation(operationId, startNegotiationRequest, headers, {
-      signal,
-      ...fetchOptions,
-    });
-
-  return {
-    queryKey,
-    queryFn,
-    enabled: operationId !== null && operationId !== undefined,
-    ...queryOptions,
-  } as UseQueryOptions<
+export const getStartNegotiationMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof startNegotiation>>,
     TError,
-    TData
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
+    StartNegotiationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startNegotiation>>,
+  TError,
+  StartNegotiationMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["startNegotiation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startNegotiation>>,
+    StartNegotiationMutationVariables
+  > = (props) => {
+    const { operationId, data, headers } = props ?? {};
+
+    return startNegotiation(operationId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
 };
 
-export type StartNegotiationQueryResult = NonNullable<
+export type StartNegotiationMutationResult = NonNullable<
   Awaited<ReturnType<typeof startNegotiation>>
 >;
-export type StartNegotiationQueryError = ApiErrorResponse;
+export type StartNegotiationMutationBody = StartNegotiationRequest;
+export type StartNegotiationMutationError = ErrorType<ApiErrorResponse>;
+export type StartNegotiationMutationVariables = {
+  operationId: string;
+  data: StartNegotiationRequest;
+  headers: StartNegotiationHeaders;
+};
 
-export function useStartNegotiation<
-  TData = Awaited<ReturnType<typeof startNegotiation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startNegotiationRequest: StartNegotiationRequest,
-  headers: StartNegotiationHeaders,
-  options: {
-    query: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startNegotiation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof startNegotiation>>,
-          TError,
-          Awaited<ReturnType<typeof startNegotiation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): DefinedUseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStartNegotiation<
-  TData = Awaited<ReturnType<typeof startNegotiation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startNegotiationRequest: StartNegotiationRequest,
-  headers: StartNegotiationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startNegotiation>>,
-        TError,
-        TData
-      >
-    > &
-      Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof startNegotiation>>,
-          TError,
-          Awaited<ReturnType<typeof startNegotiation>>
-        >,
-        "initialData"
-      >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
-export function useStartNegotiation<
-  TData = Awaited<ReturnType<typeof startNegotiation>>,
-  TError = ApiErrorResponse,
->(
-  operationId: string,
-  startNegotiationRequest: StartNegotiationRequest,
-  headers: StartNegotiationHeaders,
-  options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startNegotiation>>,
-        TError,
-        TData
-      >
-    >;
-    fetch?: RequestInit;
-  },
-  queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-};
 /**
  * @summary Start Negotiation
  */
-
-export function useStartNegotiation<
-  TData = Awaited<ReturnType<typeof startNegotiation>>,
-  TError = ApiErrorResponse,
+export const useStartNegotiation = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
 >(
-  operationId: string,
-  startNegotiationRequest: StartNegotiationRequest,
-  headers: StartNegotiationHeaders,
   options?: {
-    query?: Partial<
-      UseQueryOptions<
-        Awaited<ReturnType<typeof startNegotiation>>,
-        TError,
-        TData
-      >
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof startNegotiation>>,
+      TError,
+      StartNegotiationMutationVariables,
+      TContext
     >;
-    fetch?: RequestInit;
+    request?: SecondParameter<typeof voltaFetch>;
   },
   queryClient?: QueryClient,
-): UseQueryResult<TData, TError> & {
-  queryKey: DataTag<QueryKey, TData, TError>;
-} {
-  const queryOptions = getStartNegotiationQueryOptions(
-    operationId,
-    startNegotiationRequest,
-    headers,
-    options,
-  );
-
-  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
-    TData,
-    TError
-  > & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
+): UseMutationResult<
+  Awaited<ReturnType<typeof startNegotiation>>,
+  TError,
+  StartNegotiationMutationVariables,
+  TContext
+> => {
+  return useMutation(getStartNegotiationMutationOptions(options), queryClient);
+};

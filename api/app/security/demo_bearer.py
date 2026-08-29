@@ -22,14 +22,23 @@ def settings_from_request(request: Request) -> Settings:
 
 
 def require_demo_bearer(
+    request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     settings: Annotated[Settings, Depends(settings_from_request)],
 ) -> None:
-    if credentials is None:
+    authorization = request.headers.get("authorization")
+    if authorization is None:
         raise ContractServiceError(
             status_code=401,
             code=ApiErrorCode.AUTHENTICATION_REQUIRED,
             message="Bearer authentication is required.",
+        )
+
+    if credentials is None:
+        raise ContractServiceError(
+            status_code=401,
+            code=ApiErrorCode.AUTHENTICATION_INVALID,
+            message="Bearer authentication is invalid.",
         )
 
     configured_token = settings.volta_demo_bearer_token.get_secret_value()

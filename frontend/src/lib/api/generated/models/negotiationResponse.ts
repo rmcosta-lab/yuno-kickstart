@@ -11,7 +11,10 @@ import type { EscalationResponse } from "./escalationResponse";
 export type NegotiationResponse = {
   negotiation_id: string;
   operation_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   operation_version: number;
   pre_contact_escalation?: EscalationResponse | null;
   /** @maxItems 3 */

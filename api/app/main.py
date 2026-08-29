@@ -8,11 +8,11 @@ from app.config import Settings, get_settings
 from app.contract_service import ContractServiceError
 from app.errors import (
     contract_service_error_handler,
-    unexpected_error_handler,
     validation_error_handler,
 )
 from app.logging import configure_logging
 from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.unexpected_errors import UnexpectedErrorMiddleware
 from app.routers.contracts import router as contracts_router
 from app.routers.health import router as health_router
 
@@ -29,7 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = resolved_settings
     application.add_exception_handler(ContractServiceError, contract_service_error_handler)
     application.add_exception_handler(RequestValidationError, validation_error_handler)
-    application.add_exception_handler(Exception, unexpected_error_handler)
+    application.add_middleware(UnexpectedErrorMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.cors_origins,

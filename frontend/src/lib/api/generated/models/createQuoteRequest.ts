@@ -9,9 +9,15 @@ import type { QuoteTermsRequest } from "./quoteTermsRequest";
 
 export type CreateQuoteRequest = {
   carrier_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   mandate_version: number;
   terms: QuoteTermsRequest;
   valid_until: string;

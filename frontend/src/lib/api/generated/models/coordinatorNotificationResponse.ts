@@ -5,6 +5,7 @@
  * Thin HTTP contract boundary for the Volta hackathon demo.
  * OpenAPI spec version: 0.1.0
  */
+import type { RecoveryDecisionResponse } from "./recoveryDecisionResponse";
 
 export type CoordinatorNotificationResponse = {
   acknowledged: boolean;
@@ -19,4 +20,10 @@ export type CoordinatorNotificationResponse = {
   message: string;
   notification_id: string;
   operation_id: string;
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
+  operation_version: number;
+  recovery_decision: RecoveryDecisionResponse;
 };

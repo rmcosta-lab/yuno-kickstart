@@ -7,14 +7,20 @@
  */
 
 export type CreateCommitmentEvidenceRequest = {
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   audio_start_ms: number;
   /**
    * @minLength 1
    * @maxLength 255
    */
   event_id: string;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
   /**
    * @minLength 1

@@ -9,6 +9,9 @@ import type { BrowserChannel } from "./browserChannel";
 
 export type StartNegotiationRequest = {
   channel: BrowserChannel;
-  /** @minimum 1 */
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
   expected_operation_version: number;
 };

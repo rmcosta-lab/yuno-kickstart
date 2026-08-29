@@ -23,6 +23,7 @@ def api_error_response(
     message: str,
     field_issues: list[FieldIssue] | None = None,
     resource_id: UUID | None = None,
+    current_draft_version: int | None = None,
     current_operation_version: int | None = None,
 ) -> JSONResponse:
     body = ApiErrorResponse(
@@ -31,9 +32,15 @@ def api_error_response(
         request_id=request_id_from(request),
         field_issues=field_issues,
         resource_id=resource_id,
+        current_draft_version=current_draft_version,
         current_operation_version=current_operation_version,
     )
-    return JSONResponse(status_code=status_code, content=jsonable_encoder(body))
+    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+    return JSONResponse(
+        status_code=status_code,
+        content=jsonable_encoder(body),
+        headers=headers,
+    )
 
 
 async def contract_service_error_handler(
@@ -53,6 +60,7 @@ async def contract_service_error_handler(
         message=error.safe_message,
         field_issues=error.field_issues,
         resource_id=resource_id,
+        current_draft_version=error.current_draft_version,
         current_operation_version=error.current_operation_version,
     )
 

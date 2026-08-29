@@ -57,6 +57,8 @@ export * from "./quoteEligibility";
 export * from "./quoteResponse";
 export * from "./quoteTermsRequest";
 export * from "./recordQuoteHeaders";
+export * from "./recoveryDecisionResponse";
+export * from "./recoveryDecisionState";
 export * from "./recoveryScenario";
 export * from "./recoverySimulationResponse";
 export * from "./replaceMandateHeaders";

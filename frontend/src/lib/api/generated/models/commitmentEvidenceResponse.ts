@@ -8,7 +8,10 @@
 import type { EvidenceLifecycle } from "./evidenceLifecycle";
 
 export type CommitmentEvidenceResponse = {
-  /** @minimum 0 */
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   */
   audio_start_ms: number;
   call_id: string;
   created_at: string;

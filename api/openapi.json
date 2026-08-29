@@ -11,6 +11,7 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -57,9 +58,23 @@
           "code": {
             "$ref": "#/components/schemas/ApiErrorCode"
           },
+          "current_draft_version": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Draft Version"
+          },
           "current_operation_version": {
             "anyOf": [
               {
+                "maximum": 9007199254740991.0,
                 "minimum": 1.0,
                 "type": "integer"
               },
@@ -131,6 +146,7 @@
             "type": "string"
           },
           "expected_draft_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Draft Version",
             "type": "integer"
@@ -173,6 +189,8 @@
                   "type": "string"
                 },
                 {
+                  "maximum": 9007199254740991.0,
+                  "minimum": 0.0,
                   "type": "integer"
                 },
                 {
@@ -192,6 +210,7 @@
             "type": "string"
           },
           "operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Operation Version",
             "type": "integer"
@@ -211,10 +230,35 @@
       "AuditTimelineResponse": {
         "additionalProperties": false,
         "properties": {
+          "briefs": {
+            "items": {
+              "$ref": "#/components/schemas/CallBriefResponse"
+            },
+            "maxItems": 100,
+            "title": "Briefs",
+            "type": "array"
+          },
+          "commitment_history": {
+            "items": {
+              "$ref": "#/components/schemas/CommitmentResponse"
+            },
+            "maxItems": 100,
+            "title": "Commitment History",
+            "type": "array"
+          },
+          "escalations": {
+            "items": {
+              "$ref": "#/components/schemas/EscalationResponse"
+            },
+            "maxItems": 100,
+            "title": "Escalations",
+            "type": "array"
+          },
           "events": {
             "items": {
               "$ref": "#/components/schemas/AuditEventResponse"
             },
+            "maxItems": 100,
             "title": "Events",
             "type": "array"
           },
@@ -231,6 +275,14 @@
             ],
             "title": "Next Cursor"
           },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/CoordinatorNotificationResponse"
+            },
+            "maxItems": 100,
+            "title": "Notifications",
+            "type": "array"
+          },
           "operation_id": {
             "format": "uuid",
             "title": "Operation Id",
@@ -240,14 +292,37 @@
             "items": {
               "$ref": "#/components/schemas/QuoteComparisonRow"
             },
+            "maxItems": 100,
             "title": "Quote Comparison",
+            "type": "array"
+          },
+          "recaps": {
+            "items": {
+              "$ref": "#/components/schemas/WrittenRecapResponse"
+            },
+            "maxItems": 100,
+            "title": "Recaps",
+            "type": "array"
+          },
+          "recoveries": {
+            "items": {
+              "$ref": "#/components/schemas/RecoverySimulationResponse"
+            },
+            "maxItems": 100,
+            "title": "Recoveries",
             "type": "array"
           }
         },
         "required": [
           "operation_id",
           "events",
-          "quote_comparison"
+          "quote_comparison",
+          "commitment_history",
+          "recaps",
+          "briefs",
+          "recoveries",
+          "escalations",
+          "notifications"
         ],
         "title": "AuditTimelineResponse",
         "type": "object"
@@ -454,6 +529,7 @@
         "additionalProperties": false,
         "properties": {
           "audio_start_ms": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Audio Start Ms",
             "type": "integer"
@@ -544,6 +620,7 @@
             "$ref": "#/components/schemas/EvidenceLifecycle"
           },
           "mandate_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Mandate Version",
             "type": "integer"
@@ -656,11 +733,22 @@
             "format": "uuid",
             "title": "Operation Id",
             "type": "string"
+          },
+          "operation_version": {
+            "maximum": 9007199254740991.0,
+            "minimum": 1.0,
+            "title": "Operation Version",
+            "type": "integer"
+          },
+          "recovery_decision": {
+            "$ref": "#/components/schemas/RecoveryDecisionResponse"
           }
         },
         "required": [
           "notification_id",
           "operation_id",
+          "operation_version",
+          "recovery_decision",
           "message",
           "acknowledged",
           "correlation_id",
@@ -683,6 +771,7 @@
             "type": "array"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -728,6 +817,7 @@
         "additionalProperties": false,
         "properties": {
           "audio_start_ms": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Audio Start Ms",
             "type": "integer"
@@ -739,6 +829,7 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -775,11 +866,13 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
           },
           "mandate_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Mandate Version",
             "type": "integer"
@@ -819,6 +912,7 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -841,12 +935,6 @@
       "CreateOperationDraftRequest": {
         "additionalProperties": false,
         "properties": {
-          "extraction_policy_version": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Extraction Policy Version",
-            "type": "string"
-          },
           "requested_language": {
             "$ref": "#/components/schemas/RequestedLanguage"
           },
@@ -859,8 +947,7 @@
         },
         "required": [
           "source_prompt",
-          "requested_language",
-          "extraction_policy_version"
+          "requested_language"
         ],
         "title": "CreateOperationDraftRequest",
         "type": "object"
@@ -874,11 +961,13 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
           },
           "mandate_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Mandate Version",
             "type": "integer"
@@ -911,6 +1000,7 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -1116,6 +1206,7 @@
             "type": "string"
           },
           "maximum_amount_minor": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Maximum Amount Minor",
             "type": "integer"
@@ -1124,6 +1215,7 @@
             "$ref": "#/components/schemas/PickupWindow"
           },
           "version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Version",
             "type": "integer"
@@ -1145,6 +1237,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_minor": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Amount Minor",
             "type": "integer"
@@ -1190,6 +1283,7 @@
             "type": "string"
           },
           "operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Operation Version",
             "type": "integer"
@@ -1248,6 +1342,7 @@
             "type": "integer"
           },
           "valid_quote_count": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Valid Quote Count",
             "type": "integer"
@@ -1280,6 +1375,7 @@
             "type": "string"
           },
           "draft_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Draft Version",
             "type": "integer"
@@ -1381,6 +1477,7 @@
             "items": {
               "$ref": "#/components/schemas/CoordinatorNotificationResponse"
             },
+            "maxItems": 100,
             "title": "Notifications",
             "type": "array"
           },
@@ -1400,12 +1497,29 @@
             "type": "string"
           },
           "operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Operation Version",
             "type": "integer"
           },
+          "quotes": {
+            "items": {
+              "$ref": "#/components/schemas/QuoteResponse"
+            },
+            "maxItems": 100,
+            "title": "Quotes",
+            "type": "array"
+          },
           "route": {
             "$ref": "#/components/schemas/RouteDetails"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/CarrierSessionResponse"
+            },
+            "maxItems": 3,
+            "title": "Sessions",
+            "type": "array"
           },
           "status": {
             "$ref": "#/components/schemas/OperationStatus"
@@ -1490,6 +1604,7 @@
             "type": "array"
           },
           "maximum_amount_minor": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Maximum Amount Minor",
             "type": "integer"
@@ -1509,24 +1624,35 @@
       "QuoteComparisonRow": {
         "additionalProperties": false,
         "properties": {
-          "amount_minor": {
-            "minimum": 0.0,
-            "title": "Amount Minor",
-            "type": "integer"
+          "call_id": {
+            "format": "uuid",
+            "title": "Call Id",
+            "type": "string"
+          },
+          "carrier_display_name": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Carrier Display Name",
+            "type": "string"
           },
           "carrier_id": {
             "format": "uuid",
             "title": "Carrier Id",
             "type": "string"
           },
-          "currency": {
-            "const": "MXN",
-            "title": "Currency",
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "eligible": {
-            "title": "Eligible",
-            "type": "boolean"
+          "eligibility": {
+            "$ref": "#/components/schemas/QuoteEligibility"
+          },
+          "mandate_version": {
+            "maximum": 9007199254740991.0,
+            "minimum": 1.0,
+            "title": "Mandate Version",
+            "type": "integer"
           },
           "quote_id": {
             "format": "uuid",
@@ -1546,15 +1672,27 @@
           "selected": {
             "title": "Selected",
             "type": "boolean"
+          },
+          "terms": {
+            "$ref": "#/components/schemas/MoneyTerms"
+          },
+          "valid_until": {
+            "format": "date-time",
+            "title": "Valid Until",
+            "type": "string"
           }
         },
         "required": [
           "quote_id",
+          "call_id",
           "carrier_id",
-          "amount_minor",
-          "currency",
-          "eligible",
-          "selected"
+          "carrier_display_name",
+          "terms",
+          "valid_until",
+          "mandate_version",
+          "eligibility",
+          "selected",
+          "created_at"
         ],
         "title": "QuoteComparisonRow",
         "type": "object"
@@ -1589,6 +1727,7 @@
             "$ref": "#/components/schemas/QuoteEligibility"
           },
           "mandate_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Mandate Version",
             "type": "integer"
@@ -1640,6 +1779,7 @@
         "additionalProperties": false,
         "properties": {
           "amount_minor": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Amount Minor",
             "type": "integer"
@@ -1671,6 +1811,84 @@
         "title": "QuoteTermsRequest",
         "type": "object"
       },
+      "RecoveryDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/RecoveryDecisionState"
+          },
+          "before": {
+            "$ref": "#/components/schemas/RecoveryDecisionState"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before",
+          "after",
+          "reason"
+        ],
+        "title": "RecoveryDecisionResponse",
+        "type": "object"
+      },
+      "RecoveryDecisionState": {
+        "additionalProperties": false,
+        "properties": {
+          "active_commitment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Commitment Id"
+          },
+          "agreed_terms": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MoneyTerms"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "carrier_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Id"
+          },
+          "operation_status": {
+            "$ref": "#/components/schemas/OperationStatus"
+          },
+          "operation_version": {
+            "maximum": 9007199254740991.0,
+            "minimum": 1.0,
+            "title": "Operation Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation_version",
+          "operation_status"
+        ],
+        "title": "RecoveryDecisionState",
+        "type": "object"
+      },
       "RecoveryScenario": {
         "enum": [
           "MANDATE_SAFE",
@@ -1693,11 +1911,13 @@
             ]
           },
           "after_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "After Operation Version",
             "type": "integer"
           },
           "before_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Before Operation Version",
             "type": "integer"
@@ -1790,11 +2010,13 @@
             "type": "array"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
           },
           "maximum_amount_minor": {
+            "maximum": 9007199254740991.0,
             "minimum": 0.0,
             "title": "Maximum Amount Minor",
             "type": "integer"
@@ -1875,6 +2097,7 @@
             "type": "string"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"
@@ -1898,6 +2121,7 @@
             "$ref": "#/components/schemas/BrowserChannel"
           },
           "expected_operation_version": {
+            "maximum": 9007199254740991.0,
             "minimum": 1.0,
             "title": "Expected Operation Version",
             "type": "integer"

@@ -5,16 +5,14 @@
  * Thin HTTP contract boundary for the Volta hackathon demo.
  * OpenAPI spec version: 0.1.0
  */
+import type { RecoveryDecisionState } from "./recoveryDecisionState";
 
-export type AcknowledgeNotificationRequest = {
+export type RecoveryDecisionResponse = {
+  after: RecoveryDecisionState;
+  before: RecoveryDecisionState;
   /**
    * @minLength 1
    * @maxLength 500
    */
-  acknowledged_by: string;
-  /**
-   * @minimum 1
-   * @maximum 9007199254740991
-   */
-  expected_operation_version: number;
+  reason: string;
 };
