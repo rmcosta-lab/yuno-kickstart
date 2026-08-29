@@ -29,8 +29,11 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -m 'not openai_credentialed'"
 asyncio_mode = "auto"
+markers = [
+    "openai_credentialed: synthetic OpenAI integration tests requiring explicit credentials",
+]
 testpaths = ["api/tests", "backend/tests"]
 
 [tool.ruff]
