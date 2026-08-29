@@ -1,0 +1,10 @@
+[mcp_servers.context7]
+type = "http"
+url = "https://mcp.context7.com/mcp/oauth"
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PAT_TOKEN"
+enabled = true
+tool_timeout_sec = 60
+default_tools_approval_mode = "writes"

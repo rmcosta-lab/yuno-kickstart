@@ -123,6 +123,14 @@ Use a monorepo with independently understandable modules:
 │   └── config.toml
 ├── docker-compose.yml
 ├── docs/
+│   ├── project-specs/
+│   │   ├── mission.md
+│   │   ├── tech-stack.md
+│   │   ├── roadmap.md
+│   │   └── YYYY-MM-DD-NN-{slug}/
+│   │       ├── requirements.md
+│   │       ├── plan.md
+│   │       └── validation.md
 │   ├── architecture.md
 │   ├── api.md
 │   └── decisions/
@@ -413,6 +421,152 @@ Use the Yuno MCP primarily for:
 Do not make an autonomous payment/refund/cancel call merely because the MCP exposes the tool. Financial state-changing actions must be explicit, intended, and use sandbox during development.
 
 For a hackathon, prefer the **local MCP**. A remotely hosted Yuno MCP also exists, but it adds remote authentication/session/network considerations that are not needed by default for rapid prototyping.
+
+---
+
+## 7.1 Development MCPs and remote environments
+
+Use official MCP servers as development tools when their capability matches the task. They do not replace application dependencies, generated tests, migrations, or production integrations.
+
+### Required discovery and setup flow
+
+At the start of a task that involves GitHub, browser validation, UI components, Supabase, or Vercel:
+
+1. Run `codex mcp list` in the environment where the task will execute.
+2. Confirm that the required server is present, enabled, authenticated when needed, and exposes tools in the current Codex session.
+3. If it is missing, use the official package or endpoint listed below. Prefer project-scoped `.codex/config.toml` entries over changing the user's global configuration.
+4. If a machine-global change or interactive OAuth login is required, tell the user and request approval or user participation before continuing.
+5. Restart Codex after configuration changes, run `codex mcp list` again, and make one harmless read-only tool call as a smoke test.
+
+Never assume that an MCP available on the local machine is also available in a remote executor. Never install a similarly named unofficial package. Check the provider's current official documentation before changing a package, endpoint, authentication method, or tool policy.
+
+### Capability routing
+
+- **Chrome DevTools MCP:** inspect the rendered page, browser console, network requests, DOM state, screenshots, Lighthouse/performance traces, and runtime failures.
+- **Playwright MCP:** exercise deterministic user journeys, form interactions, responsive states, navigation, and browser smoke/e2e checks.
+- **shadcn MCP:** browse and search configured component registries and add shadcn components or blocks. Review every generated file and dependency.
+- **GitHub MCP:** inspect and manage repositories, issues, pull requests, Actions, and reviews beyond what local `git` provides. Keep write operations approval-gated.
+- **Supabase MCP:** search current Supabase documentation, inspect development schemas and migrations, query logs, run advisors, generate types, and perform explicitly requested development database work.
+- **Vercel MCP:** search current Vercel documentation and inspect projects, deployments, build/runtime logs, domains, and deployment state. Use mutation tools only when the task explicitly requires the corresponding deployment change.
+
+For a rendered frontend change, default to a Playwright user-flow smoke test followed by Chrome DevTools inspection of console and network errors. Use the shadcn MCP before hand-building a primitive that may already exist in the configured registry.
+
+### Installation when a server is missing
+
+Prerequisites for local STDIO servers:
+
+- a current Node.js LTS release and `npm`/`npx`,
+- a current stable Chrome installation for Chrome DevTools MCP,
+- Node.js 18 or newer for Playwright MCP.
+
+Use the following Codex commands from the project directory. `npx` may download the package on first use, so network access is required.
+
+#### Chrome DevTools
+
+```bash
+codex mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
+```
+
+#### Playwright
+
+Use an isolated browser profile by default so cookies and local state are not shared across sessions:
+
+```bash
+codex mcp add playwright -- npx -y @playwright/mcp@latest --isolated
+```
+
+#### shadcn
+
+```bash
+codex mcp add shadcn -- npx -y shadcn@latest mcp
+```
+
+The repository must contain a valid `components.json` before component installation. The standard shadcn registry needs no extra authentication; keep private-registry tokens in environment variables, never in committed configuration.
+
+#### GitHub
+
+Use GitHub's official remote MCP server and bind authentication to an environment variable:
+
+```bash
+codex mcp add github --url https://api.githubcopilot.com/mcp/ --bearer-token-env-var GITHUB_PAT_TOKEN
+```
+
+Provide `GITHUB_PAT_TOKEN` through the local environment or secret store with the least privileges required for the task. Never place the token in `.codex/config.toml`, `AGENTS.md`, source files, logs, screenshots, or tool prompts. The CLI command writes shared Codex configuration; for this repository, prefer the project-scoped entry below.
+
+#### Supabase
+
+Start with a development project, project scoping, only the required feature groups, and read-only mode:
+
+```bash
+codex mcp add supabase --url "https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true&features=docs%2Cdatabase%2Cdebugging%2Cdevelopment"
+codex mcp login supabase
+```
+
+Do not connect the Supabase MCP to production data by default. Remove `read_only=true` only for an explicitly requested schema/data mutation in a development project or branch. Keep manual approval enabled for mutating tools, review generated SQL, use migrations for durable schema changes, run security/performance advisors, and verify the result.
+
+#### Vercel
+
+```bash
+codex mcp add vercel --url https://mcp.vercel.com
+codex mcp login vercel
+```
+
+OAuth may open a browser. Do not place Vercel access tokens in `.codex/config.toml` or committed files.
+
+### Project-scoped configuration
+
+When the CLI cannot create a project-scoped entry, add the equivalent configuration to `.codex/config.toml` without credentials:
+
+```toml
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest", "--isolated"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.shadcn]
+command = "npx"
+args = ["-y", "shadcn@latest", "mcp"]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+bearer_token_env_var = "GITHUB_PAT_TOKEN"
+enabled = true
+tool_timeout_sec = 60
+default_tools_approval_mode = "writes"
+
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?project_ref=<project-ref>&read_only=true&features=docs%2Cdatabase%2Cdebugging%2Cdevelopment"
+enabled = true
+tool_timeout_sec = 60
+
+[mcp_servers.vercel]
+url = "https://mcp.vercel.com"
+enabled = true
+tool_timeout_sec = 60
+```
+
+Keep `<project-ref>` as a documented placeholder until a development Supabase project is selected. Do not commit a real project reference when its disclosure is not intended. `GITHUB_PAT_TOKEN` must be supplied by the environment or secret store and must never be committed.
+
+### Remote environment rules
+
+- Run discovery and the smoke test inside the actual remote session; a successful local `codex mcp list` is not evidence that the remote environment is ready.
+- Prefer the official Streamable HTTP servers for GitHub, Supabase, and Vercel. Provide GitHub's PAT through the environment; complete OAuth for providers that support it in the environment/client that will use the stored session.
+- STDIO servers require Node/npm and their browser dependencies in the remote image. When Codex provides a remote executor, set `experimental_environment = "remote"` on the relevant STDIO server and use headless, isolated browser profiles when supported.
+- If the remote environment cannot launch a browser or receive an OAuth callback, report the limitation and use a browser-capable local/preview environment. Do not copy a personal browser profile, disable sandboxing, or embed credentials as a workaround.
+- Forward secrets from the remote secret store with `env_vars` and `source = "remote"` when supported. Never hard-code them in `.codex/config.toml`, shell history, source files, logs, screenshots, or tool prompts.
+- Keep mutating MCP tools approval-gated. GitHub branches/issues/PRs/workflows, database, deployment, domain, environment-variable, payment, refund, and other external state changes must remain within the explicit task scope.
 
 ---
 
@@ -788,79 +942,174 @@ service-role / administrative database keys
 
 ---
 
-## 15. Codex plugins / skills to use
+## 15. Codex plugins and skills
 
-Prefer **official/current plugins** over copying random community skills into the repository.
+Use official, current skills and plugins. Install a missing task-relevant skill before starting implementation. Do not load every skill for every task.
 
-### Priority 1 — Build Web Apps
+### Repository skill source
 
-Install/use OpenAI's **Build Web Apps** plugin.
+Use `.agents/skills` as the only repository-scoped skill source. Do not create or restore `.claude/skills`, and do not keep duplicate physical copies of the same skill in multiple directories.
 
-Relevant included skills:
+- Keep project-authored workflow skills directly under `.agents/skills/<skill-name>/SKILL.md`.
+- When a skill name already exists in `.agents/skills`, inspect the existing source and keep the intended canonical version instead of copying a duplicate over it.
+- Treat package-provided entries such as the FastAPI skill as generated symlinks. Install project dependencies before validating them.
+- Run `uvx library-skills --check` to validate managed symlinks without changing files. Do not pass `--claude`, because this repository does not maintain `.claude/skills`.
+- Invoke a skill explicitly with `$skill-name`, or use `/skills` to inspect the skills available in the current Codex session.
 
-- `frontend-app-builder`
-- `frontend-testing-debugging`
-- `react-best-practices`
-- `shadcn-best-practices`
-- `supabase-best-practices`
+### Shared roadmap coordination
 
-The plugin also includes Stripe guidance; **ignore Stripe-specific guidance for this project** because Yuno is our payment orchestration layer.
+Treat `docs/project-specs/roadmap.md` as a static dependency graph. Every `### Fase NN — Nome` section declares a canonical `Slug:`, `Depends on: none|NN,...`, `Conflicts with: none|NN,...`, and `Gate:`. Require the slug to match `^[a-z0-9]+(?:-[a-z0-9]+)*$` and use it verbatim in coordination paths. The gate is the minimum evidence for review; it is not the shared `DONE` state. Phase numbers are identifiers, not an implicit execution sequence. Do not write mutable phase status, assignees, branches, or `✅` markers into the roadmap. Once any coordination Issue, branch, planning record, or pull request exists for a phase, freeze its number, heading name, slug, dependencies, conflicts, and gate; later scope changes use a new phase identity.
 
-Use this plugin for:
+GitHub is the shared execution state:
 
-- creating/refining the Next.js UI,
-- shadcn composition,
-- React/Next.js quality,
-- browser validation,
-- Supabase/Postgres patterns.
+- one canonical coordination issue `[Fase NN] Nome` records the owner and phase metadata
+- one deterministic remote branch `phase/NN-{slug}`, using the roadmap's required static `Slug`, is the exclusive claim lock
+- one pull request from that branch to the remote default branch represents review
+- `DONE` requires the applicable checks and phase validation to pass, that pull request to be merged, and the issue to be closed
 
-### Priority 2 — GitHub
+A phase is eligible only when every declared dependency is `DONE`, no declared conflict is active or in `DRIFT`, no shared branch, pull request, or assigned issue already claims it, and its sole Issue does not record the terminal empty-phase outcome `CANCELED`. A canceled phase never satisfies a dependency or becomes eligible again. Treat conflict edges as bidirectional. Use them when two phases would write the same serialized shared/root file or depend on the same unsettled decision.
 
-Use/install the official GitHub plugin when repository, issues, PRs, CI, or review workflows are needed.
+`start-phase` and `manage-shared-specs` must use the create-only `refs/heads/coordination/phase-claim-lock` mutex around their cross-workflow check-and-create transaction; partial phase claims, orphan-lock repairs, implementation review blocking, fixed-task publication, and `finish-phase` review/merge/reconciliation mutations use the same mutex for their bounded refresh-and-mutate transaction. Refresh all relevant shared facts while holding it, create or repair the durable claim or review with the applicable create-only, update-only, or unique-Issue operation, and then release the short-lived mutex before long-running or local-only work. The durable branch is the claim; assignees and labels are not atomic locks. Never release a stale mutex based only on age or without confirming that no `start-phase`, `manage-shared-specs`, implementation, `changelog`, or `finish-phase` transaction remains active. The GitHub tool, credentials, and branch-protection policy must permit create-only refs, update-only non-force publication, and conditional compare-and-delete of only explicitly authorized coordination refs at their expected old SHA. If authenticated GitHub access or a remote default branch is unavailable, distributed coordination must stop rather than fall back to local-only state.
 
-### Priority 3 — Vercel / Next.js
+Frontend, API, and backend may run in parallel inside one claimed phase under `implement-phase`. Separate phases may run in parallel only when the dependency graph makes each one eligible. `manage-shared-specs` exclusively owns `docs/project-specs/mission.md`, `docs/project-specs/tech-stack.md`, `docs/project-specs/roadmap.md`, and `docs/decisions/challenge-plan.md` through the remote branch `refs/heads/docs/project-specs`; it does not own the dated phase directories below `docs/project-specs/`. Each claimed phase owns only its exact `docs/project-specs/YYYY-MM-DD-NN-{slug}/` directory through its coordinator. `manage-shared-specs` must not change its global files while any phase is `IN_PROGRESS`, `REVIEW`, or `DRIFT`. The only exception is an explicit restore-roadmap operation that pauses affected work and restores only uniquely reconstructable frozen phase metadata while preserving, without mutating, at most the authoritative stale-Issue or uniquely identified incomplete-claim facts documented by that skill. `changelog` exclusively owns `CHANGELOG.md` through `docs/changelog`. Keep other global shared files read-only unless an exact path has exclusive ownership through the conflict graph or another serialized task. Release a fixed branch only after its pull-request merge is verified, or after explicit repair proves it is an empty orphan and records any incomplete Issue as abandoned. A retry from the same unchanged base must reopen the single canonical `ABANDONED` Issue with a new attempt identifier; never create a duplicate exact-title Issue.
 
-If available in the current Codex Plugin Directory, use the Vercel-oriented skills for:
+### Check skills before work
 
-- Next.js App Router best practices,
-- Vercel deployment/preview workflows,
-- browser/dev-server verification.
+Follow this sequence in the environment that will run the task:
 
-### Priority 4 — Supabase
+1. Run `/skills` in Codex and search for each skill required by the task.
+2. Inspect repository-scoped skills:
 
-Use the official Supabase capability/skill if Supabase is selected.
+   ```bash
+   rtk rg --files .agents/skills
+   ```
 
-Key principles:
+3. Run `/plugins` and confirm that the official Vercel plugin is installed when a `vercel:*` skill is required.
+4. If a `SKILL.md` file exists but the skill is absent from `/skills`, restart Codex and check again.
+5. Install only the missing skills from the official sources below.
+6. Restart Codex after installation. Newly installed skills may become available only in the next turn or session.
+7. Repeat `/skills` and confirm the exact skill identifier before continuing.
 
-- check current docs/changelog,
-- enable RLS where appropriate,
-- never expose administrative/service-role keys in the browser,
-- verify migrations/queries after applying them.
+A local skills inventory does not prove that a remote environment has the same skills. Repeat this check in remote Codex sessions and ephemeral workspaces.
 
-### Priority 5 — Yuno
+### Required skill routing
 
-Do **not** depend on an unofficial generic payment skill.
+Use this table to select skills. A skill remains inactive when its trigger does not match the task.
 
-Instead:
+| Skill | Use it when |
+| --- | --- |
+| `manage-shared-specs` | Initializing or updating global mission, stack, roadmap, or challenge decisions through their serialized branch |
+| `start-phase` | Atomically claiming and specifying an eligible roadmap phase without implementing it |
+| `implement-phase` | Coordinating a complete phase across frontend, API, and backend workstreams |
+| `implement-frontend-phase` | Implementing an isolated frontend workstream |
+| `implement-api-phase` | Implementing an isolated FastAPI/BFF workstream |
+| `implement-backend-phase` | Implementing an isolated backend/core workstream |
+| `deep-review` | Running an explicitly requested read-only, SHA-specific, pre-merge multi-agent review |
+| `finish-phase` | Submitting a verified phase through its shared pull request or reconciling after remote merge; never deploying |
+| `changelog` | Publishing merged phase results through the serialized `docs/changelog` branch and reconciling its lock |
+| `library-skills` | Discovering, checking, or repairing package-provided skill symlinks |
+| `frontend-app-builder` | Building a new frontend surface or performing a substantial redesign for the hackathon |
+| `frontend-testing-debugging` | Testing or debugging rendered UI, responsive behavior, browser errors, or interactions |
+| `react-best-practices` | Writing, reviewing, or refactoring React and Next.js code |
+| `shadcn-best-practices` | Selecting or composing shadcn/ui components; the official standalone skill declares the identifier `shadcn` |
+| `supabase-best-practices` | Designing or reviewing Supabase/Postgres work; the official standalone skill declares the identifier `supabase-postgres-best-practices` |
+| `writing-guidelines` | Reviewing `README.md`, `docs/**/*.md`, and `docs/decisions/challenge-plan.md` after prose changes |
+| `openai-docs` | Configuring or troubleshooting Codex, MCP, OpenAI APIs, models, SDKs, or other OpenAI products only |
+| `vercel:ai-sdk` | Implementing an AI feature that the challenge genuinely requires; do not add AI to create novelty |
+| `frontend-design` | Defining a distinctive visual direction before building or reshaping a major UI |
+| `vercel:nextjs` | Working with App Router, Server Components, route organization, data boundaries, or Next.js architecture |
+| `vercel:react-best-practices` | Running a Vercel-focused React performance and quality review |
+| `vercel:shadcn` | Checking current shadcn CLI, registry, and composition guidance in a Vercel/Next.js workflow |
+| `web-design-guidelines` | Reviewing accessibility, responsiveness, interaction design, and UX after UI changes |
+| `vercel:agent-browser-verify` | Running a browser smoke test after visual changes or after starting a dev server |
+| `vercel:verification` | Verifying the complete frontend to API to backend flow with evidence |
 
-1. configure the official Yuno MCP,
-2. use `documentation.read`,
-3. use `https://docs.y.uno/llms.txt`,
-4. keep this AGENTS.md as project-specific Yuno integration guidance.
+For a substantial frontend slice, use this order when every step applies:
 
-If the challenge later benefits from an agent that actively performs Yuno operations at runtime, evaluate Yuno's official TypeScript **Agent Toolkit** (`@yuno-payments/agent-toolkit`) separately. Do not introduce it for a standard checkout flow.
+1. `frontend-design` for the visual direction
+2. `frontend-app-builder` for implementation
+3. `vercel:nextjs`, `react-best-practices`, and shadcn guidance for framework and component quality
+4. `frontend-testing-debugging` and `vercel:agent-browser-verify` for rendered checks
+5. `web-design-guidelines` for accessibility, responsive behavior, and UX review
+6. `vercel:verification` for the complete frontend to API to backend journey
 
-### Plugin discovery note
+Do not invoke both React best-practice variants only to duplicate the same review. Use `react-best-practices` during implementation and reserve `vercel:react-best-practices` for a dedicated Vercel performance pass.
 
-OpenAI's current official curated examples live in:
+### Install the Build Web Apps skills
 
-```text
-https://github.com/openai/plugins
+For this repository, install the five official Build Web Apps skills into `.agents/skills` so the team can version them with the project. Source them only from `openai/plugins`.
+
+First, keep only the missing `--path` values in this command. The installer stops when a destination directory already exists.
+
+```bash
+codex_skill_installer="${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/install-skill-from-github.py"
+
+rtk python3 "$codex_skill_installer" \
+  --repo openai/plugins \
+  --path \
+    plugins/build-web-apps/skills/frontend-app-builder \
+    plugins/build-web-apps/skills/frontend-testing-debugging \
+    plugins/build-web-apps/skills/react-best-practices \
+    plugins/build-web-apps/skills/shadcn-best-practices \
+    plugins/build-web-apps/skills/supabase-best-practices \
+  --dest .agents/skills
 ```
 
-The old `openai/skills` repository is deprecated; do not make it the primary installation source.
+If the system installer script is unavailable, invoke `$skill-installer` in Codex and provide the same `openai/plugins` repository paths. Do not replace these sources with similarly named community skills.
 
-Use the Codex Plugin Directory (`/plugins` in supported Codex surfaces) to find/install current plugins instead of hard-coding potentially stale marketplace installation commands.
+The official source folder names and declared identifiers differ for two skills:
+
+- `shadcn-best-practices` declares `name: shadcn`
+- `supabase-best-practices` declares `name: supabase-postgres-best-practices`
+
+Do not rename their frontmatter. Use the identifier displayed by `/skills`.
+
+The Build Web Apps bundle also contains Stripe guidance. Ignore it in this project because Yuno is the payment orchestration layer.
+
+### Install standalone design and writing skills
+
+Install these skills at project scope when `/skills` does not list them:
+
+```bash
+rtk npx skills add anthropics/skills --skill frontend-design
+rtk npx skills add vercel-labs/agent-skills --skill web-design-guidelines
+rtk npx skills add vercel-labs/agent-skills --skill writing-guidelines
+```
+
+Follow the installer prompt and select Codex plus project scope. Do not choose global scope unless the user requests the skill for every repository.
+
+`openai-docs` is a Codex system skill. Do not install a duplicate copy. If it is missing, restart Codex, update the Codex installation through the supported distribution, and check `/skills` again.
+
+### Install Vercel skills
+
+The `vercel:*` identifiers come from the official Vercel plugin distributed through the Codex Plugin Directory:
+
+1. Run `/plugins` in Codex.
+2. Search for `Vercel` under **Developer Tools**.
+3. Confirm that the plugin source is the official Codex directory entry.
+4. Select **Install Plugin** or **Enable**.
+5. Restart Codex.
+6. Run `/skills` and confirm `vercel:ai-sdk`, `vercel:nextjs`, `vercel:react-best-practices`, `vercel:shadcn`, `vercel:agent-browser-verify`, and `vercel:verification`.
+
+Do not copy Vercel plugin cache directories into the repository. The plugin manager owns installation and updates.
+
+### Verify installed skill files
+
+After repository-scoped installation, verify the skill metadata:
+
+```bash
+rtk rg -n '^name:|^description:' .agents/skills/*/SKILL.md
+```
+
+The check must show a valid `name` and `description` for every installed skill. Treat a missing file, invalid frontmatter, or absent `/skills` entry as an incomplete installation.
+
+### GitHub, Supabase, and Yuno skill rules
+
+- Use the official GitHub MCP server for repositories, issues, pull requests, Actions, and reviews beyond local `git`. Keep writes within the explicit task scope.
+- Use the official Supabase skill and MCP when Supabase is selected. Check current documentation and the changelog, enable Row Level Security (RLS), protect service-role credentials, and verify migrations and queries.
+- Do not use a generic payment skill for Yuno. Use the Yuno MCP for current documentation and schemas. Financial mutations must remain explicit and use sandbox during development.
+
+Use the [official OpenAI plugin catalog](https://github.com/openai/plugins). Do not use the deprecated `openai/skills` repository as the primary source for Build Web Apps skills.
 
 ---
 
@@ -870,10 +1119,11 @@ Before editing:
 
 1. Read this `AGENTS.md`.
 2. Inspect the existing repository before proposing new structure.
-3. Check installed plugins/skills and MCP servers.
-4. If touching Yuno, query current Yuno docs/MCP before implementation.
-5. If touching an unfamiliar dependency, verify its current official docs rather than guessing.
-6. Make the smallest coherent change that completes a vertical slice.
+3. Check installed plugins and skills using Section 15. Install any missing task-relevant skill before continuing.
+4. Check MCP servers using Section 7.1. Install or configure any missing task-relevant MCP before continuing.
+5. If touching Yuno, query current Yuno docs/MCP before implementation.
+6. If touching an unfamiliar dependency, verify its current official docs rather than guessing.
+7. Make the smallest coherent change that completes a vertical slice.
 
 After editing:
 
@@ -884,7 +1134,8 @@ After editing:
 5. browser-test rendered frontend changes,
 6. review `git diff`,
 7. ensure no secrets were created or logged,
-8. update README/architecture notes only when behavior or setup changed.
+8. use `writing-guidelines` after changing `README.md`, documentation, or the challenge plan,
+9. update README/architecture notes only when behavior or setup changed.
 
 Do not silently change architecture conventions in this file. If a challenge-specific requirement makes a rule inappropriate, document the decision in `docs/decisions/`.
 
@@ -1131,7 +1382,8 @@ When this file is first added to a new repository, execute the following task:
 > - `MockPaymentGateway` for tests;
 > - webhook HMAC verification utility and tests;
 > - `.env.example`;
-> - project-scoped `.codex/config.toml` for the official Yuno MCP using environment-variable forwarding;
+> - project-scoped `.codex/config.toml` for the official Yuno, GitHub, Chrome DevTools, Playwright, shadcn, Supabase, and Vercel MCPs, using environment-variable forwarding or credential-free remote endpoints;
+> - repository-scoped Build Web Apps skills from Section 15, installed from their official `openai/plugins` paths;
 > - Docker Compose for PostgreSQL only;
 > - lint/test/build scripts;
 > - README with local setup and architecture diagram.
@@ -1154,7 +1406,7 @@ When this file is first added to a new repository, execute the following task:
 
 After reading the challenge, do not immediately code.
 
-First produce a short implementation note in `docs/decisions/challenge-plan.md` with:
+First askt to produce a short implementation note in `docs/decisions/challenge-plan.md` with:
 
 ```text
 Problem
@@ -1170,8 +1422,6 @@ API endpoints
 Main risks
 Fallback/demo plan
 ```
-
-Then implement the smallest end-to-end slice.
 
 ---
 
@@ -1220,6 +1470,30 @@ Then implement the smallest end-to-end slice.
 - Codex Model Context Protocol configuration  
   https://developers.openai.com/codex/mcp/
 
+- [Codex skills and repository scope](https://developers.openai.com/codex/skills/)
+
+- [Build Web Apps skill sources](https://github.com/openai/plugins/tree/main/plugins/build-web-apps/skills)
+
+- [Official Vercel plugin source](https://github.com/openai/plugins/tree/main/plugins/vercel)
+
+- [Vercel Labs agent skills](https://github.com/vercel-labs/agent-skills)
+
+- [Anthropic frontend design skill](https://github.com/anthropics/skills/tree/main/skills/frontend-design)
+
+### Development MCPs
+
+- [GitHub MCP Server](https://github.com/github/github-mcp-server)
+
+- [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp)
+
+- [Playwright MCP](https://github.com/microsoft/playwright-mcp)
+
+- [shadcn MCP](https://ui.shadcn.com/docs/mcp)
+
+- [Supabase MCP](https://supabase.com/docs/guides/ai-tools/mcp)
+
+- [Vercel MCP](https://vercel.com/docs/agent-resources/vercel-mcp)
+
 ---
 
 ## 25. Final principle
@@ -1236,3 +1510,16 @@ working demo
 ```
 
 Keep the system easy enough that another team member—or another Codex worktree—can understand a layer and modify it without loading the entire application into context.
+
+<!-- context7 -->
+Use Context7 MCP to fetch current documentation whenever the user asks about a library, framework, SDK, API, CLI tool, or cloud service — even well-known ones like React, Next.js, Prisma, Express, Tailwind, Django, or Spring Boot. This includes API syntax, configuration, version migration, library-specific debugging, setup instructions, and CLI tool usage. Use even when you think you know the answer — your training data may not reflect recent changes. Prefer this over web search for library docs.
+
+Do not use for: refactoring, writing scripts from scratch, debugging business logic, code review, or general programming concepts.
+
+## Steps
+
+1. Always start with `resolve-library-id` using the library name and what to look up in the library's documentation, unless the user provides an exact library ID in `/org/project` format
+2. Pick the best match (ID format: `/org/project`) by: exact name match, description relevance, code snippet count, source reputation (High/Medium preferred), and benchmark score (higher is better). If results don't look right, try alternate names or queries (e.g., "next.js" not "nextjs", or rephrase the question). Use version-specific IDs when the user mentions a version
+3. `query-docs` with the selected library ID and what to look up in the library's documentation (not single words), scoped to a single concept. If the question spans multiple distinct concepts (e.g. routing and auth and caching), make a separate `query-docs` call per concept with the same library ID, unless the question is about how the concepts interact — combined queries dilute ranking and return shallow results for each topic
+4. Answer using the fetched docs
+<!-- context7 -->

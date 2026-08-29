@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Repository skills live in .agents/skills.
+.claude/
+
+.env
+.env.*
+!.env.example
