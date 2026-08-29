@@ -42,43 +42,42 @@ Keep mutable status out of the roadmap. Do not silently rename, remove, or weake
 
 Use this lightweight state model:
 
-- **DONE:** a phase pull request is merged into the remote default branch.
+- **DONE:** a phase pull request with the required validation evidence is merged into the remote default branch.
 - **REVIEW:** a phase pull request is open.
-- **ACTIVE:** the remote phase branch exists without a merged pull request.
+- **ACTIVE:** the remote phase branch exists and no pull request is open or merged, including recovery after a pull request was closed without merge.
 - **BLOCKED:** a dependency is not DONE or a declared conflicting phase is ACTIVE/REVIEW.
-- **READY:** dependencies are DONE, no declared conflict is active, and no remote branch or open/merged pull request already represents the phase.
+- **READY:** dependencies are DONE, no declared conflict is active, and no remote branch or pull request of any state already represents the phase.
 
 If the user names a phase, require it to be READY. Otherwise choose a READY phase that best advances the P0 demo, using phase number only as a tie-breaker. Report concrete blockers when none is ready.
 
-Refresh remote state immediately before claiming. If `phase/NN-{slug}` already exists, coordinate with its owner instead of overwriting it. This branch-existence check is the practical claim; a small race is acceptable for a hackathon because concurrent branch creation allows only one winner.
+Refresh remote state immediately before claiming. Create the new branch with an operation that fails when the ref already exists; never update an existing branch during the claim. If `phase/NN-{slug}` already exists, coordinate with its owner instead of overwriting it. If only a closed-unmerged pull request remains, do not treat the phase as READY; route recovery through `finish-phase`, which may reopen it or request an explicit decision about a replacement review.
 
-## 4. Confirm scope
+## 4. Resolve scope and authority
 
-Before remote writes, confirm:
+An explicit request to start the selected phase authorizes its branch, workspace, planning commit, and normal push. Create a tracking Issue only when the user explicitly asks for one; do not interrupt the phase start merely to offer it. Ask only when the phase, scope, or owner is ambiguous.
+
+Before writing, report:
 
 - selected phase, included scope, exclusions, dependencies, conflicts, gate, and fallback
-- creation of `phase/NN-{slug}`, an optional `[Fase NN] Nome` tracking Issue, and the planning commit
+- creation of `phase/NN-{slug}`, the planning commit, and an optional `[Fase NN] Nome` tracking Issue only when requested
 - validation appropriate to the affected frontend, API, backend, integration, browser, and payment risks
 
 Do not infer deployment, production access, financial mutations, or unrelated infrastructure.
 
-If a global decision is unresolved, use `manage-shared-specs`. A small decision directly required by this phase may be carried in the phase branch; a broad or unrelated update should use a short-lived documentation branch. Active phases do not need to finish first.
+If a global decision is unresolved, use `manage-shared-specs`. A small decision directly required by this phase may be carried in the phase branch when nothing else must depend on it before merge. A broad or unrelated update, or a supporting phase that must start first, uses a short-lived documentation branch. Active phases do not need to finish first.
 
-## 5. Create the branch and worktree
+## 5. Prepare the local branch and workspace
 
 1. Refresh the remote default branch, dependencies, conflicts, and existing phase branches/pull requests.
-2. Create `phase/NN-{slug}` from the latest remote default branch without force or overwrite. Stop if it already exists.
-3. When Issues are available, create or reuse one `[Fase NN] Nome`, assign the current owner, and record the branch, phase result, dependencies, conflicts, and gate. Do not add attempt UUIDs or synthetic lifecycle fields.
-4. Create a tracking local branch and sibling worktree at `../yuno-kickstart-phase-NN-{slug}`.
-5. Create `docs/project-specs/YYYY-MM-DD-NN-{slug}/` in that worktree.
+2. Create the local `phase/NN-{slug}` from the latest remote default branch. Do not publish an empty remote branch.
+3. Use the current checkout when it is clean and can switch safely to the phase branch. Use a sibling worktree such as `../yuno-kickstart-phase-NN-{slug}` when another branch must remain checked out or parallel local work needs isolation.
+4. Create `docs/project-specs/YYYY-MM-DD-NN-{slug}/` in the selected workspace.
 
-If Issue creation or local worktree setup fails after branch creation, preserve the branch and report the partial setup. Repair it directly on the next attempt; do not create a second phase branch or a recovery protocol.
-
-An explicitly abandoned empty claim may be deleted only after verifying that it has no unique commit or pull request and obtaining authorization for that exact branch deletion. Preserve any branch with work.
+If local setup fails, preserve or remove only the local resources within the user's request. No remote claim exists until the planning commit is published.
 
 ## 6. Write the phase specification
 
-Create these files in the phase directory.
+Create these files in the phase directory. Keep them to a few decision-complete bullets for a narrow phase; omit non-applicable contract, layer, and risk details.
 
 ### `requirements.md`
 
@@ -87,6 +86,7 @@ Record:
 - objective, target user, and user-visible outcome
 - included/excluded scope, priority, assumptions, risks, and fallback
 - dependencies, conflicts, gate, branch, and tracking Issue when used
+- owner GitHub login or team contact, especially when no tracking Issue exists
 - acceptance criteria for one coherent vertical slice
 - affected frontend, API/BFF, backend/core, data, Yuno, AI, security, visual, and accessibility decisions
 - the HTTP contract gate: route, request/response, status, and error semantics
@@ -107,6 +107,7 @@ Record:
 - OpenAPI/Orval generation and integration checkpoints
 - tests near changed behavior and final lint/test/build/browser checks
 - any shared stack or roadmap change, affected phases, communication required, and branch-refresh point
+- any temporary wait on a prerequisite discovered after this phase started
 - no deployment, production access, live financial mutation, or unrelated remote change without explicit authorization
 
 ### `validation.md`
@@ -124,10 +125,14 @@ Add OpenAPI/Orval, browser, Yuno sandbox/mock, webhook, idempotency, secrets, RL
 
 ## 7. Publish planning
 
-Review the diff, stage only the phase planning files and any explicitly approved shared-spec clarification, and commit `Start Fase NN: Nome`. Refresh the remote branch and pull requests once more, then push normally without force.
+Review the diff, stage only the phase planning files and any explicitly approved shared-spec clarification, and commit `Start Fase NN: Nome`. Refresh dependencies, conflicts, remote branches, and pull requests once more. Publish the planning commit by creating the new remote `phase/NN-{slug}` ref with an operation that fails if the branch exists. This single push claims the phase and exposes its owner/spec together.
 
-Update the tracking Issue with the planning path/commit when an Issue exists. Do not deploy, merge a pull request, apply a remote migration, or perform a Yuno financial operation.
+If another developer created the branch first, preserve the local planning commit, report the competing claim, and coordinate instead of overwriting it. After a successful push, refresh declared conflicts again before implementation. Two conflicting refs can be created concurrently; if that happens, both claims stop until their owners choose which phase proceeds. Preserve the other planning-only branch until its owner explicitly releases it after inspection.
+
+When the user requested a tracking Issue and Issues are available, create or reuse `[Fase NN] Nome`, assign the owner, and record the branch, result, dependencies, conflicts, gate, planning path, and commit. Do not add attempt UUIDs or synthetic lifecycle fields.
+
+Do not deploy, merge a pull request, apply a remote migration, or perform a Yuno financial operation.
 
 ## 8. Report
 
-Report the phase, priority, branch, worktree, planning commit, spec directory, optional Issue, dependencies/conflicts, ownership, contract gates, validation, fallback, any shared decision carried by the phase, and unresolved prerequisites. Direct cross-layer implementation to `implement-phase`.
+Report the phase, priority, branch, workspace, planning commit, spec directory, optional Issue, dependencies/conflicts, ownership, contract gates, validation, fallback, any shared decision carried by the phase, and unresolved prerequisites. Direct cross-layer implementation to `implement-phase`.

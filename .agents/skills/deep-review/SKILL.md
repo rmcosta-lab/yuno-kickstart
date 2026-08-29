@@ -1,6 +1,6 @@
 ---
 name: deep-review
-description: Run a read-only, multi-agent review of a Yuno × Nauta branch, path, PR, or uncommitted change set. Use when the user explicitly asks for a deep or pre-merge review.
+description: Run a read-only, multi-agent review of a Yuno × Nauta branch, path, PR, or uncommitted change set. Use when the user explicitly asks for a deep or pre-merge review; issue a merge verdict only for a published commit SHA.
 ---
 
 # Deep review Yuno × Nauta changes
@@ -11,7 +11,7 @@ Return one prioritized, evidence-backed report. Do not edit, stage, commit, merg
 
 Accept one of these targets:
 
-- PR number: inspect with read-only repository tools such as `gh pr view` and `gh pr diff`
+- PR number: inspect with the official GitHub MCP; use read-only `gh pr view` and `gh pr diff` only when MCP access is unavailable and disclose the fallback
 - branch: discover the remote default branch and compare with their merge base
 - path: inspect committed, staged, unstaged, and untracked changes under that path
 - commit range: inspect the requested range and surrounding source
@@ -27,7 +27,7 @@ Handle repository states explicitly:
 
 Read the surrounding source, tests, configuration, generated API contract, and documentation for every questionable hunk. A diff alone is not enough context.
 
-For a phase branch or pull request, use read-only GitHub inspection to record the exact reviewed head SHA and check the lightweight coordination facts: the roadmap phase and slug match the branch, dependencies are merged, no declared conflict is active, the phase spec exists, one pull request represents the branch, and any shared-spec decision is explained in the phase plan and pull-request body. Check the tracking Issue and owner when an Issue exists, but do not require attempt identifiers or duplicate lifecycle metadata. If GitHub state is unavailable, continue with the locally resolvable review and state that coordination and mergeability could not be verified.
+For a phase branch or pull request, use read-only GitHub inspection to record the exact reviewed head SHA and check the lightweight coordination facts: the roadmap phase and slug match the branch, every dependency is DONE with required validation recorded and its pull request merged, no declared conflict is active, the phase spec exists, no more than one pull request is open for the branch, closed pull-request history is preserved, and any shared-spec decision is explained in the phase plan and pull-request body. Check the tracking Issue and owner when an Issue exists, but do not require attempt identifiers or duplicate lifecycle metadata. If GitHub state is unavailable, continue with the locally resolvable review and state that coordination and mergeability could not be verified.
 
 ## 2. Load product intent
 
@@ -114,4 +114,4 @@ Use this structure:
 - [ ] `file:line`: issue. Impact and correction. Evidence. (A)
 ```
 
-Make local file locations clickable when supported. End with the exact reviewed head SHA, merge verdict valid only for that SHA, counts by severity, checks run, coordination status, external or credential limitations, and an offer to fix selected findings in a separate implementation request. Any later commit invalidates the SHA-specific verdict and requires another review of the changed range. Do not apply fixes from this skill.
+Make local file locations clickable when supported. For a branch or pull request whose exact reviewed head SHA is published to a readable remote, end with a merge verdict valid only for that SHA. For local-only commits, staged, unstaged, untracked, or unborn targets, identify the reviewed commit or paths and omit the merge verdict because the reviewed bytes are not published for merge. In every mode, include counts by severity, checks run, coordination status, external or credential limitations, and an offer to fix selected findings in a separate implementation request. Any later change invalidates the reviewed snapshot. Do not apply fixes from this skill.

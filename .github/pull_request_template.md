@@ -37,4 +37,4 @@
 
 ## Coordination
 
-<!-- Use `Closes #<issue-number>` for the canonical coordination issue. -->
+<!-- Use `Closes #<issue-number>` when this phase has an optional tracking Issue; otherwise write `None`. -->

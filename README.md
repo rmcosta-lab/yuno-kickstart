@@ -117,22 +117,15 @@ uv sync
 uvx library-skills --check
 ```
 
-## Pré-requisitos para trabalho paralelo
+## Trabalho paralelo por fases
 
-O fluxo de fases usa o GitHub como estado compartilhado. Antes de assumir uma fase, o ambiente precisa conseguir:
+O GitHub fornece somente o estado compartilhado necessário: branches e pull requests. Antes de assumir uma fase, o ambiente precisa ler a branch padrão remota, criar uma branch sem sobrescrever outra existente, publicar commits e consultar ou abrir pull requests. Issues são opcionais.
 
-- ler o repositório e sua branch padrão remota;
-- consultar, criar, atualizar, atribuir, fechar e reabrir Issues, além de consultar e criar branches e Pull Requests;
-- identificar o responsável pela fase;
-- criar uma Git ref com semântica **create-only**, que falha se a branch já existir;
-- apagar somente refs de mutex ou branches-lock com compare-and-delete sobre o SHA esperado, depois da confirmação prevista pela skill;
-- manter as refs de coordenação fora de uma proteção que impeça sua liberação autorizada.
+Se o repositório remoto não estiver disponível, `$start-phase` interrompe porque a fase não pode ser reservada para a equipe. É possível rascunhar notas fora do fluxo, mas não publicá-las como claim. Não use mutex remoto, UUID de tentativa, branch fixa de documentação ou force-push como mecanismo de coordenação.
 
-O servidor oficial do Model Context Protocol (MCP) para GitHub deve estar habilitado e autenticado, conforme `AGENTS.md`. Um cliente autenticado equivalente só é válido quando preserva as mesmas garantias. Sem acesso remoto compartilhado, `$start-phase` interrompe o fluxo: uma branch apenas local não reserva uma fase para a equipe.
+### Como o roadmap define as fases
 
-## Como o roadmap define as fases
-
-`docs/project-specs/roadmap.md` é um grafo estático, não uma fila numérica nem um quadro de status. As fases representam resultados ou slices verticais; frontend, API e backend são workstreams dentro delas, não três roadmaps separados. Cada fase declara:
+`docs/project-specs/roadmap.md` é um grafo de resultados, não uma fila nem um quadro de status. Cada fase declara:
 
 ```markdown
 ### Fase 04 — Resultado da fase
@@ -143,22 +136,18 @@ Conflicts with: none
 Gate: evidência observável mínima para enviar a fase à revisão
 ```
 
-- `Slug` é canônico, usa letras ASCII minúsculas, números e hífens, e deve corresponder a `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
-- `Depends on` contém somente pré-requisitos reais.
-- `Conflicts with` contém fases que não podem ficar ativas simultaneamente, inclusive quando disputam um arquivo global ou uma decisão serializada.
-- Use `none` explicitamente quando a lista estiver vazia.
-- O número identifica a fase, mas não cria dependência implícita.
-- Não acrescente `✅`, responsável, branch ou estado dinâmico ao roadmap.
+- `Slug` usa letras minúsculas, números e hífens.
+- `Depends on` contém pré-requisitos que precisam estar concluídos.
+- `Conflicts with` contém fases que não podem ficar ativas ao mesmo tempo; o conflito vale nos dois sentidos.
+- `Gate` descreve a evidência mínima de validação.
+- `none` representa uma lista vazia.
+- O número identifica a fase, mas não cria uma dependência implícita.
 
-Depois que uma fase tiver qualquer Issue, branch, planejamento publicado ou PR, seu número, nome, slug, dependências, conflitos e gate ficam imutáveis. Uma mudança de resultado deve virar uma nova fase; reescrever a identidade antiga criaria `DRIFT` e poderia esconder o histórico usado para calcular `DONE`.
-
-Todo conflito vale nos dois sentidos, mesmo quando aparece em uma única seção. Uma fase em `DRIFT` também mantém o conflito bloqueado até a reconciliação.
-
-Assim, se a Fase 04 depender apenas da Fase 02, ela poderá ser iniciada logo após a Fase 02 terminar, mesmo que as Fases 01 e 03 continuem em andamento, desde que nenhuma delas tenha conflito com a Fase 04.
+Não grave responsável, branch, PR, status ou marcador de conclusão no roadmap. Fases futuras podem ser reorganizadas. Depois que uma fase tiver branch ou PR, não altere silenciosamente seu número, nome, slug, dependências, conflitos ou gate. Uma correção exige decisão explícita da equipe.
 
 ### Arquivos de especificação
 
-O diretório `docs/project-specs/` ainda será criado. As referências abaixo são intencionais e devem ser preservadas:
+Use `$manage-shared-specs` para criar o baseline antes da primeira fase:
 
 ```text
 docs/project-specs/
@@ -171,239 +160,106 @@ docs/project-specs/
     └── validation.md
 ```
 
-Enquanto o roadmap não existir, `$start-phase` interrompe com o diagnóstico do pré-requisito. Use `$manage-shared-specs` para criar o baseline antes da primeira fase.
+Cada documento responde a uma pergunta diferente:
 
-Esses três arquivos são globais e ficam somente leitura durante fases paralelas. Toda alteração passa pela tarefa serializada `$manage-shared-specs`.
+- `mission.md`: por que o produto existe, para quem e qual resultado precisa demonstrar.
+- `tech-stack.md`: quais tecnologias e provedores foram escolhidos e por quê.
+- `roadmap.md`: quais resultados serão entregues, com dependências, conflitos e gates.
+- `docs/architecture.md`: como as camadas e contratos do sistema se relacionam.
+- o diretório datado da fase: o que aquela fase exige, como será implementada e como será validada.
 
-## Estado compartilhado de uma fase
+As especificações globais continuam editáveis durante o hackathon. Uma mudança necessária somente para uma fase entra no PR da própria fase quando nada precisa depender dela antes desse PR terminar; registre-a em `plan.md` e no corpo do PR. Use uma branch curta `docs/specs-{topic}` quando a decisão for ampla, quando outra fase ativa precisar dela ou quando uma nova fase de pré-requisito tiver que entrar no roadmap antes do PR atual. Avise os responsáveis afetados e mantenha uma pessoa escrevendo cada arquivo compartilhado por vez.
 
-Cada fase usa:
+### Estado de uma fase
 
-- uma Issue canônica: `[Fase NN] Nome`;
-- uma branch remota determinística: `phase/NN-{slug}`, usando o campo estático `Slug` do roadmap;
-- um pull request (PR) dessa branch para a branch padrão remota.
-
-O redutor verifica `DRIFT` antes dos demais estados. Depois, deriva o estado destes fatos:
-
-| Estado | Significado |
+| Estado | Fato observável |
 | --- | --- |
-| `DRIFT` | Issue, branch, owner, planning commit, spec e PR discordam, estão duplicados ou incluem PR fechado sem merge. |
-| `DONE` | Checks e validação da fase aceitos + PR integrado na branch padrão remota + Issue fechada. |
-| `CANCELED` | Fase vazia retirada explicitamente, sem planning, PR ou trabalho único; nunca satisfaz uma dependência. |
-| `REVIEW` | Issue e planning publicados + exatamente um PR aberto para a branch padrão. |
-| `IN_PROGRESS` | Issue aberta e atribuída + branch remota contendo o planning commit e a spec publicados + nenhum PR dessa tentativa. |
-| `BLOCKED` | Fase ainda não assumida, com dependência pendente ou conflito declarado ativo. |
-| `READY` | Fase ainda não assumida, com dependências concluídas, nenhum conflito ativo e nenhum claim remoto. |
+| `DONE` | O PR foi integrado e contém a evidência de validação exigida. |
+| `REVIEW` | Existe um PR aberto da branch da fase. |
+| `ACTIVE` | Existe a branch remota da fase e nenhum PR está aberto ou integrado; isso inclui a recuperação de um PR fechado sem merge. |
+| `BLOCKED` | Alguma dependência não está `DONE` ou uma fase conflitante está ativa. |
+| `READY` | Dependências concluídas, nenhum conflito ativo e nenhuma branch ou história de PR para a fase. |
 
-Labels e GitHub Projects podem espelhar esses estados, mas não são necessários para a correção do fluxo. A branch remota da fase é o claim durável porque sua criação pode ser atômica; assignee e label não são locks.
+A branch `phase/NN-{slug}` é a reserva prática da fase. O primeiro commit remoto já deve conter o responsável em `requirements.md` e o planejamento. Uma Issue `[Fase NN] Nome` pode ajudar na atribuição e nas notas, mas não é lock nem condição de conclusão.
 
-Um mutex remoto curto, `coordination/phase-claim-lock`, serializa claims, publicação de planning, reparos, bloqueio de merge durante follow-up, publicação das tarefas fixas e mutações remotas de `$finish-phase`. Isso impede corridas entre fases, reviews e mudanças globais. A skill cria e libera esse mutex dentro de uma transação curta; validações longas e cleanup local ficam fora dela. Se uma execução parar no meio, ninguém remove o mutex por idade: um responsável deve reconciliá-lo depois de confirmar que nenhum `$start-phase`, `$manage-shared-specs`, `$implement-phase`, implementador direto de camada, `$changelog` ou `$finish-phase` está usando a ref.
+Mantenha no máximo um PR aberto por branch e preserve PRs fechados no histórico. Um PR fechado sem merge mantém a fase `ACTIVE` e seus conflitos bloqueados; use `$finish-phase` para reabrir o PR ou, com decisão explícita do usuário, criar uma revisão substituta sem esconder o histórico anterior.
 
-## Fluxo recomendado
+### Fluxo recomendado
 
-### 0. Criar ou atualizar as especificações globais
+#### 0. Criar ou atualizar as especificações globais
 
-Antes da primeira fase, ou quando missão, stack, roadmap ou challenge plan precisarem mudar:
+Execute `$manage-shared-specs` para o baseline, uma reorganização ampla ou uma decisão compartilhada. A mudança usa uma branch comum de documentação criada a partir da branch padrão remota e termina em PR. Fases não afetadas continuam trabalhando.
 
-```text
-$manage-shared-specs
-```
+#### 1. Assumir e especificar uma fase
 
-A branch-lock continua sendo `docs/project-specs`. Ela é diferente do diretório `docs/project-specs/`, apesar do nome igual.
+Execute `$start-phase`. A skill verifica dependências, conflitos, branches e PRs remotos, prepara `requirements.md`, `plan.md` e `validation.md`, e publica o commit de planejamento diretamente como uma nova ref `phase/NN-{slug}`. A criação falha se outro dev tiver criado a branch primeiro. Depois do push, ela confere os conflitos novamente; se duas fases conflitantes venceram a corrida em refs diferentes, nenhuma começa a implementação até os responsáveis escolherem qual claim prossegue.
 
-A skill cria ou atualiza somente estes arquivos globais:
+Uma worktree separada ajuda quem mantém várias fases abertas, mas não é obrigatória. Para uma fase pequena, os três documentos podem ser breves, desde que objetivo, limites, ownership e validação estejam claros.
 
-- `docs/project-specs/mission.md`
-- `docs/project-specs/tech-stack.md`
-- `docs/project-specs/roadmap.md`
-- `docs/decisions/challenge-plan.md`
+#### 2. Implementar
 
-Depois, ela abre um PR e para em review. A alteração bloqueia enquanto houver fase em `IN_PROGRESS`, `REVIEW` ou `DRIFT`.
+Use `$implement-phase` quando a entrega cruza frontend, API e backend. Use diretamente `$implement-frontend-phase`, `$implement-api-phase` ou `$implement-backend-phase` para uma frente isolada.
 
-Depois do merge, execute `$manage-shared-specs` novamente para verificar o conteúdo integrado e liberar a branch-lock. Nenhuma fase pode bootstrapar o próprio roadmap.
+Dentro da fase, cada caminho tem um escritor por vez. Antes de publicar, atualize o estado remoto e confirme novamente dependências e conflitos. Se surgir uma decisão de stack ou roadmap:
 
-### 1. Assumir e especificar uma fase elegível
+- leve-a no PR da fase quando só aquela fase depende dela e nenhum trabalho separado precisa começar antes do merge;
+- abra um PR curto de specs quando outra fase precisa da decisão ou quando uma fase de pré-requisito precisa entrar no roadmap antes;
+- publique a fase de pré-requisito por esse PR de specs e registre a espera temporária quando o novo trabalho precisa terminar antes da fase ativa continuar;
+- use uma fase de continuação quando o resultado ou gate original deixou de ser válido.
 
-Na worktree principal, execute:
+#### 3. Validar e abrir o PR
 
-```text
-$start-phase
-```
+Execute `$finish-phase`. A skill roda os gates aplicáveis, registra evidências reais em `validation.md`, publica a branch e cria ou atualiza o PR. Um check não executado deve aparecer como `N/A` ou `Blocked`, nunca como aprovado.
 
-A skill executa estas etapas:
+O PR aberto representa `REVIEW`, não `DONE`. Merge remoto, limpeza de branch e remoção de worktree exigem autorização compatível com a ação.
 
-1. lê o grafo e reconstrói o estado remoto de todas as fases;
-2. escolhe a fase elegível de menor número, ou valida uma fase indicada pelo usuário;
-3. pede autorização para criar e liberar o mutex e para publicar o claim;
-4. cria o mutex com uma operação create-only;
-5. relê toda a elegibilidade enquanto mantém o mutex;
-6. cria uma única vez a branch remota `phase/NN-{slug}` no hash (SHA) atual da branch padrão;
-7. cria, reutiliza ou reabre a única Issue canônica, registra um novo attempt e a atribui ao login GitHub autenticado;
-8. libera o mutex somente depois que branch, Issue, attempt e owner estiverem consistentes;
-9. cria a worktree local;
-10. escreve `requirements.md`, `plan.md` e `validation.md` em `docs/project-specs/YYYY-MM-DD-NN-{slug}/`;
-11. publica o commit `Start Fase NN: Nome` e registra seu SHA na Issue.
+#### 4. Revisar, integrar e reconciliar
 
-Se outro dev vencer a corrida, a criação da ref falha e a skill atualiza o estado antes de continuar. Ela não escolhe silenciosamente outra fase. Se o claim remoto for criado, mas uma etapa posterior falhar, a branch permanece reservada como claim incompleto; ninguém deve apagá-la automaticamente.
+Use `$deep-review <PR>` quando uma revisão multiagente for solicitada. Para emitir parecer de merge, a revisão precisa apontar para um commit publicado específico; mudanças não commitadas podem ser analisadas, mas não recebem parecer de merge.
 
-### 2. Implementar uma fase que cruza camadas
+Depois do merge, execute `$finish-phase` para confirmar validação, atualizar a branch padrão local e limpar apenas recursos locais seguros e autorizados. A fase passa a `DONE`, liberando suas dependentes.
 
-Dentro da worktree criada:
+#### 5. Atualizar o changelog
+
+Execute `$changelog` quando as fases relevantes já estiverem integradas. O changelog usa uma branch comum de documentação e um PR próprio. Não exige branch fixa, lock ou Issue especial, e não publica tag, release ou deploy.
+
+### Regras de coordenação
+
+- Fases independentes podem avançar em paralelo quando dependências e conflitos permitem.
+- Frontend, API e backend podem avançar em paralelo dentro da mesma fase quando os caminhos têm responsáveis distintos.
+- Mudanças compartilhadas exigem comunicação, atualização da branch e resolução normal de conflitos do Git.
+- Uma decisão urgente pausa somente o trabalho afetado. A aprovação vem do usuário, do líder designado ou de todos os responsáveis impactados.
+- Não force-push, apague branch com trabalho único ou sobrescreva o arquivo de outro dev.
+- Se uma branch já existir, coordene com o responsável em vez de criar um segundo claim.
+
+### Sequência resumida
 
 ```text
-$implement-phase
+$manage-shared-specs     baseline ou decisão global
+          ↓
+$start-phase             branch + planejamento
+          ↓
+$implement-phase         implementação por caminhos
+          ↓
+$finish-phase            validação + PR
+          ↓
+$deep-review             opcional, somente leitura
+          ↓
+merge autorizado
+          ↓
+$finish-phase            reconciliação
+          ↓
+$changelog               notas de release quando necessárias
 ```
 
-Essa skill valida Issue, owner e branch remota antes de trabalhar. Depois congela dois contratos:
-
-- contrato HTTP: Pydantic → OpenAPI → Orval;
-- contrato de aplicação: API → serviços tipados do backend/core.
-
-Ela coordena as frentes necessárias em paralelo, com responsabilidade exclusiva:
-
-- frontend escreve em `frontend/**`;
-- API/BFF escreve em `api/**`;
-- backend/core escreve em `backend/**`;
-- a coordenadora escreve no diretório da spec da fase e nos caminhos compartilhados exatos que `plan.md` atribuir com exclusividade.
-
-Os três arquivos globais em `docs/project-specs/` ficam somente leitura durante uma fase. O mesmo vale para a documentação global, o README, o AGENTS e as configurações raiz.
-
-O coordenador escreve somente no diretório datado da fase ativa. Se outra fase puder escrever o mesmo caminho, declare o conflito no roadmap ou adie a mudança para uma tarefa serializada.
-
-### 3. Implementar somente uma camada
-
-Para uma tarefa realmente isolada, use diretamente:
-
-```text
-$implement-frontend-phase
-$implement-api-phase
-$implement-backend-phase
-```
-
-- `$implement-frontend-phase`: Next.js, integração Orval e validação no navegador.
-- `$implement-api-phase`: FastAPI, Pydantic e OpenAPI, sem regras de negócio nos routers.
-- `$implement-backend-phase`: domínio, serviços, repositórios, persistência e adapters, sem depender de FastAPI.
-
-Quando `$implement-phase` coordena a fase, ela própria aciona somente os workstreams necessários. Não execute outra skill concorrente sobre os mesmos arquivos. Quando uma skill de camada é invocada diretamente, ela também exige um claim remoto consistente.
-
-### 4. Validar e enviar para revisão
-
-Quando a implementação e os gates estiverem completos:
-
-```text
-$finish-phase
-```
-
-No modo normal, a skill:
-
-1. revalida os checks aplicáveis;
-2. consolida a evidência em `validation.md`;
-3. cria o commit `Complete Fase NN: Nome`;
-4. envia somente a branch da fase;
-5. cria ou atualiza o PR canônico com a referência `Closes #123` para a Issue correspondente.
-
-O resultado desse passo é `REVIEW`, não `DONE`. A skill não faz merge local em `main`, não fecha a Issue antecipadamente e não apaga a worktree.
-
-### 5. Revisar o SHA publicado
-
-Execute a revisão sobre o PR:
-
-```text
-$deep-review 123
-```
-
-A revisão é somente leitura, confere arquitetura, segurança/pagamentos, experiência de demonstração e consistência do claim. O parecer vale para o SHA exato informado; um novo commit exige revisão do intervalo alterado.
-
-### 6. Integrar e reconciliar
-
-O PR pode ser integrado por um responsável humano ou por `$finish-phase` somente quando o usuário pedir explicitamente o merge remoto e todos os checks e approvals exigidos estiverem satisfeitos.
-
-Depois do merge, execute novamente:
-
-```text
-$finish-phase
-```
-
-Agora a skill entra em modo de reconciliação:
-
-- confirma o PR integrado na branch padrão;
-- confirma ou corrige o fechamento da Issue;
-- recalcula quais fases ficaram `READY`;
-- atualiza a branch padrão local com fast-forward;
-- remove apenas a worktree e a branch local que puderem ser removidas com segurança.
-
-A branch remota nunca é apagada sem pedido explícito.
-
-### 7. Atualizar notas de release
-
-`CHANGELOG.md` pertence exclusivamente a `$changelog` e nunca deve ser alterado por uma branch de fase. Depois que as fases relevantes forem integradas, inicie a tarefa serializada:
-
-```text
-$changelog
-```
-
-A skill usa a branch fixa `docs/changelog` como lock create-only, lê apenas PRs integrados e evidências validadas, cria o commit e abre um PR de documentação. O modo normal para em review. Depois do merge, execute `$changelog` novamente para verificar o resultado e liberar a branch-lock.
-
-Ela não publica tag, GitHub Release ou deploy.
-
-## Dois níveis de paralelismo
-
-O projeto admite dois tipos de paralelismo ao mesmo tempo:
-
-1. **Entre fases:** vários devs trabalham em fases diferentes quando a elegibilidade calculada de roadmap + GitHub estiver `READY` imediatamente antes do claim. Depois que a ref é criada, a fase sai de `READY`; torna-se `IN_PROGRESS` somente quando Issue, owner, planning commit e spec publicados estiverem consistentes.
-2. **Dentro de uma fase:** frontend, API e backend trabalham em paralelo sob `$implement-phase`, depois que os contratos estão congelados.
-
-Esses níveis não devem ser confundidos. Uma fase bloqueada por dependência não pode ser iniciada só porque existe um dev livre; uma camada independente dentro de uma fase já assumida pode.
-
-## Recuperação de inconsistências
-
-Se aparecer branch sem Issue, Issue atribuída sem branch, PR duplicado, PR fechado sem merge ou histórico divergente, a fase fica `DRIFT`. O fluxo para e relata os fatos.
-
-Um PR fechado sem merge só volta ao fluxo quando `$finish-phase` reabre aquele mesmo PR, após restaurar e revalidar seu head. A skill nunca cria um PR substituto para esconder o histórico; se a política do repositório impedir a reabertura, o claim permanece preservado e bloqueado até a restrição ser resolvida.
-
-Não libere um claim por timeout e não apague automaticamente uma branch com trabalho possivelmente único. Um responsável deve reconciliar, transferir ou liberar o claim explicitamente depois de inspecionar commits e PRs. Retomar um claim incompleto exige confirmação explícita do owner ou de um handoff e usa o mutex global durante a releitura e o reparo da Issue; possuir um checkout local não prova ownership.
-
-Uma tentativa de fase comprovadamente vazia pode ser fechada como `ABANDONED`, sem assignee, e depois reclamada pela mesma Issue com novo attempt. Se o resultado deixou de fazer sentido, ela pode ser fechada como `CANCELED`; essa identidade não volta à seleção e não satisfaz dependências. Uma substituição usa novo número de fase.
-
-Se uma edição externa alterar somente os campos congelados de uma fase, `$manage-shared-specs` pode entrar no modo explícito de restauração, inclusive para destravar uma fase ativa ou em review depois que seu trabalho for pausado. Ele recompõe apenas os valores históricos quando Issue, planejamento, branch e PR concordam; qualquer ambiguidade ou mudança de produto continua bloqueada. Um PR já integrado com sua única Issue ainda aberta também pode aguardar essa restauração e ser reconciliado depois por `$finish-phase`.
-
-Quando uma tarefa vazia de specs ou changelog for explicitamente abandonada, sua Issue canônica é fechada com `Outcome: ABANDONED`. Se a branch padrão continuar no mesmo SHA, a próxima tentativa reabre essa única Issue, registra um novo `Current attempt` e preserva o histórico; ela nunca cria outra Issue com o mesmo título.
-
-## Sequência resumida
-
-```text
-$manage-shared-specs
-      │ baseline global integrado
-      ▼
-$start-phase
-      │ claim atômico + planejamento publicado
-      ▼
-$implement-phase
-      ├── $implement-frontend-phase
-      ├── $implement-api-phase
-      └── $implement-backend-phase
-      ▼
-$finish-phase
-      │ push + PR
-      ▼
-$deep-review 123
-      │ merge autorizado/humano
-      ▼
-$finish-phase
-      │ reconciliação + novas fases READY
-      ▼
-$changelog
-      │ PR de documentação
-      ▼
-$changelog
-      reconciliação da branch-lock
-```
-
-## Skills auxiliares
+### Skills auxiliares
 
 | Skill | Uso |
 | --- | --- |
-| `$manage-shared-specs` | Publica e reconcilia missão, stack, roadmap e challenge plan pela branch-lock `docs/project-specs`. |
-| `$deep-review` | Revisão multiagente, somente leitura, vinculada ao SHA de uma branch ou PR. |
-| `$changelog` | Publica e reconcilia `CHANGELOG.md` pela branch-lock fixa `docs/changelog`. |
-| `$library-skills` | Descobre, instala, atualiza ou verifica skills provenientes da Library Skills. |
+| `$manage-shared-specs` | Criar ou atualizar missão, stack, roadmap e decisões compartilhadas. |
+| `$start-phase` | Assumir uma fase elegível e publicar seu planejamento. |
+| `$implement-phase` | Coordenar uma fase que cruza camadas. |
+| `$finish-phase` | Validar, abrir ou atualizar o PR e reconciliar depois do merge. |
+| `$deep-review` | Fazer revisão multiagente somente leitura quando solicitada. |
+| `$changelog` | Preparar notas a partir de fases integradas e validadas. |
+| `$library-skills` | Verificar e gerenciar skills fornecidas por pacotes. |

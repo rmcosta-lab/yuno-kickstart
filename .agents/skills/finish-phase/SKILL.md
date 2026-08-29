@@ -11,14 +11,14 @@ A phase is done when its required validation passes and its pull request is merg
 
 Read `AGENTS.md`, the global specs, the matching phase `requirements.md`, `plan.md`, and `validation.md`, the current branch/worktree state, and the complete diff against the remote default branch. Inspect the remote `phase/NN-{slug}`, its pull requests, dependencies, conflicts, and tracking Issue when present.
 
-Use authenticated GitHub access for publication. Stop when the repository/default branch cannot be read, the target is ambiguous, required validation is missing or failed, histories diverge, conflicts are unresolved, or unrelated changes cannot be separated safely.
+Use authenticated GitHub access for publication. Stop when the repository/default branch cannot be read, the target is ambiguous, required validation is missing or failed, the local and remote phase branches diverge, conflicts are unresolved, or unrelated changes cannot be separated safely. New commits on the default branch are normal and do not count as phase-branch divergence.
 
 Select one mode:
 
 - **Submission:** validate, commit, push, and create or update the phase pull request. Stop in review.
-- **Review follow-up:** validate and publish requested changes to the existing open pull request.
+- **Review follow-up:** read unresolved review threads and requested changes, address or explicitly decline each item, validate affected behavior, and publish to the existing open pull request.
 - **Explicit merge:** merge an already reviewed pull request only when the user specifically requests the remote merge and checks/approvals pass.
-- **Reconciliation:** verify an already merged pull request, close its tracking Issue when appropriate, refresh local `main`, and clean safe local resources.
+- **Reconciliation:** verify an already merged pull request, close its tracking Issue when appropriate, refresh the local default branch, and clean safe local resources.
 
 If the sole pull request was closed without merge, reopen it when supported and explicitly requested. Otherwise preserve the branch and ask whether to continue on a new pull request; do not invent or hide history.
 
@@ -26,7 +26,7 @@ Do not use coordination mutexes, attempt UUIDs, draft/ready state machines, forc
 
 ## 2. Revalidate the phase
 
-Run every applicable gate from `validation.md`. A complete cross-layer code phase normally includes:
+Run every applicable gate from `validation.md`. During review follow-up, rerun the gates affected by the change and any broader gate whose earlier evidence is no longer valid. Before merge, require that the complete phase evidence still applies. A complete cross-layer code phase normally includes:
 
 ```bash
 uv run ruff check .
@@ -57,14 +57,14 @@ For submission or review follow-up:
 3. stage only explicit phase files and approved shared-spec changes
 4. commit `Complete Fase NN: Nome` when needed
 5. rerun checks invalidated by generated artifacts or final edits
-6. integrate current remote-default changes with a normal non-force workflow when needed
+6. merge the current remote-default branch into an already-published phase when synchronization is needed; do not rebase published history and force-push it
 7. push `phase/NN-{slug}` without force and verify the remote head
 
 Do not push the default branch directly, rewrite another developer's history, tag, deploy, apply a remote migration, or perform a financial operation.
 
 ## 4. Create or update the pull request
 
-Read `.github/pull_request_template.md` when present and preserve its structure. Create or update one pull request:
+Read `.github/pull_request_template.md` when present and preserve its structure. Create or update the sole open pull request:
 
 - head: `phase/NN-{slug}`
 - base: the remote default branch
@@ -79,10 +79,11 @@ Immediately before merging, refresh the pull request and require:
 
 - the head SHA is the validated/reviewed SHA
 - required CI checks and approvals pass
+- no unresolved `REQUEST_CHANGES` review or required review thread remains
 - GitHub reports the pull request mergeable
 - no newer commit invalidated evidence
 
-Use a repository-supported non-force strategy. Do not bypass protection, dismiss reviews, resolve a non-trivial conflict automatically, or delete the remote branch without separate authorization.
+Submit the merge with the validated head SHA as an atomic precondition. If the GitHub operation cannot reject a changed head, stop instead of merging. Use a repository-supported non-force strategy. Do not bypass protection, dismiss reviews, resolve a non-trivial conflict automatically, or delete the remote branch without separate authorization.
 
 After merge, refresh GitHub and the remote default branch before reporting success, then reconcile.
 

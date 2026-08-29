@@ -52,7 +52,7 @@ Preparing notes does not authorize a tag, GitHub Release, deployment, production
 
 ## 4. Validate and publish
 
-Check every entry against merged code and executed validation. Run `writing-guidelines` on the changed prose and check for sensitive values or claims that exceed the evidence.
+Check every entry against merged code and executed validation. Self-review a short entry; use `writing-guidelines` for a substantial release note or explicit prose-review request. Check for sensitive values or claims that exceed the evidence.
 
 Review the diff, stage only `CHANGELOG.md`, and commit `Update changelog: <target>`. Refresh the remote default branch and any open changelog pull request before pushing. Resolve ordinary conflicts without force or overwrite.
 

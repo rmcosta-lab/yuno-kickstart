@@ -11,7 +11,7 @@ Own scope, contracts, shared decisions, integration, and validation while layer 
 
 Read `AGENTS.md`, inspect the branch, worktree, `git status`, installed skills, task-relevant MCP servers, global specs, and the matching phase `requirements.md`, `plan.md`, and `validation.md`.
 
-Work from `phase/NN-{slug}`, not `main`. Require one matching dated phase directory and a readable remote phase branch. Verify that dependencies are merged, no declared conflicting phase is active, and no phase pull request is already merged. An open phase pull request is acceptable only when the user is explicitly requesting review follow-up.
+Work from `phase/NN-{slug}`, not `main`. Require one matching dated phase directory and a readable remote phase branch. Verify that every dependency is DONE, with required validation recorded and its pull request merged; verify that no declared conflicting phase is active and no phase pull request is already merged. An open phase pull request is acceptable only when the user is explicitly requesting review follow-up. Route a closed-unmerged pull request through `finish-phase` before implementation resumes.
 
 When an Issue exists, use it to confirm the current owner and handoff; do not require attempt identifiers or duplicated lifecycle metadata. Stop on ambiguous ownership, a divergent branch, unresolved merge conflicts, or missing decisions that would make independent workers guess incompatible contracts.
 
@@ -41,12 +41,12 @@ When a worker discovers a needed stack or roadmap change:
 
 1. distinguish a compatible dependency addition from a shared architecture/provider decision
 2. pause only integration work that depends on the decision
-3. have the coordinator inspect open pull requests touching the shared file
+3. have the coordinator inspect open pull requests and active remote phase branches that may touch the shared file
 4. record the decision, reason, impact, affected phases, and communication in `plan.md`
-5. update the global spec in this phase branch when the change is small and directly required; use `manage-shared-specs` on a documentation branch when it is broad or unrelated
+5. update the global spec in this phase branch when the change is small, only this phase needs it, and nothing else must depend on it before merge; use `manage-shared-specs` on a documentation branch when the decision is broad, unrelated, needed by another phase, or must add a supporting phase before this pull request merges
 6. tell affected phase owners to refresh after the decision merges
 
-Do not silently rename or remove an active phase, weaken its gate, or redefine product/payment/security behavior. Add a follow-up phase for a materially different outcome or prerequisite. Do not use a repository-wide lock or wait for unrelated phases to finish.
+Do not silently rename or remove an active phase, weaken its gate, or redefine product/payment/security behavior. For a material new prerequisite, publish the supporting phase through a dedicated specs pull request based on the remote default branch and record a temporary wait in the active phase plan/Issue until the prerequisite phase pull request merges. If the original gate is no longer valid, move the remaining outcome to a follow-up phase. Do not use a repository-wide lock or wait for unrelated phases to finish.
 
 Layer workers do not edit global specs unless the coordinator assigns the exact file to one worker and all other work on that file has stopped.
 
