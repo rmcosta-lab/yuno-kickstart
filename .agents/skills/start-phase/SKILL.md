@@ -38,7 +38,15 @@ Require unique numbers and slugs, lowercase kebab-case slugs, valid references, 
 
 Keep mutable status out of the roadmap. Do not silently rename, remove, or weaken the gate of a phase that already has a branch or pull request. Use a follow-up phase for a materially different outcome.
 
-## 3. Select an eligible phase
+## 3. Ask three grouped questions
+
+Before any write, branch creation, or worktree creation, use `AskUserQuestion`, `request_user_input`, or the equivalent available tool. Ask these three questions in one grouped request:
+
+1. **Scope:** include the roadmap scope as written, or adjust inclusions/exclusions?
+2. **Approach:** follow `tech-stack.md` and choose implementation details, or honor specific preferences?
+3. **Validation:** use the roadmap gate and constitutional checks, or add criteria?
+
+## 4. Select an eligible phase
 
 Use this lightweight state model:
 
@@ -52,9 +60,11 @@ If the user names a phase, require it to be READY. Otherwise choose a READY phas
 
 Refresh remote state immediately before claiming. Create the new branch with an operation that fails when the ref already exists; never update an existing branch during the claim. If `phase/NN-{slug}` already exists, coordinate with its owner instead of overwriting it. If only a closed-unmerged pull request remains, do not treat the phase as READY; route recovery through `finish-phase`, which may reopen it or request an explicit decision about a replacement review.
 
-## 4. Resolve scope and authority
+## 5. Resolve scope and authority
 
 An explicit request to start the selected phase authorizes its branch, workspace, planning commit, and normal push. Create a tracking Issue only when the user explicitly asks for one; do not interrupt the phase start merely to offer it. Ask only when the phase, scope, or owner is ambiguous.
+
+Use the answers from the grouped questions to settle scope, approach, and validation. Ask a narrowly scoped follow-up only when the phase or owner remains ambiguous.
 
 Before writing, report:
 
@@ -66,7 +76,7 @@ Do not infer deployment, production access, financial mutations, or unrelated in
 
 If a global decision is unresolved, use `manage-shared-specs`. A small decision directly required by this phase may be carried in the phase branch when nothing else must depend on it before merge. A broad or unrelated update, or a supporting phase that must start first, uses a short-lived documentation branch. Active phases do not need to finish first.
 
-## 5. Prepare the local branch and workspace
+## 6. Prepare the local branch and workspace
 
 1. Refresh the remote default branch, dependencies, conflicts, and existing phase branches/pull requests.
 2. Create the local `phase/NN-{slug}` from the latest remote default branch. Do not publish an empty remote branch.
@@ -75,7 +85,7 @@ If a global decision is unresolved, use `manage-shared-specs`. A small decision 
 
 If local setup fails, preserve or remove only the local resources within the user's request. No remote claim exists until the planning commit is published.
 
-## 6. Write the phase specification
+## 7. Write the phase specification
 
 Create these files in the phase directory. Keep them to a few decision-complete bullets for a narrow phase; omit non-applicable contract, layer, and risk details.
 
@@ -123,7 +133,7 @@ pnpm build
 
 Add OpenAPI/Orval, browser, Yuno sandbox/mock, webhook, idempotency, secrets, RLS, CORS, and authorization checks only when the phase exercises them. Keep validation proportional.
 
-## 7. Publish planning
+## 8. Publish planning
 
 Review the diff, stage only the phase planning files and any explicitly approved shared-spec clarification, and commit `Start Fase NN: Nome`. Refresh dependencies, conflicts, remote branches, and pull requests once more. Publish the planning commit by creating the new remote `phase/NN-{slug}` ref with an operation that fails if the branch exists. This single push claims the phase and exposes its owner/spec together.
 
@@ -133,6 +143,6 @@ When the user requested a tracking Issue and Issues are available, create or reu
 
 Do not deploy, merge a pull request, apply a remote migration, or perform a Yuno financial operation.
 
-## 8. Report
+## 9. Report
 
 Report the phase, priority, branch, workspace, planning commit, spec directory, optional Issue, dependencies/conflicts, ownership, contract gates, validation, fallback, any shared decision carried by the phase, and unresolved prerequisites. Direct cross-layer implementation to `implement-phase`.
