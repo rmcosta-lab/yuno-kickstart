@@ -27,7 +27,7 @@ Handle repository states explicitly:
 
 Read the surrounding source, tests, configuration, generated API contract, and documentation for every questionable hunk. A diff alone is not enough context.
 
-For a phase branch or pull request, use read-only GitHub inspection to record the exact reviewed head SHA and audit its shared coordination facts: immutable roadmap number, heading name, `Slug`, dependencies, conflicts, and gate matching the recorded phase metadata; one Issue; sole assignee matching `Owner: @login`; published planning SHA/spec; deterministic remote phase branch; no closed-unmerged duplicate; pull-request head and remote-default base; `Closes #<issue>`; dependency completion; and the absence of an incompatible active conflict or shared-path owner. Report claim drift as a finding. If shared GitHub state is unavailable, continue only with the locally resolvable review and state that the coordination and merge verdict could not be verified.
+For a phase branch or pull request, use read-only GitHub inspection to record the exact reviewed head SHA and check the lightweight coordination facts: the roadmap phase and slug match the branch, dependencies are merged, no declared conflict is active, the phase spec exists, one pull request represents the branch, and any shared-spec decision is explained in the phase plan and pull-request body. Check the tracking Issue and owner when an Issue exists, but do not require attempt identifiers or duplicate lifecycle metadata. If GitHub state is unavailable, continue with the locally resolvable review and state that coordination and mergeability could not be verified.
 
 ## 2. Load product intent
 

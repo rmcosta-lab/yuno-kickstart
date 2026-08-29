@@ -958,20 +958,25 @@ Use `.agents/skills` as the only repository-scoped skill source. Do not create o
 
 ### Shared roadmap coordination
 
-Treat `docs/project-specs/roadmap.md` as a static dependency graph. Every `### Fase NN — Nome` section declares a canonical `Slug:`, `Depends on: none|NN,...`, `Conflicts with: none|NN,...`, and `Gate:`. Require the slug to match `^[a-z0-9]+(?:-[a-z0-9]+)*$` and use it verbatim in coordination paths. The gate is the minimum evidence for review; it is not the shared `DONE` state. Phase numbers are identifiers, not an implicit execution sequence. Do not write mutable phase status, assignees, branches, or `✅` markers into the roadmap. Once any coordination Issue, branch, planning record, or pull request exists for a phase, freeze its number, heading name, slug, dependencies, conflicts, and gate; later scope changes use a new phase identity.
+Treat `docs/project-specs/roadmap.md` as a lightweight dependency graph. Every `### Fase NN — Nome` section declares `Slug:`, `Depends on:`, `Conflicts with:`, and `Gate:`. Use `none` for empty lists, require lowercase kebab-case slugs, and do not infer dependencies from phase numbers.
 
-GitHub is the shared execution state:
+Use ordinary GitHub branches and pull requests as the coordination mechanism:
 
-- one canonical coordination issue `[Fase NN] Nome` records the owner and phase metadata
-- one deterministic remote branch `phase/NN-{slug}`, using the roadmap's required static `Slug`, is the exclusive claim lock
-- one pull request from that branch to the remote default branch represents review
-- `DONE` requires the applicable checks and phase validation to pass, that pull request to be merged, and the issue to be closed
+- one remote branch `phase/NN-{slug}` indicates that a phase is being worked on
+- one pull request from that branch represents review; a merged pull request means the phase is done
+- an Issue `[Fase NN] Nome` may record the owner and notes, but it is not a lock or a prerequisite when Issues are unavailable
+- dependencies must be merged before a dependent phase starts
+- phases that declare a conflict should not run concurrently
 
-A phase is eligible only when every declared dependency is `DONE`, no declared conflict is active or in `DRIFT`, no shared branch, pull request, or assigned issue already claims it, and its sole Issue does not record the terminal empty-phase outcome `CANCELED`. A canceled phase never satisfies a dependency or becomes eligible again. Treat conflict edges as bidirectional. Use them when two phases would write the same serialized shared/root file or depend on the same unsettled decision.
+Before starting or publishing work, refresh the remote branch and pull-request state. Branch creation is the practical claim: if the branch already exists, coordinate with its owner instead of overwriting it. Do not use coordination mutexes, attempt UUIDs, synthetic lifecycle records, or force-pushes.
 
-`start-phase` and `manage-shared-specs` must use the create-only `refs/heads/coordination/phase-claim-lock` mutex around their cross-workflow check-and-create transaction; partial phase claims, orphan-lock repairs, implementation review blocking, fixed-task publication, and `finish-phase` review/merge/reconciliation mutations use the same mutex for their bounded refresh-and-mutate transaction. Refresh all relevant shared facts while holding it, create or repair the durable claim or review with the applicable create-only, update-only, or unique-Issue operation, and then release the short-lived mutex before long-running or local-only work. The durable branch is the claim; assignees and labels are not atomic locks. Never release a stale mutex based only on age or without confirming that no `start-phase`, `manage-shared-specs`, implementation, `changelog`, or `finish-phase` transaction remains active. The GitHub tool, credentials, and branch-protection policy must permit create-only refs, update-only non-force publication, and conditional compare-and-delete of only explicitly authorized coordination refs at their expected old SHA. If authenticated GitHub access or a remote default branch is unavailable, distributed coordination must stop rather than fall back to local-only state.
+Frontend, API, and backend work may run in parallel when one writer owns each path. Separate phases may also run in parallel when dependencies and declared conflicts allow it. When two pull requests touch the same shared file, communicate, merge one first, and refresh the other before publication.
 
-Frontend, API, and backend may run in parallel inside one claimed phase under `implement-phase`. Separate phases may run in parallel only when the dependency graph makes each one eligible. `manage-shared-specs` exclusively owns `docs/project-specs/mission.md`, `docs/project-specs/tech-stack.md`, `docs/project-specs/roadmap.md`, and `docs/decisions/challenge-plan.md` through the remote branch `refs/heads/docs/project-specs`; it does not own the dated phase directories below `docs/project-specs/`. Each claimed phase owns only its exact `docs/project-specs/YYYY-MM-DD-NN-{slug}/` directory through its coordinator. `manage-shared-specs` must not change its global files while any phase is `IN_PROGRESS`, `REVIEW`, or `DRIFT`. The only exception is an explicit restore-roadmap operation that pauses affected work and restores only uniquely reconstructable frozen phase metadata while preserving, without mutating, at most the authoritative stale-Issue or uniquely identified incomplete-claim facts documented by that skill. `changelog` exclusively owns `CHANGELOG.md` through `docs/changelog`. Keep other global shared files read-only unless an exact path has exclusive ownership through the conflict graph or another serialized task. Release a fixed branch only after its pull-request merge is verified, or after explicit repair proves it is an empty orphan and records any incomplete Issue as abandoned. A retry from the same unchanged base must reopen the single canonical `ABANDONED` Issue with a new attempt identifier; never create a duplicate exact-title Issue.
+Global specifications are living documents during the hackathon. A phase may update `tech-stack.md`, `roadmap.md`, `mission.md`, or `challenge-plan.md` in its own pull request when the change is directly required by that phase. Record the reason and impact in the phase plan and pull-request body, notify affected phase owners, and keep one writer for each shared file. Use `manage-shared-specs` and a short-lived `docs/specs-{topic}` branch for broader or unrelated specification work.
+
+Do not silently rename, remove, or weaken the gate of an active or merged phase. Clarify it only with an explicit team decision; represent a materially different outcome or new prerequisite as a follow-up phase. Future unstarted phases may be reorganized as long as the graph remains valid. Keep mutable status, assignees, branch names, and `✅` markers out of the roadmap.
+
+An urgent shared decision does not require all phases to finish. Pause only the affected integration work, publish the small specification decision, let affected branches refresh, and continue. GitHub merge conflicts and team communication provide serialization; do not introduce a repository-wide lock for hackathon documentation.
 
 ### Check skills before work
 
@@ -998,15 +1003,15 @@ Use this table to select skills. A skill remains inactive when its trigger does 
 
 | Skill | Use it when |
 | --- | --- |
-| `manage-shared-specs` | Initializing or updating global mission, stack, roadmap, or challenge decisions through their serialized branch |
-| `start-phase` | Atomically claiming and specifying an eligible roadmap phase without implementing it |
+| `manage-shared-specs` | Initializing or updating global mission, stack, roadmap, or challenge decisions through an ordinary documentation or phase pull request |
+| `start-phase` | Claiming an eligible roadmap phase with its deterministic branch and writing its specification without implementing it |
 | `implement-phase` | Coordinating a complete phase across frontend, API, and backend workstreams |
 | `implement-frontend-phase` | Implementing an isolated frontend workstream |
 | `implement-api-phase` | Implementing an isolated FastAPI/BFF workstream |
 | `implement-backend-phase` | Implementing an isolated backend/core workstream |
 | `deep-review` | Running an explicitly requested read-only, SHA-specific, pre-merge multi-agent review |
-| `finish-phase` | Submitting a verified phase through its shared pull request or reconciling after remote merge; never deploying |
-| `changelog` | Publishing merged phase results through the serialized `docs/changelog` branch and reconciling its lock |
+| `finish-phase` | Submitting a verified phase through its pull request or reconciling after remote merge; never deploying |
+| `changelog` | Preparing release notes from merged phase pull requests through an ordinary documentation pull request |
 | `library-skills` | Discovering, checking, or repairing package-provided skill symlinks |
 | `frontend-app-builder` | Building a new frontend surface or performing a substantial redesign for the hackathon |
 | `frontend-testing-debugging` | Testing or debugging rendered UI, responsive behavior, browser errors, or interactions |
