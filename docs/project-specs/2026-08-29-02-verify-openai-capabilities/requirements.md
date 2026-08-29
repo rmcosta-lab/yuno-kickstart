@@ -1,11 +1,11 @@
-# Fase 02 — Verify OpenAI Realtime and extraction access
+# Phase 02 — Verify OpenAI Realtime and extraction access
 
 ## Outcome and priority
 
 - **Objective:** retire the OpenAI access and Realtime feasibility risks before product code depends on them.
 - **Target user:** the Volta implementation team and demo coordinator.
-- **User-visible outcome:** a redacted, reproducible capability report identifies an account-available structured-extraction model and Realtime voice model, proves the required browser and server flows with synthetic Spanish content, and records limits and fallbacks.
-- **Priority:** P0 risk-reduction gate for Fases 11 and 13.
+- **User-visible outcome:** a redacted, reproducible capability report identifies an account-available structured-extraction model and Realtime voice model, proves the required browser and server flows with synthetic English content, and records limits and fallbacks.
+- **Priority:** P0 risk-reduction gate for Phases 11 and 13.
 
 ## Scope
 
@@ -14,7 +14,7 @@ Included:
 - Current official OpenAI documentation for Structured Outputs, Realtime models, client secrets, WebRTC, WebSocket, tools, interruptions, and voice activity events.
 - Credentialed probes for one schema-constrained extraction and the complete Realtime gate.
 - A minimal isolated smoke harness under `experiments/openai-capabilities/**` and redacted evidence in this phase directory.
-- Account-specific model availability, rate-limit observations, latency, browser permissions, Spanish behavior, and deterministic fallback decisions.
+- Account-specific model availability, rate-limit observations, latency, browser permissions, English behavior, natural voice pacing, and deterministic fallback decisions.
 
 Excluded:
 
@@ -29,25 +29,25 @@ Excluded:
 - **Tracking Issue:** none requested
 - **Depends on:** none
 - **Conflicts with:** none
-- **Roadmap gate:** official current documentation and credentialed smoke tests confirm an account-available extraction model, an account-available Realtime voice model, ephemeral client credentials, browser WebRTC, server WebSocket events, one tool-call result roundtrip, Spanish audio, barge-in, and reproducible `audio_start_ms` plus item ID evidence; limits and fallbacks are recorded.
+- **Roadmap gate:** official current documentation and credentialed smoke tests confirm an account-available extraction model, an account-available Realtime voice model, ephemeral client credentials, browser WebRTC, server WebSocket events, one tool-call result roundtrip, English audio with natural pacing, barge-in, and reproducible `audio_start_ms` plus item ID evidence; limits and fallbacks are recorded.
 
 ## Decisions, assumptions, risks, and fallback
 
 - Use the current GA Realtime interface. The official docs currently identify `gpt-realtime-2.1` as a Realtime model with audio input/output and function calling, but the probe selects it only if the project account confirms access.
 - Use WebRTC for the browser probe and WebSocket for the server probe. A standard API key remains server-side; a short-lived client secret may exist only in browser memory for the probe session.
-- Use a fixed synthetic Spanish drayage fixture and one short mixed-language interruption. No prompt or audio contains a real person, carrier, shipment, or contact detail.
+- Use a fixed synthetic English drayage fixture and one short English interruption. No prompt or audio contains a real person, carrier, shipment, or contact detail.
 - Record sanitized event names, IDs needed by the gate, timings, statuses, model IDs, and limits. Never record authorization headers, standard or ephemeral secrets, full provider payloads, or raw/private audio in Git.
 - Main risks are unavailable models, quota or regional restrictions, microphone/browser denial, non-reproducible interruption behavior, and missing evidence correlation.
-- If Realtime access is unavailable, retain deterministic text mode and a recorded browser fallback as the demo path, record the exact account blocker, and do not claim the Fase 02 gate or unblock dependent Realtime implementation.
+- If Realtime access is unavailable, retain deterministic text mode and a recorded browser fallback as the demo path, record the exact account blocker, and do not claim the Phase 02 gate or unblock dependent Realtime implementation.
 
 ## Acceptance criteria
 
 - One model available to the project account returns a strict schema-conforming extraction of the canonical synthetic intake, with missing facts represented explicitly rather than invented.
 - An account-available Realtime voice model completes both a browser WebRTC session and a server WebSocket session using the current GA event shapes.
-- The browser obtains a scoped, short-lived client secret without exposing the standard API key and completes Spanish audio input/output.
+- The browser obtains a scoped, short-lived client secret without exposing the standard API key and completes English audio input/output at a calm, conversational pace.
 - A synthetic tool request is executed locally, returned as `function_call_output` with the original `call_id`, and followed by a model response.
 - The operator interrupts model audio; the harness captures the cancellation/truncation behavior and the conversation continues coherently.
-- A caller turn produces a reproducible `input_audio_buffer.speech_started` event whose `audio_start_ms`, item ID, and event ID can be correlated to the retained private test artifact.
+- A caller turn produces a reproducible `input_audio_buffer.speech_started` event whose `audio_start_ms`, item ID, and event ID correlate to the private test artifact during validation; only its redacted digest and metadata remain after scheduled deletion.
 - The report records model IDs, transport choices, observed limits and latency, failures, browser requirements, redaction review, and fallback status without exposing secrets or personal data.
 
 ## Contract gates
@@ -65,7 +65,7 @@ Exact request and event shapes must be re-read from the official documentation d
 
 ### Application boundary
 
-No production application service, import path, public symbol, or exception contract is introduced. The smoke harness is a disposable provider-feasibility boundary with typed local inputs (synthetic fixture and selected model IDs), typed redacted results, explicit nonzero failure exits, and no imports from FastAPI or Volta domain modules. Fase 11 will define the reusable provider-neutral protocols and adapter exceptions after this gate passes.
+No production application service, import path, public symbol, or exception contract is introduced. The smoke harness is a disposable provider-feasibility boundary with typed local inputs (synthetic fixture and selected model IDs), typed redacted results, explicit nonzero failure exits, and no imports from FastAPI or Volta domain modules. Phase 11 will define the reusable provider-neutral protocols and adapter exceptions after this gate passes.
 
 ### Browser/server handoff and terminal result
 
