@@ -1,11 +1,11 @@
 ---
 name: finish-phase
-description: Validate and submit a Yuno × Nauta phase through its pull request, explicitly merge an approved review, or reconcile local resources after merge. Use when the user asks to finish, submit, merge, or reconcile a phase; never deploy.
+description: Validate and submit a Yuno × Nauta phase through a pull request, then explicitly merge the approved pull request into the remote default branch, or reconcile resources after merge. Use when the user asks to finish, submit, merge, or reconcile a phase; never deploy or push directly to the default branch.
 ---
 
 # Finish a Yuno × Nauta phase
 
-A phase is done when its required validation passes and its pull request is merged into the remote default branch. A tracking Issue is useful but not required for correctness.
+A phase is done when its required validation passes and its pull request is merged into the remote default branch. When that branch is `main`, every phase change must enter `main` through its pull request; never push the phase changes directly to `main`. A tracking Issue is useful but not required for correctness.
 
 ## 1. Resolve the target and mode
 
@@ -16,6 +16,7 @@ Use authenticated GitHub access for publication. Stop when the repository/defaul
 Select one mode:
 
 - **Submission:** validate, commit, push, and create or update the phase pull request. Stop in review.
+- **Submit and merge:** only when the user explicitly requests both operations, validate and create or update the pull request first, then merge that same pull request into the remote default branch after all merge requirements pass. Never merge before the pull request exists and has been refreshed.
 - **Review follow-up:** read unresolved review threads and requested changes, address or explicitly decline each item, validate affected behavior, and publish to the existing open pull request.
 - **Explicit merge:** merge an already reviewed pull request only when the user specifically requests the remote merge and checks/approvals pass.
 - **Reconciliation:** verify an already merged pull request, close its tracking Issue when appropriate, refresh the local default branch, and clean safe local resources.
@@ -71,9 +72,11 @@ Read `.github/pull_request_template.md` when present and preserve its structure.
 - title: `[Fase NN] Nome`
 - body: outcome, scope, dependencies, validation evidence, limitations, fallback, shared-spec decisions, and `Closes #<issue>` when a tracking Issue exists
 
-Do not duplicate an open pull request. Report its URL, exact head SHA, checks, review state, and mergeability. Submission and review follow-up stop here; an open pull request is not done.
+Do not duplicate an open pull request. Report its URL, exact head SHA, checks, review state, and mergeability. Submission and review follow-up stop here; an open pull request is not done. Submit-and-merge continues to the merge step only after the pull request has been created or updated and refreshed from GitHub.
 
 ## 5. Merge only with explicit authorization
+
+Enter this step only in **Explicit merge** or **Submit and merge** mode. Creating a pull request does not by itself authorize its merge.
 
 Immediately before merging, refresh the pull request and require:
 

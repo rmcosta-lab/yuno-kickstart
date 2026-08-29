@@ -18,6 +18,8 @@
 - Integration checkpoint: Phase 03 records provider observations only. Phase 18 owns the provider-neutral outbound adapter, and Phase 19 owns FastAPI ingress, request verification, WebSocket bridging, and later OpenAPI/Orval generation.
 - Shared-decision checkpoint: if official evidence makes the accepted Twilio or hosting direction infeasible, pause and use `manage-shared-specs`. Phases that depend on Phase 03 must refresh after that decision merges.
 - Final checkpoint: the verdict cannot be PASS based only on documentation, a one-way stream, an unsigned callback, or an unauthorized call.
+- Recorded execution variance: the first separately authorized, unrecorded attempt reached affirmative consent but ended before media because bare Uvicorn lacked a WebSocket transport. After adding the missing transport, passing an exact public WSS preflight, and obtaining a new explicit authorization, one second unrecorded attempt satisfied the gate. Neither attempt was automatic, concurrent, recorded, or directed to another participant; this variance does not broaden product scope or weaken the unchanged roadmap gate.
+- User-approved shared tooling change: include `.agents/skills/finish-phase/SKILL.md` in this pull request. The change clarifies that phase work reaches `main` only through a pull request, defines explicit submit-and-merge mode, and requires separate merge authorization. It affects future phase workflow only; it does not change application behavior, shared project specifications, or the Phase 03 gate.
 
 ## Workstreams and ownership
 

@@ -2,61 +2,63 @@
 
 ## Coordination and scope
 
-- [ ] The work remains on `phase/03-verify-twilio-outbound` and touches only the owned Phase 03 paths.
-- [ ] Remote dependencies, conflicts, phase branches, and pull requests were refreshed before implementation and before publication.
-- [ ] No frontend, API/BFF, backend/core, generated client, database, manifest, lockfile, `.env.example`, or shared-spec change entered the phase.
-- [ ] Any accepted-scope exception received an explicit decision and updated ownership before the change.
+- [x] The work remains on `phase/03-verify-twilio-outbound` and touches the owned Phase 03 paths plus the explicitly user-approved shared workflow skill `.agents/skills/finish-phase/SKILL.md`.
+- [x] Remote dependencies, conflicts, phase branches, and pull requests were refreshed before implementation and before handoff. No dependency or conflict applies; no phase pull request exists.
+- [x] No frontend, API/BFF, backend/core, generated client, database, manifest, lockfile, `.env.example`, or shared-spec change entered the phase.
+- [x] The only execution variance is recorded in `plan.md`: after the first separately authorized attempt exposed the missing WebSocket transport, the operator separately authorized the corrected second attempt. The owned paths and unchanged roadmap gate did not expand.
+- [x] The user explicitly requested inclusion of the `finish-phase` skill clarification. Its repository-wide workflow impact is recorded in `plan.md`; it changes no application layer or shared project specification.
 
 ## Official documentation evidence
 
-- [ ] Every source is an official current Twilio page with title, direct URL, access date, applicable account mode or region, and a concise conclusion.
-- [ ] Account and trial restrictions are documented, including their effect on participant eligibility and provider announcements.
-- [ ] Originating-number capabilities, destination verification, geographic permissions, and applicable regional calling constraints are documented.
-- [ ] The exact official procedure for validating Twilio callback requests is documented for the public URL used by the test.
-- [ ] Call-status callback behavior and the observed status evidence are documented without promoting raw provider fields into Volta application contracts.
-- [ ] Bidirectional Media Stream connection, lifecycle, media, TLS, and disconnect requirements are documented.
-- [ ] AI disclosure, recording consent, and recording-start requirements are documented for the authorized test context, with legal or policy uncertainty called out rather than guessed.
+- [x] Every Twilio-specific source is a current official Twilio page with title, direct URL, access date, applicable account mode or region, and a concise conclusion. Hosting uses separately labeled official provider documentation.
+- [x] Account and trial restrictions are documented, including their effect on participant eligibility, concurrency, provider announcements, and the decisive trial `<Stream>` block.
+- [x] Originating-number capabilities, destination verification, geographic permissions, and applicable Mexico, Brazil, and `+1` calling constraints are documented.
+- [x] The official callback-verification procedure is documented. The exact public status URL accepted a correctly signed synthetic request, rejected a tampered form, and accepted live Twilio callbacks.
+- [x] Call-status callback behavior is documented without promoting provider fields into Volta contracts; the live run observed redacted `initiated`, `ringing`, `in-progress`, and `completed` events.
+- [x] Bidirectional Media Stream connection, lifecycle, media, TLS, WSS signature, mark/clear, and ambiguous disconnect requirements are documented.
+- [x] AI disclosure, pre-Stream consent, recording consent, recording-start, minimization, and jurisdictional uncertainty are documented. The smoke procedure keeps recording disabled.
 
 ## Authorization, privacy, and security
 
-- [ ] The operator explicitly approved the exact smoke-call target, originating account or number class, endpoint, disclosure and consent script, and expected provider mutations before the call.
-- [ ] The participant and destination were allowlisted and authorized; no real carrier was contacted.
-- [ ] AI disclosure occurred before the test interaction, and no recording began without the participant's consent.
-- [ ] Credentials, authorization headers, auth tokens, full phone numbers, account identifiers, raw provider payloads, and private audio are absent from Git, logs, screenshots, and published evidence.
-- [ ] The endpoint uses valid HTTPS and secure WebSockets, keeps secrets server-side, and logs only redacted structured metadata.
-- [ ] The exact signed callback URL is reconstructed correctly through any proxy or tunnel.
+- [x] Before each external mutation, the operator explicitly approved the exact participant label, destination country, originating-number class, temporary endpoint, disclosure, recording-disabled behavior, duration, expected charge, cleanup, and evidence limits.
+- [x] The operator reported an upgraded account, and read-only Console inspection confirmed an active Twilio-owned United States origin with Voice enabled. The successful live Stream proved the trial `<Stream>` restriction did not apply.
+- [x] Brazil low-risk dialing was enabled, high-risk dialing remained disabled, and the operator reported the private exact destination passed Twilio's permission check. Only the operator-owned destination labeled `AUTHORIZED_TEST_A` was contacted under explicit authorization.
+- [x] The participant heard the Brazilian Portuguese disclosure before streaming, pressed `1`, and later confirmed hearing the deterministic tone. Recording remained disabled and no audio or transcript was retained.
+- [x] Diff and untracked-file inspection found no credentials, authorization headers, auth tokens, full phone numbers, account identifiers, raw provider payloads, or private audio.
+- [x] A separately authorized temporary Quick Tunnel exposed only the localhost disposable harness and was stopped after the call. No persistent deployment was created; paid Render remains the documented P0.1 design.
+- [x] Signature validation reconstructed the configured public origin rather than the internal proxy URL. Exact HTTPS callbacks and the WSS upgrade passed with the primary token; a tampered form returned `403`.
 
 ## Deterministic and transport checks
 
-- [ ] A valid representative callback passes the official request verifier.
-- [ ] A tampered body, parameter, URL, or signature fails verification safely.
-- [ ] The endpoint observes safe call-status evidence with redacted correlation identifiers and timestamps.
-- [ ] The secure WebSocket observes Twilio stream lifecycle and inbound media events.
-- [ ] The endpoint sends deterministic media back through the bidirectional stream, and the authorized participant confirms receipt.
-- [ ] Disconnect and cleanup behavior do not leave the test endpoint or call in a falsely successful state.
-- [ ] The smoke test is reproducible without OpenAI, Volta domain services, or product application routes.
+- [x] `twilio-python` 9.11.0 validated Twilio's official synthetic form signature vector.
+- [x] The same official verifier rejected a tampered external URL and a tampered form parameter.
+- [x] The endpoint observed redacted live call-status evidence through terminal `completed`.
+- [x] The TLS-valid secure WebSocket observed `connected`, `start`, inbound `media`, and `stop`.
+- [x] The harness returned 25 paced frames representing a 500-millisecond 400-hertz μ-law tone, received uncleared mark `phase03-tone-1`, and the participant confirmed hearing it.
+- [x] The Stream emitted `stop`, released its single-connection guard, and the call emitted terminal `completed`. The temporary processes then shut down cleanly.
+- [x] The no-OpenAI harness passes deterministic local tests and the separately authorized credentialed smoke passed. The first authorized attempt exposed a missing WebSocket transport dependency; it was corrected and publicly preflighted before the separately authorized successful attempt.
 
 ## Hosting and fallback
 
-- [ ] The findings distinguish the disposable smoke endpoint from the selected compatible P0.1 hosting approach.
-- [ ] The hosting decision covers HTTPS, secure WebSockets, callback stability, server-only secrets, logs, account constraints, and operational ownership.
-- [ ] A fallback and smallest next action are recorded for account, number, destination, policy, network, and hosting failures.
-- [ ] Browser voice, text, and recorded fallbacks are described accurately; they do not satisfy the P0.1 telephony gate.
+- [x] The temporary Quick Tunnel is clearly distinguished from the selected paid Render P0.1 service and was removed immediately after the completed smoke test.
+- [x] The Render decision covers HTTPS, secure WebSockets, callback stability, one-instance state, server-only secrets, logs, account constraints, health, disconnects, and operational ownership.
+- [x] Cloud Run is the documented infrastructure fallback, and smallest next actions are recorded for account, number, destination, policy, network, and hosting failures.
+- [x] Browser voice, text, and private recorded fallbacks are described accurately and explicitly do not satisfy the P0.1 telephony gate.
 
 ## Repository checks
 
-- [ ] `rtk git diff --check`
-- [ ] `rtk git status --short`
-- [ ] Complete tracked and untracked diff review, including a credential, full-phone-number, participant-data, raw-payload, and audio-artifact scan.
-- [ ] If Python feasibility code or tests were added: `rtk uv run ruff check .`
-- [ ] If Python feasibility code or tests were added: `rtk uv run pytest`
-- [ ] If Python feasibility code or tests were added: `rtk make python-check`
-- [ ] `pnpm lint` and `pnpm build` are marked not applicable unless frontend scope was explicitly added.
-- [ ] OpenAPI/Orval generation, browser application checks, database checks, webhook checks, Yuno checks, Row Level Security, Cross-Origin Resource Sharing, and application authorization checks are marked not applicable unless their scope was explicitly added.
+- [x] `rtk git diff --check`
+- [x] `rtk git status --short`
+- [x] Complete tracked and untracked diff review, including a credential, full-phone-number, participant-data, raw-payload, and audio-artifact scan.
+- [x] `rtk uv run ruff check scripts/twilio_feasibility scripts/__init__.py` passed.
+- [x] Five isolated harness tests passed under Python 3.13 with FastAPI and the official Twilio SDK.
+- [x] `rtk make python-check` passed: Ruff plus 15 repository tests.
+- [x] `pnpm lint` and `pnpm build` are not applicable because frontend scope was not added.
+- [x] OpenAPI/Orval generation, browser application checks, database checks, webhook checks, Yuno checks, Row Level Security, Cross-Origin Resource Sharing, and application authorization checks are not applicable because their scope was not added.
 
 ## Gate verdict
 
-- [ ] The final dossier maps every unchanged roadmap-gate clause to official documentation and safe observed evidence.
-- [ ] Credentialed provider evidence is labeled separately from deterministic repository checks.
-- [ ] PASS is declared only after the authorized bidirectional secure-WebSocket smoke test and every other gate claim succeed.
-- [ ] Otherwise BLOCKED is declared with the unmet claim, evidence gathered, smallest next action, owner, and P0/P0.1 impact.
+- [x] The final dossier maps every unchanged roadmap-gate clause to official documentation and safe observed evidence.
+- [x] Credentialed provider evidence is labeled separately from synthetic verification; the dossier does not represent the synthetic SDK vector as a live callback.
+- [x] The authorized bidirectional secure-WebSocket smoke test satisfied every unchanged roadmap-gate claim.
+- [x] PASS is declared with the tested boundary, redacted evidence, resolved first-attempt defect, cleanup, remaining downstream work, and P0/P0.1 impact.
