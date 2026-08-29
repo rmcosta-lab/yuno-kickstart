@@ -1,0 +1,2 @@
+"""Mandate core tests."""
+
