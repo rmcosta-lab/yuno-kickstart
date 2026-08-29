@@ -22,6 +22,20 @@ from yuno_backend.volta.mandates.models import (
     PickupWindow,
     Route,
 )
+from yuno_backend.volta.negotiations.models import (
+    BrowserChannel,
+    CallState,
+    CarrierSession,
+    Commitment,
+    CommitmentDisposition,
+    CommitmentLifecycle,
+    MutationIdempotency,
+    Negotiation,
+    PreContactEscalation,
+    Quote,
+    QuoteEligibility,
+    QuoteTerms,
+)
 
 __all__: list[str] = []
 
@@ -208,4 +222,197 @@ def _audit_from_row(row: Mapping[str, Any]) -> AuditEvent:
         occurred_at=_utc(row["occurred_at"]),
         correlation_id=row["correlation_id"],
         metadata=dict(row["metadata"]),
+    )
+
+
+def _session_to_values(value: CarrierSession) -> dict[str, Any]:
+    return {
+        "call_id": value.call_id,
+        "negotiation_id": value.negotiation_id,
+        "operation_id": value.operation_id,
+        "carrier_id": value.carrier_id,
+        "carrier_display_label": value.carrier_display_label,
+        "route_origin": value.route.origin,
+        "route_destination": value.route.destination,
+        "available_snapshot": value.available_snapshot,
+        "fixed_priority": value.fixed_priority,
+        "selection_rank": value.selection_rank,
+        "channel": value.channel.value,
+        "state": value.state.value,
+        "created_at": value.created_at,
+    }
+
+
+def _session_from_row(row: Mapping[str, Any]) -> CarrierSession:
+    return CarrierSession(
+        row["call_id"],
+        row["negotiation_id"],
+        row["operation_id"],
+        row["carrier_id"],
+        row["carrier_display_label"],
+        Route(row["route_origin"], row["route_destination"]),
+        row["available_snapshot"],
+        row["fixed_priority"],
+        row["selection_rank"],
+        BrowserChannel(row["channel"]),
+        CallState(row["state"]),
+        _utc(row["created_at"]),
+    )
+
+
+def _escalation_to_values(value: PreContactEscalation) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "negotiation_id": value.negotiation_id,
+        "operation_id": value.operation_id,
+        "reason_code": value.reason_code,
+        "correlation_id": value.correlation_id,
+        "created_at": value.created_at,
+    }
+
+
+def _escalation_from_row(row: Mapping[str, Any]) -> PreContactEscalation:
+    return PreContactEscalation(
+        row["id"],
+        row["negotiation_id"],
+        row["operation_id"],
+        row["reason_code"],
+        row["correlation_id"],
+        _utc(row["created_at"]),
+    )
+
+
+def _negotiation_from_rows(
+    row: Mapping[str, Any],
+    sessions: Iterable[Mapping[str, Any]],
+    escalation: Mapping[str, Any] | None,
+) -> Negotiation:
+    return Negotiation(
+        row["id"],
+        row["operation_id"],
+        row["operation_version"],
+        row["mandate_version"],
+        tuple(_session_from_row(item) for item in sessions),
+        None if escalation is None else _escalation_from_row(escalation),
+        _utc(row["started_at"]),
+    )
+
+
+def _quote_to_values(value: Quote) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "call_id": value.call_id,
+        "carrier_id": value.carrier_id,
+        "carrier_priority": value.carrier_priority,
+        "amount": value.terms.amount,
+        "currency": value.terms.currency,
+        "pickup_window_start": value.terms.pickup_window_start,
+        "pickup_window_end": value.terms.pickup_window_end,
+        "conditions": list(value.terms.conditions),
+        "valid_until": value.valid_until,
+        "mandate_version": value.mandate_version,
+        "eligibility": value.eligibility.value,
+        "rejection_reasons": list(value.rejection_reasons),
+        "created_at": value.created_at,
+    }
+
+
+def _quote_from_row(row: Mapping[str, Any]) -> Quote:
+    return Quote(
+        row["id"],
+        row["operation_id"],
+        row["call_id"],
+        row["carrier_id"],
+        row["carrier_priority"],
+        QuoteTerms(
+            Decimal(row["amount"]),
+            row["currency"],
+            row["pickup_window_start"],
+            row["pickup_window_end"],
+            tuple(row["conditions"]),
+        ),
+        _utc(row["valid_until"]),
+        row["mandate_version"],
+        QuoteEligibility(row["eligibility"]),
+        tuple(row["rejection_reasons"]),
+        _utc(row["created_at"]),
+    )
+
+
+def _commitment_to_values(value: Commitment) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "call_id": value.call_id,
+        "quote_id": value.quote_id,
+        "carrier_id": value.carrier_id,
+        "amount": value.agreed_terms.amount,
+        "currency": value.agreed_terms.currency,
+        "pickup_window_start": value.agreed_terms.pickup_window_start,
+        "pickup_window_end": value.agreed_terms.pickup_window_end,
+        "conditions": list(value.agreed_terms.conditions),
+        "mandate_version": value.mandate_version,
+        "evidence_id": value.evidence_id,
+        "lifecycle": value.lifecycle.value,
+        "disposition": value.disposition.value,
+        "replaces_commitment_id": value.replaces_commitment_id,
+        "replaced_by_commitment_id": value.replaced_by_commitment_id,
+        "created_at": value.created_at,
+        "superseded_at": value.superseded_at,
+    }
+
+
+def _commitment_from_row(row: Mapping[str, Any]) -> Commitment:
+    return Commitment(
+        row["id"],
+        row["operation_id"],
+        row["call_id"],
+        row["quote_id"],
+        row["carrier_id"],
+        QuoteTerms(
+            Decimal(row["amount"]),
+            row["currency"],
+            row["pickup_window_start"],
+            row["pickup_window_end"],
+            tuple(row["conditions"]),
+        ),
+        row["mandate_version"],
+        row["evidence_id"],
+        CommitmentLifecycle(row["lifecycle"]),
+        CommitmentDisposition(row["disposition"]),
+        row["replaces_commitment_id"],
+        row["replaced_by_commitment_id"],
+        _utc(row["created_at"]),
+        None if row["superseded_at"] is None else _utc(row["superseded_at"]),
+    )
+
+
+def _idempotency_to_values(value: MutationIdempotency) -> dict[str, Any]:
+    result_column = {
+        "start_negotiation": "negotiation_id",
+        "record_quote": "quote_id",
+        "create_commitment": "commitment_id",
+    }[value.operation_name]
+    return {
+        "operation_name": value.operation_name,
+        "idempotency_key": value.key,
+        "operation_id": value.operation_id,
+        "fingerprint": value.fingerprint,
+        "negotiation_id": value.result_id if result_column == "negotiation_id" else None,
+        "quote_id": value.result_id if result_column == "quote_id" else None,
+        "commitment_id": value.result_id if result_column == "commitment_id" else None,
+        "created_at": value.created_at,
+    }
+
+
+def _idempotency_from_row(row: Mapping[str, Any]) -> MutationIdempotency:
+    result_id = row["negotiation_id"] or row["quote_id"] or row["commitment_id"]
+    return MutationIdempotency(
+        row["operation_id"],
+        row["operation_name"],
+        row["idempotency_key"],
+        row["fingerprint"],
+        result_id,
+        _utc(row["created_at"]),
     )

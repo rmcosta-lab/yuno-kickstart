@@ -22,6 +22,12 @@ _MAX_METADATA_STRING_LENGTH = 200
 _MAX_METADATA_INTEGER = (2**53) - 1
 _METADATA_SCHEMA_BY_EVENT = {
     "OPERATION_APPROVED": {"draft_version": int},
+    "NEGOTIATION_STARTED": {},
+    "PRE_CONTACT_ESCALATED": {},
+    "QUOTE_RECORDED": {},
+    "QUOTE_REJECTED": {},
+    "COMMITMENT_ACTIVATED": {},
+    "COMMITMENT_SUPERSEDED": {},
 }
 _SENSITIVE_METADATA_TERMS = frozenset(
     {
@@ -58,6 +64,8 @@ def _validate_metadata(
         raise InvalidDomainValue("metadata", "mapping_required")
     if len(metadata) > _MAX_METADATA_ITEMS:
         raise InvalidDomainValue("metadata", "too_many_items")
+    if event_type not in _METADATA_SCHEMA_BY_EVENT:
+        raise InvalidDomainValue("event_type", "unsupported_event_type")
     safe: dict[str, AuditMetadataScalar] = {}
     accepted_fields = _METADATA_SCHEMA_BY_EVENT.get(event_type, {})
     for key, value in metadata.items():
@@ -95,17 +103,18 @@ class AuditEvent:
             raise InvalidDomainValue("event_id", "uuid_required")
         if not isinstance(self.operation_id, UUID):
             raise InvalidDomainValue("operation_id", "uuid_required")
-        if not isinstance(self.operation_version, int) or isinstance(
-            self.operation_version, bool
-        ) or self.operation_version < 1:
+        if (
+            not isinstance(self.operation_version, int)
+            or isinstance(self.operation_version, bool)
+            or self.operation_version < 1
+        ):
             raise InvalidDomainValue("operation_version", "positive_integer_required")
         if not isinstance(self.actor_kind, AuditActorKind):
             raise InvalidDomainValue("actor_kind", "audit_actor_kind_required")
         if not isinstance(self.event_type, str) or not _SAFE_CODE.fullmatch(self.event_type):
             raise InvalidDomainValue("event_type", "safe_code_required")
-        if (
-            not isinstance(self.occurred_at, datetime)
-            or self.occurred_at.utcoffset() != timedelta(0)
+        if not isinstance(self.occurred_at, datetime) or self.occurred_at.utcoffset() != timedelta(
+            0
         ):
             raise InvalidDomainValue("occurred_at", "aware_utc_required")
         if not isinstance(self.correlation_id, UUID):
