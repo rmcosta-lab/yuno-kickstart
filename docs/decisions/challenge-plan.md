@@ -64,7 +64,7 @@ The coordinator must review and approve the structured operation and mandate bef
 
 After approval, Volta filters the pre-registered carriers by route coverage and declared availability, ranks the eligible results by a fixed demo priority, and selects up to three. It proceeds with one to three eligible carriers. If none is eligible, it creates an auditable human escalation before starting any call.
 
-Spanish is the primary demo language. A short Portuguese or English interruption tests mixed-language recovery. This language choice remains an assumption until the team confirms the judges' expected language.
+English is the primary demo language. A short English interruption tests barge-in and coherent recovery. The team confirmed this language choice on 2026-08-29 after the OpenAI capability trial.
 
 ## Prototype success signal
 
@@ -136,7 +136,7 @@ The first prototype includes:
 - A private, playable demo recording with the `audio_start_ms` offset for each agreeing turn
 - Two reproducible recovery scripts using simulated inbound calls: one autonomous mandate-safe recovery and one human escalation
 - PostgreSQL persistence for the operation and audit state
-- Spanish voice testing with one mixed-language interruption
+- English voice testing with natural pacing and one English interruption
 
 ## P0.1 evolution — real outbound telephony
 
@@ -223,7 +223,7 @@ The prototype requires these Realtime capabilities:
 - Tool calls for quotes, mandate checks, candidate agreements, recaps, briefs, and escalations
 - Server voice activity detection events with `audio_start_ms` and `item_id` for agreement-turn evidence
 - Interruption handling and voice activity detection that the team validates with barge-in tests
-- Spanish speech with mixed-language recovery
+- English speech with natural pacing and interruption recovery
 
 The official OpenAI Realtime overview currently recommends `gpt-realtime-2.1` for low-latency voice agents. It recommends WebRTC for browser audio, WebSocket for server media pipelines, and SIP for telephony agents. Start with low reasoning effort, then measure mandate accuracy and response latency under the trial scenarios.
 
@@ -323,7 +323,7 @@ The submission must contain five artifacts:
 | Attackers mint Realtime credentials from the public demo | Cost, abuse, or data exposure | Require demo authorization, origin checks, rate limits, scoped sessions, and redacted logs |
 | Browser audio, PSTN media, network, or account access fails | Demo interruption | Keep text mode, browser voice, and a recorded video that use the same backend contracts |
 | A call is placed without authority or required disclosure | Trust, legal, or provider-policy failure | Allowlist destinations, require an explicit human start action, disclose AI use, and obtain consent before recording |
-| Spanish, noise, accents, or interruptions reduce accuracy | Failed trial by fire | Test a fixed adversarial matrix and escalate when confidence or facts are insufficient |
+| English speech, noise, accents, or interruptions reduce accuracy | Failed trial by fire | Test a fixed adversarial matrix and escalate when confidence or facts are insufficient |
 | Audio or names leak through the public repository | Privacy or security incident | Use synthetic participants, obtain recording consent, redact logs, and exclude artifacts from Git |
 | The team changes cases late | Lost implementation time | Keep the core mandate, commitment, audit, and tool contracts provider-neutral |
 
