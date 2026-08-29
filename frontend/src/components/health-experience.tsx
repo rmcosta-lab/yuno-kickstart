@@ -21,13 +21,13 @@ export function HealthExperience({ apiDocsUrl }: HealthExperienceProps) {
   const { isError, isFetching, isPending, isSuccess, refetch } = useGetHealth({
     query: {
       select: (response) => {
-        if (response.status !== "ok") {
+        if (response.data.status !== "ok") {
           throw new Error(
             "The API health response did not match its contract.",
           );
         }
 
-        return response;
+        return response.data;
       },
     },
   });

@@ -6,6 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type HealthResponse = {
-  status: "ok";
+export type ValidationIssue = {
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  field: string;
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  message: string;
 };

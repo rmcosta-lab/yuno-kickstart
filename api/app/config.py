@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     )
 
     app_env: Literal["development", "test", "production"] = "development"
-    api_title: str = "Yuno × Nauta API"
+    api_title: str = "Volta API"
     api_version: str = "0.1.0"
     cors_origins: list[str] = ["http://localhost:3000"]
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    volta_demo_bearer_token: SecretStr = SecretStr("")
 
     @field_validator("cors_origins")
     @classmethod

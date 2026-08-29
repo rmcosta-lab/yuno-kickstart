@@ -6,6 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type HealthResponse = {
-  status: "ok";
+export type GetOperationAuditParams = {
+  cursor?: string | null;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
