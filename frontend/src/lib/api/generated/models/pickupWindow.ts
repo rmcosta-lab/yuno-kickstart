@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type HealthResponse = {
-  status: "ok";
+export type PickupWindow = {
+  end_date: string;
+  start_date: string;
 };

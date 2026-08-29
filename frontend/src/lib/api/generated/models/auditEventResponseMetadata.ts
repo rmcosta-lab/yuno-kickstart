@@ -6,6 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type HealthResponse = {
-  status: "ok";
+export type AuditEventResponseMetadata = {
+  [key: string]: string | number | boolean | null;
 };

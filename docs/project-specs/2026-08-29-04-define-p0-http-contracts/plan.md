@@ -43,6 +43,7 @@
 | Transport policies and route declarations | Fase 04 API writer | Contract routers, dependencies, error handling, `api/app/main.py`, `.env.example` | Shared errors and headers are fixed. |
 | API contract tests | Fase 04 API writer | `api/tests/**` | Each model/route group exists; tests stay adjacent to changes. |
 | OpenAPI and Orval generation | Fase 04 API writer | `api/openapi.json`, `frontend/src/lib/api/generated/**` | Route contract tests pass. |
+| Typed Orval header generation | Fase 04 API writer | `frontend/orval.config.ts` | OpenAPI review confirms required header parameters; coordinator assigns this exact file exclusively. |
 | Phase coordination and final integration | `CaioRuas24010` | Phase spec, diff review, final validation | All workstreams complete. |
 
 There is one writer for every affected path. Generated frontend artifacts remain owned by the API writer in this phase; a frontend worker may review their usability but must not edit them. No backend workstream exists because application services and domain behavior are explicitly deferred.
@@ -59,6 +60,8 @@ There is one writer for every affected path. Generated frontend artifacts remain
 - No mission, stack, roadmap, or challenge-plan update is expected. If implementation exposes a shared decision, pause the affected work, notify active phase owners, route the decision through `manage-shared-specs`, and refresh this branch after it merges.
 - No new dependency is expected. If one becomes necessary, the coordinator owns the manifest and matching lockfile as a pair, records the reason here, checks open pull requests touching them, and refreshes the branch before generation.
 - Phase 04 is the sole initial writer for `api/openapi.json` and `frontend/src/lib/api/generated/**`. Later API contract phases must refresh after this phase merges.
+- Orval 8 omits OpenAPI header parameters from named generated arguments unless `output.headers` is enabled. The coordinator inspected both local worktrees and the active remote phase branches on 2026-08-29 and found no concurrent change to `frontend/orval.config.ts`. That exact configuration file is therefore assigned exclusively to the Fase 04 API writer so required idempotency and version headers compile into the generated client. This is a compatible generator setting, not a dependency, stack, or shared-architecture change; manifests and lockfiles remain unchanged.
+- Shared-spec pull request #2 merged while this phase was active and made English the primary demo language. The coordinator refreshed this branch from `origin/main` at commit `519a3de`; `RequestedLanguage.EN_US` was already part of the accepted transport enum, so the contract shape and generated client require no change. Canonical API fixtures now use `EN_US`, while `ES_MX` remains an explicitly supported contract value. Later consumers must follow the merged English journey.
 - No temporary prerequisite is known. If one appears, record the wait here rather than weakening the gate.
 
 ## Safety boundaries

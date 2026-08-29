@@ -32,6 +32,7 @@ class RequestContextMiddleware:
 
         incoming_request_id = Headers(scope=scope).get(_REQUEST_ID_HEADER)
         request_id = incoming_request_id if _valid_request_id(incoming_request_id) else str(uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
         clear_contextvars()
         bind_contextvars(request_id=request_id)
 
@@ -51,7 +52,7 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_with_request_id)
         except BaseException:
-            self.log.exception("http.request.failed", method=method, path=path)
+            self.log.error("http.request.failed", method=method, path=path)
             raise
         finally:
             duration_ms = round((perf_counter() - started_at) * 1000, 2)
