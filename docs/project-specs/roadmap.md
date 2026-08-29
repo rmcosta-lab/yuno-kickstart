@@ -30,7 +30,7 @@ Depends on: none
 
 Conflicts with: none
 
-Gate: Official current documentation and credentialed smoke tests confirm an account-available model for structured extraction, an account-available Realtime voice model, ephemeral client credentials, browser Web Real-Time Communication (WebRTC), server WebSocket events, one tool-call result roundtrip, Spanish audio, barge-in, and reproducible `audio_start_ms` plus item ID evidence; limits and fallbacks are recorded.
+Gate: Official current documentation and credentialed smoke tests confirm an account-available model for structured extraction, an account-available Realtime voice model, ephemeral client credentials, browser Web Real-Time Communication (WebRTC), server WebSocket events, one tool-call result roundtrip, English audio with natural pacing, barge-in, and reproducible `audio_start_ms` plus item ID evidence; limits and fallbacks are recorded.
 
 This provider-feasibility phase uses synthetic content and keeps standard credentials server-side. It does not implement product behavior or change shared application configuration.
 
@@ -162,7 +162,7 @@ Depends on: 09, 12
 
 Conflicts with: none
 
-Gate: The frontend establishes and tears down a Spanish Realtime WebRTC session, handles microphone and playback permissions, barge-in, reconnect, and text fallback, forwards every tool request to typed `/v1` routes, returns the result with the original call identifier, and exposes no standard credential in source, storage, console, or network logs.
+Gate: The frontend establishes and tears down an English Realtime WebRTC session with natural pacing, handles microphone and playback permissions, barge-in, reconnect, and text fallback, forwards every tool request to typed `/v1` routes, returns the result with the original call identifier, and exposes no standard credential in source, storage, console, or network logs.
 
 This frontend-only phase reuses the negotiation UI and never mutates commitment state from a browser callback.
 
@@ -210,7 +210,7 @@ Depends on: 10, 13, 16
 
 Conflicts with: none
 
-Gate: A clean environment completes the canonical Spanish browser journey and the no-eligible-carrier, contradiction, mixed-language interruption, permission-denial, reconnect, good-recovery, and bad-escalation scenarios; `make check`, browser console and network inspection, secret review, and every private recording offset pass, and a recorded fallback is reproducible.
+Gate: A clean environment completes the canonical English browser journey and the no-eligible-carrier, contradiction, English interruption, permission-denial, reconnect, good-recovery, and bad-escalation scenarios; `make check`, browser console and network inspection, secret review, and every private recording offset pass, and a recorded fallback is reproducible.
 
 This cross-layer gate completes P0 before product telephony implementation begins.
 
