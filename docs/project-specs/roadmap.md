@@ -8,6 +8,8 @@ Four phases can start independently: the control tower shell, OpenAI feasibility
 
 Provider feasibility phases record evidence and decisions without editing shared manifests, `.env.example`, or application wiring concurrently. P0.1 implementation waits for the complete P0 browser gate, but the early Twilio phase exposes account, compliance, and hosting risks before they threaten the submission.
 
+OpenAI product implementation is split by capability. Structured intake extraction can begin after the mandate boundary is stable, while Realtime event and tool integration waits for the negotiation core. Phase 12 integrates both adapters only after the integrated text slice passes.
+
 See [`mission.md`](mission.md) for product outcomes and [`tech-stack.md`](tech-stack.md) for accepted technology boundaries.
 
 ### Fase 01 — Structure the control tower shell
@@ -130,23 +132,23 @@ Gate: FastAPI routes delegate the accepted intake, operation, negotiation, quote
 
 This is the first cross-layer integration phase. It owns API dependency wiring and fixes only integration defects in the already-owned backend and frontend implementations.
 
-### Fase 11 — Implement server-side OpenAI adapters
+### Fase 11 — Implement the OpenAI extraction adapter
 
-Slug: implement-openai-adapters
+Slug: implement-openai-extraction-adapter
 
-Depends on: 02, 05, 08
+Depends on: 02, 05
 
 Conflicts with: none
 
-Gate: Backend adapters implement schema-validated intake extraction and narrow Realtime session configuration behind provider-neutral protocols; mocked tests cover event mapping, timeouts, retries, and redaction, while separately marked credentialed tests reproduce the accepted Phase 02 capabilities without exposing standard credentials.
+Gate: A backend adapter implements schema-validated intake extraction behind a provider-neutral protocol; mocked tests cover strict output validation, provider errors, timeouts, retries, and redaction, while a separately marked credentialed test reproduces the accepted Phase 02 extraction capability without exposing a standard credential.
 
-This backend-only phase keeps OpenAI URLs, headers, payloads, and responses outside the domain and API layers. The deterministic extractor remains available for local tests and fallback demonstrations.
+This backend-only phase keeps OpenAI URLs, headers, payloads, and responses outside the domain and API layers. It does not configure a Realtime session or map Realtime events. The deterministic extractor remains available for local tests and fallback demonstrations.
 
 ### Fase 12 — Expose the Realtime session boundary
 
 Slug: expose-realtime-boundary
 
-Depends on: 10, 11
+Depends on: 10, 11, 23
 
 Conflicts with: none
 
@@ -273,3 +275,15 @@ Conflicts with: none
 Gate: An authorized rehearsal exercises the canonical three-carrier fixture through outbound public switched telephone network (PSTN) sessions, preserves evidence for every selected session, completes at least one end-to-end live negotiation with exactly one active winner, demonstrates browser voice, text, and recording fallbacks after a forced provider or network failure, and delivers all five submission artifacts within the allotted time.
 
 The cross-layer trial reports account restrictions, call outcomes, latency, disconnects, and every remaining challenge gap without presenting simulated delivery as verified.
+
+### Fase 23 — Implement the OpenAI Realtime adapter
+
+Slug: implement-openai-realtime-adapter
+
+Depends on: 02, 08
+
+Conflicts with: none
+
+Gate: A backend adapter implements narrow Realtime session configuration and event mapping behind provider-neutral protocols; mocked tests cover session configuration, tool-call and tool-output correlation, provider events, disconnects, timeouts, and redaction, while a separately marked credentialed test reproduces the accepted Phase 02 server WebSocket roundtrip and correlated `audio_start_ms` plus item ID evidence without exposing a standard credential.
+
+This backend-only phase keeps OpenAI URLs, headers, payloads, events, and responses outside the domain and API layers. It does not mint browser credentials, expose an HTTP contract, or allow model events to bypass the deterministic negotiation services.
