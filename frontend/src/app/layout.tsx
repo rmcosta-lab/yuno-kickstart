@@ -18,9 +18,9 @@ const utility = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Yuno × Nauta | Demo foundation",
+  title: "Volta | Control tower",
   description:
-    "A clean Next.js, FastAPI, and Python core baseline for the Yuno × Nauta hackathon.",
+    "Volta's control tower: intake, mandate review, carrier sessions, comparison, evidence, recovery, escalation, and audit for the Yuno × Nauta hackathon.",
 };
 
 export const viewport: Viewport = {
