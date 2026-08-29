@@ -30,6 +30,8 @@ def test_public_surface_matches_phase_contract() -> None:
         "OperationAlreadyApproved",
         "OperationProposal",
         "OperationRepository",
+        "OperationStatus",
+        "OperationStatusEntry",
         "OperationUnitOfWork",
         "PickupWindow",
         "Route",
@@ -51,6 +53,8 @@ def test_each_public_module_exports_only_its_accepted_contract() -> None:
         "Money",
         "Operation",
         "OperationProposal",
+        "OperationStatus",
+        "OperationStatusEntry",
         "PickupWindow",
         "Route",
     }
@@ -82,10 +86,15 @@ def test_each_public_module_exports_only_its_accepted_contract() -> None:
 
 
 def test_volta_core_has_no_transport_persistence_or_provider_imports() -> None:
-    source_root = Path(__file__).parents[4] / "src" / "yuno_backend" / "volta"
+    source_root = Path(__file__).parents[3] / "src" / "yuno_backend" / "volta"
     forbidden = ("fastapi", "pydantic", "sqlalchemy", "api", "database", "integrations")
     imported: list[str] = []
-    for source_file in source_root.rglob("*.py"):
+    core_roots = (source_root / "mandates", source_root / "audit")
+    source_files = [source_root / "errors.py"]
+    source_files.extend(
+        source_file for core_root in core_roots for source_file in core_root.rglob("*.py")
+    )
+    for source_file in source_files:
         tree = ast.parse(source_file.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

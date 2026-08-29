@@ -23,6 +23,8 @@ from yuno_backend.volta.mandates.models import (
     Money,
     Operation,
     OperationProposal,
+    OperationStatus,
+    OperationStatusEntry,
     PickupWindow,
     Route,
 )
@@ -64,6 +66,8 @@ __all__ = [
     "OperationAlreadyApproved",
     "OperationProposal",
     "OperationRepository",
+    "OperationStatus",
+    "OperationStatusEntry",
     "OperationUnitOfWork",
     "PickupWindow",
     "Route",

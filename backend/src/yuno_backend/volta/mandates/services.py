@@ -2,6 +2,7 @@
 
 from collections.abc import Iterable
 
+from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
 from yuno_backend.volta.mandates.commands import (
     ApproveOperationCommand,
     CheckMandateCommand,
@@ -22,6 +23,8 @@ from yuno_backend.volta.mandates.models import (
     MandateDecision,
     Operation,
     OperationProposal,
+    OperationStatus,
+    OperationStatusEntry,
 )
 from yuno_backend.volta.mandates.repositories import Clock, IdGenerator, OperationUnitOfWork
 
@@ -92,30 +95,31 @@ class CreateIntakeDraftService:
         self._id_generator = id_generator
 
     async def create(self, command: CreateIntakeDraftCommand) -> IntakeDraft:
-        try:
-            now = self._clock.now()
-            issues = validate_draft(
-                command.proposal,
-                command.requested_language,
-                command.extraction_policy_version,
-            )
-            draft = IntakeDraft(
-                id=self._id_generator.new_id(),
-                source_prompt=command.source_prompt,
-                requested_language=command.requested_language,
-                extraction_policy_version=command.extraction_policy_version,
-                proposal=command.proposal,
-                validation_issues=issues,
-                approval_eligible=not issues,
-                version=1,
-                created_at=now,
-                updated_at=now,
-            )
-            await self._unit_of_work.intake_drafts.add(draft)
-            await self._unit_of_work.commit()
-        except Exception:
-            await self._unit_of_work.rollback()
-            raise
+        async with self._unit_of_work:
+            try:
+                now = self._clock.now()
+                issues = validate_draft(
+                    command.proposal,
+                    command.requested_language,
+                    command.extraction_policy_version,
+                )
+                draft = IntakeDraft(
+                    id=self._id_generator.new_id(),
+                    source_prompt=command.source_prompt,
+                    requested_language=command.requested_language,
+                    extraction_policy_version=command.extraction_policy_version,
+                    proposal=command.proposal,
+                    validation_issues=issues,
+                    approval_eligible=not issues,
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                await self._unit_of_work.intake_drafts.add(draft)
+                await self._unit_of_work.commit()
+            except Exception:
+                await self._unit_of_work.rollback()
+                raise
         return draft
 
 
@@ -131,56 +135,78 @@ class ApproveOperationService:
         self._id_generator = id_generator
 
     async def approve(self, command: ApproveOperationCommand) -> Operation:
-        try:
-            draft = await self._unit_of_work.intake_drafts.get(command.draft_id)
-            if draft is None:
-                raise DraftNotFound(command.draft_id)
-            if draft.version != command.expected_draft_version:
-                raise StaleDraftVersion(
-                    command.draft_id,
-                    command.expected_draft_version,
-                    draft.version,
-                )
-            if not draft.approval_eligible:
-                raise DraftNotApprovable(
-                    draft.id,
-                    tuple(issue.reason_code for issue in draft.validation_issues),
-                )
-            existing = await self._unit_of_work.operations.get_by_draft_id(draft.id)
-            if existing is not None:
-                raise OperationAlreadyApproved(draft.id, existing.id)
+        async with self._unit_of_work:
+            try:
+                draft = await self._unit_of_work.intake_drafts.get(command.draft_id)
+                if draft is None:
+                    raise DraftNotFound(command.draft_id)
+                if draft.version != command.expected_draft_version:
+                    raise StaleDraftVersion(
+                        command.draft_id,
+                        command.expected_draft_version,
+                        draft.version,
+                    )
+                if not draft.approval_eligible:
+                    raise DraftNotApprovable(
+                        draft.id,
+                        tuple(issue.reason_code for issue in draft.validation_issues),
+                    )
+                existing = await self._unit_of_work.operations.get_by_draft_id(draft.id)
+                if existing is not None:
+                    raise OperationAlreadyApproved(draft.id, existing.id)
 
-            now = self._clock.now()
-            operation_id = self._id_generator.new_id()
-            proposal = draft.proposal
-            mandate_proposal = proposal.mandate
-            mandate = Mandate(
-                id=self._id_generator.new_id(),
-                operation_id=operation_id,
-                version=1,
-                maximum_amount=mandate_proposal.maximum_amount,
-                pickup_window=mandate_proposal.pickup_window,
-                allowed_conditions=mandate_proposal.allowed_conditions,
-                escalation_conditions=mandate_proposal.escalation_conditions,
-                authorized_actions=(MandateAction.NEGOTIATE, MandateAction.COMMIT),
-                approval_actor=command.approval_actor,
-                approved_at=now,
-            )
-            operation = Operation(
-                id=operation_id,
-                version=1,
-                source_draft_id=draft.id,
-                source_draft_version=draft.version,
-                route=proposal.route,
-                pickup_date=proposal.pickup_date,
-                mandate=mandate,
-                created_at=now,
-            )
-            await self._unit_of_work.operations.add(operation)
-            await self._unit_of_work.commit()
-        except Exception:
-            await self._unit_of_work.rollback()
-            raise
+                now = self._clock.now()
+                operation_id = self._id_generator.new_id()
+                proposal = draft.proposal
+                mandate_proposal = proposal.mandate
+                mandate = Mandate(
+                    id=self._id_generator.new_id(),
+                    operation_id=operation_id,
+                    version=1,
+                    maximum_amount=mandate_proposal.maximum_amount,
+                    pickup_window=mandate_proposal.pickup_window,
+                    allowed_conditions=mandate_proposal.allowed_conditions,
+                    escalation_conditions=mandate_proposal.escalation_conditions,
+                    authorized_actions=(MandateAction.NEGOTIATE, MandateAction.COMMIT),
+                    approval_actor=command.approval_actor,
+                    approved_at=now,
+                )
+                status_entry = OperationStatusEntry(
+                    id=self._id_generator.new_id(),
+                    operation_id=operation_id,
+                    operation_version=1,
+                    status=OperationStatus.READY,
+                    occurred_at=now,
+                )
+                operation = Operation(
+                    id=operation_id,
+                    version=1,
+                    source_draft_id=draft.id,
+                    source_draft_version=draft.version,
+                    route=proposal.route,
+                    pickup_date=proposal.pickup_date,
+                    mandate=mandate,
+                    status=OperationStatus.READY,
+                    status_history=(status_entry,),
+                    created_at=now,
+                )
+                await self._unit_of_work.operations.add(operation)
+                await self._unit_of_work.audit_events.add(
+                    AuditEvent(
+                        event_id=self._id_generator.new_id(),
+                        operation_id=operation.id,
+                        operation_version=operation.version,
+                        actor_kind=AuditActorKind.COORDINATOR,
+                        event_type="OPERATION_APPROVED",
+                        occurred_at=now,
+                        correlation_id=command.correlation_id,
+                        metadata={"draft_version": draft.version},
+                    )
+                )
+                await self._unit_of_work.commit()
+            except Exception:
+                await self._unit_of_work.rollback()
+                raise
         return operation
 
 

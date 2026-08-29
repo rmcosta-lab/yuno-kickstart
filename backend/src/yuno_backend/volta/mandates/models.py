@@ -17,6 +17,8 @@ __all__ = [
     "MandateProposal",
     "Money",
     "Operation",
+    "OperationStatus",
+    "OperationStatusEntry",
     "OperationProposal",
     "PickupWindow",
     "Route",
@@ -158,6 +160,31 @@ class MandateAction(StrEnum):
     COMMIT = "COMMIT"
 
 
+class OperationStatus(StrEnum):
+    READY = "READY"
+    NEGOTIATING = "NEGOTIATING"
+    COMMITTED = "COMMITTED"
+    ESCALATED = "ESCALATED"
+    COMPLETED = "COMPLETED"
+
+
+@dataclass(frozen=True, slots=True)
+class OperationStatusEntry:
+    id: UUID
+    operation_id: UUID
+    operation_version: int
+    status: OperationStatus
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_uuid(self.id, "id")
+        _require_uuid(self.operation_id, "operation_id")
+        _require_positive_version(self.operation_version, "operation_version")
+        if not isinstance(self.status, OperationStatus):
+            raise InvalidDomainValue("status", "operation_status_required")
+        _require_utc(self.occurred_at, "occurred_at")
+
+
 @dataclass(frozen=True, slots=True)
 class Mandate:
     id: UUID
@@ -198,6 +225,8 @@ class Operation:
     route: Route
     pickup_date: date
     mandate: Mandate
+    status: OperationStatus
+    status_history: tuple[OperationStatusEntry, ...]
     created_at: datetime
 
     def __post_init__(self) -> None:
@@ -212,6 +241,25 @@ class Operation:
             raise InvalidDomainValue("mandate", "mandate_required")
         if self.mandate.operation_id != self.id:
             raise InvalidDomainValue("mandate", "operation_id_mismatch")
+        if not isinstance(self.status, OperationStatus):
+            raise InvalidDomainValue("status", "operation_status_required")
+        _require_tuple(self.status_history, "status_history")
+        if not self.status_history:
+            raise InvalidDomainValue("status_history", "non_empty_required")
+        if not all(isinstance(entry, OperationStatusEntry) for entry in self.status_history):
+            raise InvalidDomainValue("status_history", "operation_status_entry_items_required")
+        if any(entry.operation_id != self.id for entry in self.status_history):
+            raise InvalidDomainValue("status_history", "operation_id_mismatch")
+        if len({entry.id for entry in self.status_history}) != len(self.status_history):
+            raise InvalidDomainValue("status_history", "duplicate_entry_id")
+        if any(entry.operation_version > self.version for entry in self.status_history):
+            raise InvalidDomainValue("status_history", "future_operation_version")
+        if tuple(sorted(self.status_history, key=lambda item: (item.occurred_at, item.id))) != (
+            self.status_history
+        ):
+            raise InvalidDomainValue("status_history", "ordered_entries_required")
+        if self.status_history[-1].status is not self.status:
+            raise InvalidDomainValue("status", "must_match_latest_history")
         _require_utc(self.created_at, "created_at")
 
 

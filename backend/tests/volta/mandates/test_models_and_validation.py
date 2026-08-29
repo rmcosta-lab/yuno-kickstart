@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -14,16 +15,21 @@ from yuno_backend.volta.mandates import (
     MandateProposal,
     Money,
     OperationProposal,
+    OperationStatus,
+    OperationStatusEntry,
     PickupWindow,
     Route,
 )
 from yuno_backend.volta.mandates.services import validate_draft
 
 from .conftest import (
+    AUDIT_ID,
+    CORRELATION_ID,
     DRAFT_ID,
     MANDATE_ID,
     NOW,
     OPERATION_ID,
+    STATUS_ID,
     FixedClock,
     FixedIds,
     InMemoryUnitOfWork,
@@ -199,8 +205,67 @@ async def test_proposal_and_operation_reject_datetime_pickup_dates(
     operation = await ApproveOperationService(
         uow,
         FixedClock(),
-        FixedIds([OPERATION_ID, MANDATE_ID]),
-    ).approve(ApproveOperationCommand(draft.id, draft.version, "synthetic-coordinator"))
+        FixedIds([OPERATION_ID, MANDATE_ID, STATUS_ID, AUDIT_ID]),
+    ).approve(
+        ApproveOperationCommand(
+            draft.id, draft.version, "synthetic-coordinator", CORRELATION_ID
+        )
+    )
 
     with pytest.raises(InvalidDomainValue, match="date_required"):
         replace(operation, pickup_date=pickup_datetime)
+
+
+@pytest.mark.parametrize(
+    ("history_factory", "reason"),
+    [
+        (lambda entry: (entry, entry), "duplicate_entry_id"),
+        (
+            lambda entry: (replace(entry, operation_id=UUID(int=999)),),
+            "operation_id_mismatch",
+        ),
+        (
+            lambda entry: (replace(entry, operation_version=2),),
+            "future_operation_version",
+        ),
+        (
+            lambda entry: (
+                entry,
+                replace(
+                    entry,
+                    id=UUID(int=1),
+                    occurred_at=entry.occurred_at - timedelta(seconds=1),
+                ),
+            ),
+            "ordered_entries_required",
+        ),
+        (
+            lambda entry: (replace(entry, status=OperationStatus.COMMITTED),),
+            "must_match_latest_history",
+        ),
+    ],
+)
+async def test_operation_rejects_inconsistent_status_history(
+    proposal: OperationProposal,
+    history_factory: Callable[
+        [OperationStatusEntry], tuple[OperationStatusEntry, ...]
+    ],
+    reason: str,
+) -> None:
+    uow = InMemoryUnitOfWork()
+    draft = await CreateIntakeDraftService(uow, FixedClock(), FixedIds([DRAFT_ID])).create(
+        CreateIntakeDraftCommand("synthetic prompt", "EN_US", "intake-v1", proposal)
+    )
+    operation = await ApproveOperationService(
+        uow,
+        FixedClock(),
+        FixedIds([OPERATION_ID, MANDATE_ID, STATUS_ID, AUDIT_ID]),
+    ).approve(
+        ApproveOperationCommand(
+            draft.id, draft.version, "synthetic-coordinator", CORRELATION_ID
+        )
+    )
+    history = history_factory(operation.status_history[0])
+
+    with pytest.raises(InvalidDomainValue, match=reason):
+        replace(operation, status_history=history)

@@ -1,9 +1,11 @@
 """Persistence-neutral ports used by mandate application services."""
 
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from types import TracebackType
+from typing import Protocol, Self, runtime_checkable
 from uuid import UUID
 
+from yuno_backend.volta.audit.repositories import AuditEventRepository
 from yuno_backend.volta.mandates.models import IntakeDraft, Operation
 
 __all__ = [
@@ -33,6 +35,16 @@ class OperationRepository(Protocol):
 class OperationUnitOfWork(Protocol):
     intake_drafts: IntakeDraftRepository
     operations: OperationRepository
+    audit_events: AuditEventRepository
+
+    async def __aenter__(self) -> Self: ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None: ...
 
     async def commit(self) -> None: ...
 
