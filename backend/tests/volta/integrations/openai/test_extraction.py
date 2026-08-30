@@ -146,6 +146,47 @@ async def test_maps_exact_responses_request_and_parses_domain_proposal() -> None
         await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_reference_date_resolves_relative_dates_without_changing_source_input() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=completed_response())
+
+    extractor, client = await build_extractor(handler)
+    request = ExtractionRequest(
+        SOURCE_PROMPT,
+        "EN_US",
+        POLICY_VERSION,
+        reference_date=date(2026, 8, 30),
+    )
+    try:
+        await extractor.extract(request)
+        body = json.loads(captured[0].content)
+        assert body["input"] == SOURCE_PROMPT
+        assert body["instructions"] == (
+            f"{DEFAULT_POLICY_INSTRUCTIONS}\nReference date (UTC): 2026-08-30."
+        )
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_single_pickup_date_becomes_a_one_day_window() -> None:
+    value = extraction_value()
+    value["pickup_window"] = {"start_date": None, "end_date": None}
+    extractor, client = await build_extractor(
+        lambda _: httpx.Response(200, json=completed_response(value))
+    )
+    try:
+        proposal = await extractor.extract(REQUEST)
+        assert proposal.mandate.pickup_window.start_date == proposal.pickup_date
+        assert proposal.mandate.pickup_window.end_date == proposal.pickup_date
+    finally:
+        await client.aclose()
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

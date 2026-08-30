@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Protocol
 
 from yuno_backend.volta.mandates import OperationProposal
@@ -16,6 +17,7 @@ class ExtractionRequest:
     source_prompt: str = field(repr=False)
     requested_language: str
     extraction_policy_version: str
+    reference_date: date | None = None
 
 
 class IntakeExtractor(Protocol):

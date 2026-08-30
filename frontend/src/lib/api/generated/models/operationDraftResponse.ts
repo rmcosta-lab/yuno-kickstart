@@ -5,9 +5,9 @@
  * Thin HTTP contract boundary for the Volta hackathon demo.
  * OpenAPI spec version: 0.1.0
  */
+import type { DraftRouteDetails } from "./draftRouteDetails";
 import type { ProposedMandate } from "./proposedMandate";
 import type { RequestedLanguage } from "./requestedLanguage";
-import type { RouteDetails } from "./routeDetails";
 import type { ValidationIssue } from "./validationIssue";
 
 export type OperationDraftResponse = {
@@ -26,7 +26,7 @@ export type OperationDraftResponse = {
   extraction_policy_version: string;
   proposed_mandate: ProposedMandate;
   proposed_pickup_date: string;
-  proposed_route: RouteDetails;
+  proposed_route: DraftRouteDetails;
   requested_language: RequestedLanguage;
   /**
    * @minLength 1

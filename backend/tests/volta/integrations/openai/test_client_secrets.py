@@ -179,6 +179,18 @@ async def test_posts_exact_narrow_session_and_keeps_client_caller_owned() -> Non
         await client.aclose()
 
 
+@pytest.mark.asyncio
+async def test_accepts_provider_ttl_with_bounded_clock_skew() -> None:
+    issuer, client = _issuer(
+        lambda _: httpx.Response(200, json=_response(expires_at=int(NOW) + 605))
+    )
+    try:
+        result = await issuer.issue(_request())
+        assert result.expires_at == int(NOW) + 605
+    finally:
+        await client.aclose()
+
+
 @pytest.mark.parametrize(
     ("status", "error_type"),
     [
@@ -237,7 +249,7 @@ async def test_maps_provider_model_code_without_exposing_error_body() -> None:
         _response(value=""),
         _response(value="x" * 4_097),
         _response(expires_at=int(NOW)),
-        _response(expires_at=int(NOW) + 601),
+        _response(expires_at=int(NOW) + 661),
         _response(session={"id": "sess_safe", "type": "transcription"}),
         _response(
             session={

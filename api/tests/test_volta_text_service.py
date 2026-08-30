@@ -14,6 +14,7 @@ from app.schemas.errors import ApiErrorCode
 from app.volta_text_service import (
     VoltaTextContractService,
     _create_intake_extractor,
+    _draft_response,
     create_volta_text_contract_service,
 )
 from fastapi.testclient import TestClient
@@ -155,6 +156,26 @@ def draft_projection() -> DraftProjection:
         updated_at=NOW,
     )
     return DraftProjection(draft)
+
+
+def test_draft_response_serializes_missing_route_as_validation_feedback() -> None:
+    projection = draft_projection()
+    projection.draft.proposal.route.origin = ""
+    projection.draft.proposal.route.destination = ""
+    projection.draft.validation_issues = (
+        SimpleNamespace(field="route.origin", reason_code="required"),
+        SimpleNamespace(field="route.destination", reason_code="required"),
+    )
+    projection.draft.approval_eligible = False
+
+    response = _draft_response(projection)
+
+    assert response.proposed_route.origin == ""
+    assert response.proposed_route.destination == ""
+    assert [issue.field for issue in response.validation_issues] == [
+        "route.origin",
+        "route.destination",
+    ]
 
 
 def session() -> SessionProjection:
@@ -1066,6 +1087,7 @@ class _ExtractorCallingApplication:
                 source_prompt=command.source_prompt,  # type: ignore[attr-defined]
                 requested_language=command.requested_language,  # type: ignore[attr-defined]
                 extraction_policy_version="intake-v1",
+                reference_date=date(2026, 8, 30),
             )
         )
         return MutationOutcome(draft_projection(), False)

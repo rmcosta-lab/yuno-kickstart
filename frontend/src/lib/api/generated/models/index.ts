@@ -38,6 +38,7 @@ export * from "./createOperationDraftRequest";
 export * from "./createQuoteRequest";
 export * from "./createSimulatedRecapHeaders";
 export * from "./createSimulatedRecapRequest";
+export * from "./draftRouteDetails";
 export * from "./escalationResponse";
 export * from "./evidenceLifecycle";
 export * from "./fieldIssue";
