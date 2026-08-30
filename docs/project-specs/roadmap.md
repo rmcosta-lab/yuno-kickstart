@@ -251,9 +251,9 @@ Depends on: 16, 19
 
 Conflicts with: none
 
-Gate: The frontend requires an explicit start action, displays the allowlisted destination label, disclosure and consent readiness, live and terminal call status, provider and network failures, and browser/text fallback controls without exposing a real phone number, provider credential, or raw payload; frontend checks and browser smoke tests pass.
+Gate: Using the generated client, the frontend requires a consent checkbox and an explicit `Start demo call` action for one allowlisted destination label. It displays `starting`, `live`, `ended`, or `failed` and provides browser-voice and text fallbacks. It exposes no real phone number, credential, or raw provider payload. One focused frontend test and one desktop browser smoke test pass.
 
-This frontend-only phase reuses the control tower, evidence, and audit views and consumes only the generated telephony contract.
+This hackathon-scoped frontend phase consumes only the generated telephony contract. Later telephony integration and final-trial phases own separate provider and network diagnostics, advanced retry and reconnection, and a detailed call timeline. They also own deep evidence and audit integration, responsive coverage, intermediate states, and error-specific visuals.
 
 ### Fase 21 — Prepare the public submission package
 
