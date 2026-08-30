@@ -245,9 +245,9 @@ test.describe("authorized OpenAI Realtime browser trial", () => {
       window.__phase13Channels.at(-1)?.dispatchEvent(new Event("error"));
     });
     await expect(page.getByText("RECONCILING", { exact: true })).toBeVisible();
-    await expect(page.getByText("DISCONNECTED", { exact: true })).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      page.getByText("DISCONNECTED · UNCLEAN", { exact: true }),
+    ).toBeVisible({ timeout: 15_000 });
     expect(quoteResponses).toHaveLength(1);
 
     await page.getByRole("button", { name: "Reconnect" }).click();
@@ -261,7 +261,9 @@ test.describe("authorized OpenAI Realtime browser trial", () => {
     });
     expect(quoteResponses).toHaveLength(1);
     await page.getByRole("button", { name: "Stop" }).click();
-    await expect(page.getByText("DISCONNECTED", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("DISCONNECTED · CLEAN", { exact: true }),
+    ).toBeVisible();
   });
 });
 

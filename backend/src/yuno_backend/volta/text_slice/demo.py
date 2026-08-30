@@ -29,14 +29,38 @@ __all__ = [
     "create_demo_text_extractor",
 ]
 
+
+def _pcm_wave_silence(*, sample_rate: int, duration_seconds: int) -> bytes:
+    """Build deterministic unsigned 8-bit mono PCM accepted by browser playback."""
+    audio = b"\x80" * (sample_rate * duration_seconds)
+    return b"".join(
+        (
+            b"RIFF",
+            (36 + len(audio)).to_bytes(4, "little"),
+            b"WAVE",
+            b"fmt ",
+            (16).to_bytes(4, "little"),
+            (1).to_bytes(2, "little"),
+            (1).to_bytes(2, "little"),
+            sample_rate.to_bytes(4, "little"),
+            sample_rate.to_bytes(4, "little"),
+            (1).to_bytes(2, "little"),
+            (8).to_bytes(2, "little"),
+            b"data",
+            len(audio).to_bytes(4, "little"),
+            audio,
+        )
+    )
+
+
 _PICKUP_DATE = date(2026, 9, 3)
 _CANONICAL_ROUTE = Route(
     "Puerto de Manzanillo, Colima",
     "Zona industrial, Guadalajara, Jalisco",
 )
 _NO_ELIGIBLE_ROUTE = Route("Puerto de Veracruz, Veracruz", "Puebla, Puebla")
-_RECOVERY_FIXTURE_NAME = "fixture-recovery-mandate-safe.webm"
-_RECOVERY_FIXTURE_PAYLOAD = b"synthetic deterministic recovery evidence"
+_RECOVERY_FIXTURE_NAME = "fixture-recovery-mandate-safe.wav"
+_RECOVERY_FIXTURE_PAYLOAD = _pcm_wave_silence(sample_rate=8_000, duration_seconds=3)
 
 
 def canonical_text_extraction_mapping(request: ExtractionRequest) -> OperationProposal:
