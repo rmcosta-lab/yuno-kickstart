@@ -268,15 +268,12 @@ test.describe("authorized OpenAI Realtime browser trial", () => {
 });
 
 async function connectDemoAuth(page: Page) {
-  await page.getByLabel("Demo bearer token").fill(bearer);
-  await page.getByRole("button", { name: "Connect live API" }).click();
-  await expect(
-    page.getByText("CONNECTED", { exact: true }).first(),
-  ).toBeVisible();
+  await expect(page.getByText("Demo API authorization")).toHaveCount(0);
 }
 
 async function createSyntheticOperation(page: Page) {
   await page.goto("/intake");
+  await page.waitForTimeout(500);
   await connectDemoAuth(page);
   await page.getByRole("button", { name: "Use canonical prompt" }).click();
   const draftResponse = page.waitForResponse(

@@ -1,5 +1,4 @@
 import { ApiErrorCode, type ApiErrorResponse } from "./generated/models";
-import { getDemoBearerToken } from "../demo-auth";
 
 export type ApiHttpResponse<TData> = {
   data: TData;
@@ -63,6 +62,23 @@ export class ApiHttpError<TError = ApiErrorResponse> extends Error {
 
 export type ErrorType<TError> = ApiHttpError<TError>;
 
+const proxiedApiUrl = (url: string): string => {
+  if (typeof window === "undefined") return url;
+
+  const upstream = new URL(url, window.location.origin);
+  if (
+    upstream.origin === window.location.origin &&
+    upstream.pathname.startsWith("/api/volta/")
+  ) {
+    return upstream.toString();
+  }
+
+  return new URL(
+    `/api/volta${upstream.pathname}${upstream.search}`,
+    window.location.origin,
+  ).toString();
+};
+
 const parseResponseBody = async (response: Response): Promise<unknown> => {
   if ([204, 205, 304].includes(response.status) || response.body === null) {
     return undefined;
@@ -96,12 +112,7 @@ export const voltaFetch = async <TResponse>(
   const headers = new Headers(options?.headers);
   headers.delete("Authorization");
 
-  const bearerToken = getDemoBearerToken();
-  if (bearerToken) {
-    headers.set("Authorization", `Bearer ${bearerToken}`);
-  }
-
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(proxiedApiUrl(url), { ...options, headers });
   const result: ApiHttpResponse<unknown> = {
     data: await parseResponseBody(response),
     headers: response.headers,

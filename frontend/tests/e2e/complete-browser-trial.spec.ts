@@ -115,17 +115,8 @@ async function materializePrivateEvidence() {
 }
 
 async function connectDemoAuth(page: Page) {
-  if ((await page.getByLabel("Demo bearer token").count()) === 0) {
-    await expect(
-      page.getByText("CONNECTED", { exact: true }).first(),
-    ).toBeVisible();
-    return;
-  }
-  await page.getByLabel("Demo bearer token").fill(bearer);
-  await page.getByRole("button", { name: "Connect live API" }).click();
-  await expect(
-    page.getByText("CONNECTED", { exact: true }).first(),
-  ).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.getByText("Demo API authorization")).toHaveCount(0);
   await expect(page.getByLabel("Demo bearer token")).toHaveCount(0);
 }
 

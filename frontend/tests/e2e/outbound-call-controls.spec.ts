@@ -74,8 +74,7 @@ type NextResponse =
 
 async function loadLiveOperation(page: Page) {
   await page.goto("/sessions");
-  await page.getByLabel("Demo bearer token").fill("synthetic-browser-token");
-  await page.getByRole("button", { name: "Connect live API" }).click();
+  await page.waitForTimeout(500);
   await page
     .getByRole("textbox", { name: "Live operation ID" })
     .fill(OPERATION_ID);
@@ -98,12 +97,13 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
     if (message.type() === "error") consoleErrors.push("error");
   });
 
-  await page.route("http://localhost:8000/**", async (route: Route) => {
+  await page.route("**/api/volta/**", async (route: Route) => {
     const request = route.request();
     const url = new URL(request.url());
+    const apiPath = url.pathname.replace(/^\/api\/volta/, "");
     if (
       request.method() === "GET" &&
-      url.pathname === `/v1/operations/${OPERATION_ID}`
+      apiPath === `/v1/operations/${OPERATION_ID}`
     ) {
       return route.fulfill({
         status: 200,
@@ -114,7 +114,7 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
 
     if (
       request.method() === "POST" &&
-      url.pathname === `/v1/operations/${OPERATION_ID}/outbound-calls`
+      apiPath === `/v1/operations/${OPERATION_ID}/outbound-calls`
     ) {
       requests.push({
         body: request.postDataJSON() as Record<string, unknown>,

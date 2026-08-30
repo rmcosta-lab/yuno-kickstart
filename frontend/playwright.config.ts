@@ -61,7 +61,9 @@ const trialFrontendServer = {
   stdout: "ignore" as const,
   stderr: "pipe" as const,
   env: {
+    API_BASE_URL: trialApiURL,
     NEXT_PUBLIC_API_BASE_URL: trialApiURL,
+    VOLTA_DEMO_BEARER_TOKEN: trialBearer,
   },
 };
 
