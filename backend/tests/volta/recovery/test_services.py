@@ -13,6 +13,7 @@ from yuno_backend.volta.recovery.commands import (
     AcknowledgeNotificationCommand,
     CreateEscalationCommand,
     ReplaceMandateCommand,
+    ReplacementEvidence,
     ResumeAfterEscalationCommand,
     SimulateInboundRecoveryCommand,
 )
@@ -28,11 +29,13 @@ from yuno_backend.volta.recovery.errors import (
     OperationBlockedByEscalation,
 )
 from yuno_backend.volta.recovery.models import (
+    EscalationContext,
     Notification,
     PostContactEscalation,
     RecoveryDecision,
     RecoveryDecisionState,
     RecoveryOutcome,
+    RecoveryScenario,
 )
 from yuno_backend.volta.recovery.services import (
     AcknowledgeNotificationService,
@@ -56,13 +59,25 @@ from .conftest import (
 
 
 def _recovery_command(**overrides: object) -> SimulateInboundRecoveryCommand:
+    proposed = overrides.get("proposed_terms", safe_terms())
+    safe = proposed.amount <= Decimal("1500")  # type: ignore[union-attr]
     values: dict[str, object] = {
         "operation_id": OPERATION_ID,
         "expected_operation_version": 2,
         "commitment_id": UUID(int=200),
         "mandate_version": 1,
-        "proposed_terms": safe_terms(),
+        "proposed_terms": proposed,
         "correlation_id": UUID(int=900),
+        "scenario": RecoveryScenario.MANDATE_SAFE if safe else RecoveryScenario.OUT_OF_MANDATE,
+        "decision_reason": "MANDATE_SAFE_REPLACEMENT" if safe else "OUT_OF_MANDATE",
+        "evidence": (
+            ReplacementEvidence("safe.webm", 100, "item", "event") if safe else None
+        ),
+        "escalation_context": (
+            None
+            if safe
+            else EscalationContext("Over mandate", ("Keep winner",), "Review mandate")
+        ),
     }
     values.update(overrides)
     return SimulateInboundRecoveryCommand(**values)  # type: ignore[arg-type]

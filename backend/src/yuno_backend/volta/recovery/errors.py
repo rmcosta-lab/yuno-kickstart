@@ -29,6 +29,8 @@ __all__ = [
     "NotificationAlreadyAcknowledged",
     "NotificationNotFound",
     "OperationBlockedByEscalation",
+    "RecoveryEvidenceRequired",
+    "RecoveryScenarioMismatch",
     "StaleOperationVersion",
 ]
 
@@ -107,3 +109,19 @@ class MandateVersionNotAdvanced(_SafeRecoveryError):
             f"mandate version not advanced: {operation_id} "
             f"(escalation={escalation_mandate_version}, provided={provided_mandate_version})"
         )
+
+
+class RecoveryEvidenceRequired(_SafeRecoveryError):
+    code = "recovery_evidence_required"
+
+    def __init__(self, operation_id: UUID) -> None:
+        self.operation_id = operation_id
+        super().__init__(f"recovery evidence required: {operation_id}")
+
+
+class RecoveryScenarioMismatch(_SafeRecoveryError):
+    code = "recovery_scenario_mismatch"
+
+    def __init__(self, operation_id: UUID) -> None:
+        self.operation_id = operation_id
+        super().__init__(f"recovery scenario does not match mandate decision: {operation_id}")

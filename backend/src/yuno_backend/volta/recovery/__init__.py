@@ -4,6 +4,7 @@ from yuno_backend.volta.recovery.commands import (
     AcknowledgeNotificationCommand,
     CreateEscalationCommand,
     ReplaceMandateCommand,
+    ReplacementEvidence,
     ResumeAfterEscalationCommand,
     SimulateInboundRecoveryCommand,
 )
@@ -18,7 +19,14 @@ from yuno_backend.volta.recovery.errors import (
     NotificationAlreadyAcknowledged,
     NotificationNotFound,
     OperationBlockedByEscalation,
+    RecoveryEvidenceRequired,
+    RecoveryScenarioMismatch,
     StaleOperationVersion,
+)
+from yuno_backend.volta.recovery.fixtures import (
+    DeterministicRecoveryFixtureCatalog,
+    RecoveryFixture,
+    RecoveryFixtureCatalog,
 )
 from yuno_backend.volta.recovery.models import (
     EscalationContext,
@@ -28,6 +36,7 @@ from yuno_backend.volta.recovery.models import (
     RecoveryDecision,
     RecoveryDecisionState,
     RecoveryOutcome,
+    RecoveryScenario,
 )
 from yuno_backend.volta.recovery.repositories import (
     NotificationRepository,
@@ -61,6 +70,8 @@ __all__ = [
     "NotificationNotFound",
     "NotificationRepository",
     "OperationBlockedByEscalation",
+    "RecoveryEvidenceRequired",
+    "RecoveryScenarioMismatch",
     "OperationUnitOfWork",
     "PostContactEscalation",
     "PostContactEscalationRepository",
@@ -69,6 +80,11 @@ __all__ = [
     "RecoveryDecision",
     "RecoveryDecisionState",
     "RecoveryOutcome",
+    "RecoveryScenario",
+    "RecoveryFixture",
+    "RecoveryFixtureCatalog",
+    "DeterministicRecoveryFixtureCatalog",
+    "ReplacementEvidence",
     "ReplaceMandateCommand",
     "ReplaceMandateService",
     "ResumeAfterEscalationCommand",

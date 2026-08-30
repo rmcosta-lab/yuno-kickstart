@@ -113,8 +113,26 @@ class Quotes:
     async def get(self, quote_id: UUID) -> Quote | None:
         return self.values.get(quote_id)
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[Quote, ...]:
-        return tuple(item for item in self.values.values() if item.operation_id == operation_id)
+    async def list_by_operation(
+        self,
+        operation_id: UUID,
+        *,
+        after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False,
+        limit: int | None = None,
+    ) -> tuple[Quote, ...]:
+        values = sorted(
+            (item for item in self.values.values() if item.operation_id == operation_id),
+            key=lambda item: (item.created_at, item.id),
+        )
+        if after is not None:
+            values = [
+                item
+                for item in values
+                if (item.created_at, item.id) >= after
+                if inclusive or (item.created_at, item.id) != after
+            ]
+        return tuple(values if limit is None else values[:limit])
 
     async def add(self, quote: Quote) -> None:
         self.values[quote.id] = quote

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from types import MappingProxyType
 from uuid import UUID
 
 from yuno_backend.volta.errors import InvalidDomainValue
@@ -48,9 +50,21 @@ class TextMutationIdempotency:
     fingerprint: str
     result_id: UUID
     created_at: datetime
+    result_kind: str = "LEGACY_RESOURCE"
+    result_snapshot: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.operation_name not in {"create_operation_draft", "approve_operation"}:
+        accepted_result_kinds = {
+            "create_operation_draft": "LEGACY_RESOURCE",
+            "approve_operation": "LEGACY_RESOURCE",
+            "create_simulated_recap": "Recap",
+            "create_call_brief": "CallBrief",
+            "start_inbound_simulation": "RecoveryProjection",
+            "replace_mandate": "OperationProjection",
+            "create_escalation": "PostContactEscalation",
+            "acknowledge_notification": "Notification",
+        }
+        if self.operation_name not in accepted_result_kinds:
             raise InvalidDomainValue("operation_name", "unsupported_text_mutation")
         validate_idempotency_key(self.key)
         if len(self.fingerprint) != 64 or any(
@@ -61,6 +75,26 @@ class TextMutationIdempotency:
             raise InvalidDomainValue("result_id", "uuid_required")
         if not isinstance(self.created_at, datetime) or self.created_at.utcoffset() != timedelta(0):
             raise InvalidDomainValue("created_at", "aware_utc_required")
+        if (
+            not isinstance(self.result_kind, str)
+            or not self.result_kind
+            or len(self.result_kind) > 64
+            or not self.result_kind.replace("_", "").isalnum()
+        ):
+            raise InvalidDomainValue("result_kind", "safe_code_required")
+        if not isinstance(self.result_snapshot, Mapping):
+            raise InvalidDomainValue("result_snapshot", "mapping_required")
+        if self.result_kind != accepted_result_kinds[self.operation_name]:
+            raise InvalidDomainValue("result_kind", "operation_result_kind_mismatch")
+        object.__setattr__(self, "result_snapshot", _freeze_json(self.result_snapshot))
+
+
+def _freeze_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({str(key): _freeze_json(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item) for item in value)
+    return value
 
 
 def validate_idempotency_key(key: str) -> None:
@@ -93,7 +127,7 @@ def _canonical(value: object) -> object:
 
 def fingerprint(command: object, *, exclude: tuple[str, ...] = ()) -> str:
     values = asdict(command)  # type: ignore[arg-type]
-    for field in exclude:
-        values.pop(field, None)
+    for excluded_field in exclude:
+        values.pop(excluded_field, None)
     payload = json.dumps(_canonical(values), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()

@@ -76,7 +76,11 @@ def isolated_database_url() -> Iterator[str]:
         yield _RedactedDatabaseUrl(rendered_test_url)
     finally:
         try:
-            command.downgrade(alembic_config, "base")
+            try:
+                command.downgrade(alembic_config, "base")
+            except RuntimeError as error:
+                if "phase 25 downgrade refused" not in str(error):
+                    raise
         finally:
             if previous_url is None:
                 os.environ.pop("DATABASE_URL", None)
