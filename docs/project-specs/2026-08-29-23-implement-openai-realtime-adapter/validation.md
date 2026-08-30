@@ -1,54 +1,63 @@
 # Phase 23 validation
 
+Validated on 2026-08-29 from `phase/23-implement-openai-realtime-adapter`. Deterministic
+validation passed. The separately marked provider trial was invoked without its explicit opt-in
+and skipped before reading a credential or opening a network connection.
+
 ## Planning and scope
 
-- [ ] Requirements, application contracts, ownership, risks, fallback, and exclusions still match the Phase 23 roadmap gate.
-- [ ] Phase 02 PR #3 and Phase 08 PR #12 remain merged with their required evidence, and no active declared conflict or competing Phase 23 branch/PR exists.
-- [ ] Only the phase specification, approved backend source/tests/exports, `backend/pyproject.toml`, and paired `uv.lock` changes enter the phase.
-- [ ] FastAPI, HTTP/WebSocket ingress, OpenAPI/Orval, frontend, persistence, Twilio, Yuno, payment, deployment, and production work remain absent.
+- [x] Requirements, application contracts, ownership, risks, fallback, and exclusions still match the Phase 23 roadmap gate.
+- [x] Phase 02 PR #3 and Phase 08 PR #12 remain merged with their required evidence, and no active declared conflict or competing Phase 23 branch/PR exists. GitHub PR pages and refreshed remote refs were inspected on 2026-08-29; the phase branch matched its remote exactly before implementation.
+- [x] Only the phase specification, approved backend source/tests/exports, `backend/pyproject.toml`, and paired `uv.lock` changes enter the phase.
+- [x] FastAPI, HTTP/WebSocket ingress, OpenAPI/Orval, frontend, persistence, Twilio, Yuno, payment, deployment, and production work remain absent.
 
 ## Provider-neutral backend contract
 
-- [ ] `RealtimeGateway.connect` and the `RealtimeConnection` async lifecycle match the frozen public import paths and typed signatures.
-- [ ] Session, tool, output, audio, lifecycle, and evidence values are immutable, bounded, redacted, and provider-neutral.
-- [ ] Exceptions expose only the accepted safe metadata and never carry credentials, instructions, tool data, audio, transcripts, raw JSON, or provider exception text.
-- [ ] Architecture tests prove `yuno_backend.volta.realtime` imports no `websockets`, OpenAI SDK, FastAPI, Pydantic API schema, SQLAlchemy, Twilio, or frontend code.
-- [ ] The adapter emits typed tool requests only; no provider event invokes or bypasses Phase 08 carrier, quote, mandate, or commitment services.
+- [x] `RealtimeGateway.connect` and the `RealtimeConnection` async lifecycle match the frozen public import paths and typed signatures.
+- [x] Session, tool, output, audio, lifecycle, and evidence values are immutable, bounded, redacted, and provider-neutral.
+- [x] Exceptions expose only the accepted safe metadata and never carry credentials, instructions, tool data, audio, transcripts, raw JSON, or provider exception text.
+- [x] Architecture tests prove `yuno_backend.volta.realtime` imports no `websockets`, OpenAI SDK, FastAPI, Pydantic API schema, SQLAlchemy, Twilio, or frontend code.
+- [x] The adapter emits typed tool requests only; no provider event invokes or bypasses Phase 08 carrier, quote, mandate, or commitment services.
 
 ## OpenAI WebSocket adapter
 
-- [ ] Current official OpenAI WebSocket, conversations/tools, VAD, and server-event documentation is refreshed and linked in the final evidence.
-- [ ] `backend/pyproject.toml` declares the selected `websockets` runtime dependency and `uv.lock` is regenerated atomically without unrelated dependency churn.
-- [ ] Tests prove the secure URL, bearer/safety headers, configurable model, English PCM16 mono 24 kHz session, server VAD, voice, instructions, and allowlisted tool mapping.
-- [ ] Audio append/output deltas, session readiness, speech start/stop, response completion/cancellation, and safe provider failures map exactly to typed values.
-- [ ] `RealtimeSpeechStarted` preserves event ID, item ID, and non-negative `audio_start_ms` without retaining audio content.
-- [ ] Tool arguments are bounded parsed objects; output preserves the original `call_id` and sends `conversation.item.create` before `response.create` exactly once.
-- [ ] Unknown non-application events are safely ignored, while invalid JSON, oversized/binary messages, malformed mapped events, invalid tool data, and provider `error` events fail closed.
+- [x] Current official [OpenAI Realtime WebSocket](https://developers.openai.com/api/docs/guides/realtime-websocket), [conversations and tools](https://developers.openai.com/api/docs/guides/realtime-conversations), [VAD](https://developers.openai.com/api/docs/guides/realtime-vad), and [GPT-Realtime-2.1](https://developers.openai.com/api/docs/models/gpt-realtime-2.1) documentation was refreshed on 2026-08-29. The official `websockets` 17.1 asyncio client reference was also inspected because Context7 was unavailable.
+- [x] `backend/pyproject.toml` declares `websockets>=17.1` and `uv.lock` changes only the existing backend package dependency metadata; no unrelated package resolution changed.
+- [x] Tests prove the exact official secure URL, rejection of alternate hosts/userinfo/ports/query/fragment/path ambiguity before bearer attachment, safety headers, configurable model, enforced English PCM16 mono 24 kHz session, server VAD, voice, instructions, and allowlisted tool mapping.
+- [x] Audio append/output deltas, session readiness, speech start/stop, response completion/cancellation, and safe provider failures map exactly to typed values.
+- [x] `RealtimeSpeechStarted` preserves event ID, item ID, and non-negative `audio_start_ms` without retaining audio content.
+- [x] Tool arguments are bounded parsed objects; output requires a previously received original `call_id` and sends caller-identified `conversation.item.create` before `response.create` exactly once. Unknown, duplicate inbound, and duplicate output identifiers are bounded and rejected or suppressed deterministically.
+- [x] Unknown non-application events are safely ignored, while invalid or deeply nested JSON, oversized/binary messages, malformed mapped events, invalid tool data, and provider `error` events fail closed through typed exceptions.
 
 ## Lifecycle, reliability, and redaction
 
-- [ ] Connect, session-update, receive, cancellation, explicit close, context exit, clean disconnect, and unclean disconnect tests are deterministic and leave no socket or reader task open.
-- [ ] No established session is retried or reconnected implicitly; every failure has a safe typed terminal result for the caller.
-- [ ] Object `repr`, exceptions, captured logs, diagnostics, and test failures contain no API key, authorization header, safety identifier, instructions, tool arguments/results, audio, transcript, full payload, or raw close reason.
-- [ ] Synthetic fixtures use no real carrier, participant, rate, operation, or personal data.
+- [x] Connect, session-update, receive, cancellation, explicit close, externally cancelled close with retry, close timeout, context exit, clean disconnect, and unclean disconnect tests are deterministic and leave no socket or reader task open.
+- [x] No established session is retried or reconnected implicitly; every failure has a safe typed terminal result for the caller.
+- [x] Object `repr`, exceptions, captured logs, diagnostics, and test failures contain no API key, authorization header, safety identifier, instructions, tool arguments/results, audio, transcript, full payload, or raw close reason.
+- [x] Synthetic fixtures use no real carrier, participant, rate, operation, or personal data.
 
 ## Deterministic checks
 
-- [ ] `uv run ruff check .`
-- [ ] `uv run pytest`
-- [ ] `uv run pytest backend/tests/volta/realtime backend/tests/volta/integrations/openai -m 'not openai_credentialed'`
-- [ ] `make python-check`
-- [ ] `git diff --check`
-- [ ] Complete staged diff and secret/privacy review show no unrelated file, credential, ignored `.env`, raw audio, or generated evidence.
+- [x] `uv run ruff check .` — passed.
+- [x] `uv run pytest` — passed: 287 passed, 18 skipped, 2 deselected, with one existing Starlette/httpx deprecation warning.
+- [x] `uv run pytest backend/tests/volta/realtime backend/tests/volta/integrations/openai -m 'not openai_credentialed'` — passed: 81 passed, 2 deselected.
+- [x] `make python-check` — passed: Ruff clean and 287 passed, 18 skipped, 2 deselected, with the same existing warning.
+- [x] `git diff --check` — passed before and after this validation update.
+- [x] Complete worktree diff and secret/privacy review show no unrelated file, credential, ignored `.env`, raw audio, or generated evidence. The ignored `.env` was not added or modified.
+
+## Deep-review remediation
+
+- [x] The read-only correctness, security, and product-contract review identified six medium findings and no high or low findings; all six are covered by deterministic regression tests before publication.
+- [x] Adversarial tests prove unknown tool-call output is rejected, receive/provider failures stop subsequent writes, externally cancelled close can be retried, only the official credential destination is accepted, the English session constraint is composed into provider instructions, and deeply nested JSON becomes a typed terminal error.
 
 ## Separately marked OpenAI trial
 
-- [ ] `uv run pytest -m openai_credentialed backend/tests/volta/integrations/openai/test_realtime_credentialed.py` is run only with explicit local credentials and synthetic ignored audio, or is reported as skipped/unavailable rather than passed.
-- [ ] The trial reproduces the Phase 02 `gpt-realtime-2.1` server WebSocket tool call/output roundtrip, receives a completed continuation, and correlates `audio_start_ms`, item ID, and event ID.
-- [ ] The standard credential remains server-side; retained evidence contains only model ID, safe correlation IDs, timings, artifact digest/size/duration, and pass/fail category.
-- [ ] Temporary audio/evidence is ignored, private, and deleted after the agreed test window; no external state or operational mutation occurs.
+- [x] `uv run pytest -m openai_credentialed backend/tests/volta/integrations/openai/test_realtime_credentialed.py` — 1 skipped because `RUN_OPENAI_CREDENTIALED=1` was not present; the guard ran before credential or audio access.
+- [ ] The trial reproduces the Phase 02 `gpt-realtime-2.1` server WebSocket tool call/output roundtrip, receives a completed continuation, and correlates `audio_start_ms`, item ID, and event ID. Blocker: explicit provider-test opt-in and an ignored synthetic PCM path were unavailable, so no live claim is made.
+- [x] Code inspection confirms the standard credential remains server-side and no raw provider response, audio, transcript, instruction, safety identifier, or tool payload is retained as evidence.
+- [x] No temporary audio/evidence was created or read, and no external state or operational mutation occurred.
 
 ## Not applicable
 
-- [ ] API tests, `make generate`, Orval, frontend lint/build, and browser console/network/responsive checks are recorded as not applicable because Phase 23 changes no API or frontend contract.
-- [ ] Database migration, PostgreSQL, Supabase/RLS, webhook, CORS, authorization, idempotent financial mutation, Yuno sandbox, Twilio, and phone checks are recorded as not applicable.
+- [x] API tests, `make generate`, Orval, frontend lint/build, and browser console/network/responsive checks are not applicable because Phase 23 changes no API or frontend contract.
+- [x] Database migration, PostgreSQL, Supabase/RLS, webhook, CORS, authorization, idempotent financial mutation, Yuno sandbox, Twilio, and phone checks are not applicable.
