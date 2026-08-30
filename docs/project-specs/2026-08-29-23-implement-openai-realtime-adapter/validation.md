@@ -1,8 +1,8 @@
 # Phase 23 validation
 
 Validated on 2026-08-29 from `phase/23-implement-openai-realtime-adapter`. Deterministic
-validation passed. The separately marked provider trial was invoked without its explicit opt-in
-and skipped before reading a credential or opening a network connection.
+validation passed. After explicit user authorization, the separately marked provider trial also
+passed with temporary synthetic PCM that was deleted immediately after the run.
 
 ## Planning and scope
 
@@ -55,10 +55,11 @@ and skipped before reading a credential or opening a network connection.
 
 ## Separately marked OpenAI trial
 
-- [x] `uv run pytest -m openai_credentialed backend/tests/volta/integrations/openai/test_realtime_credentialed.py` — 1 skipped because `RUN_OPENAI_CREDENTIALED=1` was not present; the guard ran before credential or audio access.
-- [ ] The trial reproduces the Phase 02 `gpt-realtime-2.1` server WebSocket tool call/output roundtrip, receives a completed continuation, and correlates `audio_start_ms`, item ID, and event ID. Blocker: explicit provider-test opt-in and an ignored synthetic PCM path were unavailable, so no live claim is made.
+- [x] With explicit user authorization, `uv run pytest -m openai_credentialed backend/tests/volta/integrations/openai/test_realtime_credentialed.py` passed: 1 passed in 13.33 seconds against `gpt-realtime-2.1`.
+- [x] The authorized trial reproduced the Phase 02 server WebSocket tool call/output roundtrip, received the completed continuation, and asserted correlated non-negative `audio_start_ms`, item ID, and event ID without printing or retaining those values.
 - [x] Code inspection confirms the standard credential remains server-side and no raw provider response, audio, transcript, instruction, safety identifier, or tool payload is retained as evidence.
-- [x] No temporary audio/evidence was created or read, and no external state or operational mutation occurred.
+- [x] OpenAI TTS generated 261,600 bytes of synthetic English PCM16/24 kHz speech; 2,000 ms of zeroed trailing silence was appended for server VAD. The combined artifact lived only in a temporary directory, was deleted automatically after the trial, and contained no real person, carrier, operation, or private data.
+- [x] The first authorized attempt timed out safely because the generated speech lacked trailing silence; the temporary artifact was deleted. The corrected second attempt passed. No operational, payment, telephony, persistence, or production mutation occurred.
 
 ## Not applicable
 
