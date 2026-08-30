@@ -2,8 +2,10 @@
 
 import asyncio
 import hashlib
+import io
 import json
 import re
+import wave
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -15,10 +17,11 @@ from yuno_backend.volta.realtime import (
 )
 
 from app.telephony.media import Pcm24ToMulawConverter, twilio_payload_to_pcm24
-from app.telephony.service import MediaBinding, TelephonyApplication
+from app.telephony.service import MediaBinding, StreamEvidence, TelephonyApplication
 
 MAX_FRAME_BYTES = 16_384
 MAX_STREAM_SECONDS = 900
+MAX_EVIDENCE_PCM_BYTES = 24_000 * 2 * 30
 _CALL_SID = re.compile(r"^CA[0-9a-fA-F]{32}$")
 _STREAM_SID = re.compile(r"^MZ[0-9a-fA-F]{32}$")
 
@@ -27,12 +30,8 @@ class MediaProtocolError(ValueError):
     pass
 
 
-def tool_idempotency_key(
-    binding: MediaBinding, event: RealtimeToolCallRequested
-) -> str:
-    digest = hashlib.sha256(
-        f"{binding.call_session_id}:{event.call_id}".encode()
-    ).hexdigest()
+def tool_idempotency_key(binding: MediaBinding, event: RealtimeToolCallRequested) -> str:
+    digest = hashlib.sha256(f"{binding.call_session_id}:{event.call_id}".encode()).hexdigest()
     return f"twilio-tool-{digest}"
 
 
@@ -79,7 +78,7 @@ async def _receive_start(
         raise MediaProtocolError("stream account or track is invalid")
     if not isinstance(parameters, dict) or not isinstance(parameters.get("binding"), str):
         raise MediaProtocolError("stream binding is missing")
-    binding = await application.binding_for_stream(parameters["binding"])
+    binding = await application.binding_for_stream(parameters["binding"], call_sid, stream_sid)
     if binding is None or binding.provider_call_id != call_sid:
         raise MediaProtocolError("stream binding is invalid")
     return binding, stream_sid
@@ -88,6 +87,8 @@ async def _receive_start(
 async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplication) -> None:
     binding, stream_sid = await _receive_start(websocket, application)
     outcome = "DISCONNECTED"
+    captured_audio = bytearray()
+    evidence_marker: RealtimeSpeechStarted | None = None
     try:
         async with application.realtime_gateway.connect(
             application.realtime_session(binding)
@@ -133,9 +134,14 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                     last_chunk = chunk
                     if not isinstance(payload, str):
                         raise MediaProtocolError("media payload is missing")
-                    await realtime.send_audio(twilio_payload_to_pcm24(payload))
+                    pcm = twilio_payload_to_pcm24(payload)
+                    if binding.inbound and len(captured_audio) < MAX_EVIDENCE_PCM_BYTES:
+                        remaining = MAX_EVIDENCE_PCM_BYTES - len(captured_audio)
+                        captured_audio.extend(pcm[:remaining])
+                    await realtime.send_audio(pcm)
 
             async def realtime_to_twilio() -> None:
+                nonlocal evidence_marker
                 converter = Pcm24ToMulawConverter()
                 async for event in realtime.events():
                     if isinstance(event, RealtimeAudioDelta):
@@ -149,6 +155,8 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                                 }
                             )
                     elif isinstance(event, RealtimeSpeechStarted):
+                        if evidence_marker is None:
+                            evidence_marker = event
                         await websocket.send_json({"event": "clear", "streamSid": stream_sid})
                     elif isinstance(event, RealtimeToolCallRequested):
                         key = tool_idempotency_key(binding, event)
@@ -182,4 +190,26 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
     except WebSocketDisconnect:
         outcome = "DISCONNECTED"
     finally:
-        await application.stream_finished(binding, outcome)
+        evidence = None
+        if binding.inbound and outcome == "COMPLETED":
+            if (
+                captured_audio
+                and evidence_marker is not None
+                and binding.correlation_id is not None
+            ):
+                buffer = io.BytesIO()
+                with wave.open(buffer, "wb") as wav:
+                    wav.setnchannels(1)
+                    wav.setsampwidth(2)
+                    wav.setframerate(24_000)
+                    wav.writeframes(captured_audio)
+                evidence = StreamEvidence(
+                    audio=buffer.getvalue(),
+                    audio_start_ms=evidence_marker.audio_start_ms,
+                    item_id=evidence_marker.item_id,
+                    event_id=evidence_marker.event_id,
+                    correlation_id=binding.correlation_id,
+                )
+            else:
+                outcome = "INSUFFICIENT_EVIDENCE"
+        await application.stream_finished(binding, outcome, evidence)

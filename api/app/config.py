@@ -47,6 +47,12 @@ class Settings(BaseSettings):
         repr=False,
         exclude=True,
     )
+    twilio_inbound_caller_allowlist: dict[str, str] = Field(
+        default_factory=dict,
+        repr=False,
+        exclude=True,
+    )
+    twilio_inbound_destination_e164: SecretStr = SecretStr("")
     twilio_public_base_url: str = "https://localhost.invalid"
     twilio_media_ws_url: str = "wss://localhost.invalid/v1/telephony/twilio/media"
     volta_mutation_rate_limit_requests: int = Field(default=30, ge=1, le=10_000)
