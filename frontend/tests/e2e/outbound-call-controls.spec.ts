@@ -299,9 +299,8 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
   );
 
   expect(pageErrors).toEqual([]);
-  // Chromium emits redacted resource errors for the intentional readiness 404
-  // inside advanced tools and the intentional outbound-call 503.
-  expect(consoleErrors).toEqual(["error", "error"]);
+  // Chromium emits one redacted resource error for the intentional 503.
+  expect(consoleErrors).toEqual(["error"]);
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([]);
   expect(await page.evaluate(() => Object.keys(sessionStorage))).toEqual([]);
 });

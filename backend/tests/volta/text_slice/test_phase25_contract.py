@@ -1,3 +1,4 @@
+import os
 import stat
 import wave
 from datetime import UTC, datetime
@@ -125,7 +126,8 @@ async def test_demo_storage_restores_empty_or_corrupt_recovery_fixture(
 
     assert payload[:4] == b"RIFF"
     assert payload[8:12] == b"WAVE"
-    assert stat.S_IMODE(fixture.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(fixture.stat().st_mode) == 0o600
     assert list(tmp_path.glob(".fixture-recovery-mandate-safe.wav.*.tmp")) == []
 
 
