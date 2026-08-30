@@ -8,12 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from yuno_backend.volta.persistence.errors import PersistenceConflict, PersistenceUnavailable
 from yuno_backend.volta.persistence.repositories import (
     SqlAlchemyAuditEventRepository,
+    SqlAlchemyBriefRepository,
     SqlAlchemyCommitmentRepository,
+    SqlAlchemyEvidenceRepository,
     SqlAlchemyIdempotencyRepository,
     SqlAlchemyIntakeDraftRepository,
     SqlAlchemyNegotiationRepository,
+    SqlAlchemyNotificationRepository,
     SqlAlchemyOperationRepository,
+    SqlAlchemyPostContactEscalationRepository,
     SqlAlchemyQuoteRepository,
+    SqlAlchemyRecapRepository,
+    SqlAlchemyRecoveryAttemptRepository,
 )
 
 __all__ = ["SqlAlchemyOperationUnitOfWork"]
@@ -30,6 +36,12 @@ class SqlAlchemyOperationUnitOfWork:
         self.quotes: SqlAlchemyQuoteRepository
         self.commitments: SqlAlchemyCommitmentRepository
         self.idempotency: SqlAlchemyIdempotencyRepository
+        self.evidence: SqlAlchemyEvidenceRepository
+        self.briefs: SqlAlchemyBriefRepository
+        self.recaps: SqlAlchemyRecapRepository
+        self.recovery_attempts: SqlAlchemyRecoveryAttemptRepository
+        self.post_contact_escalations: SqlAlchemyPostContactEscalationRepository
+        self.notifications: SqlAlchemyNotificationRepository
 
     async def __aenter__(self) -> "SqlAlchemyOperationUnitOfWork":
         if self._session is not None:
@@ -48,6 +60,12 @@ class SqlAlchemyOperationUnitOfWork:
         self.quotes = SqlAlchemyQuoteRepository(self._session)
         self.commitments = SqlAlchemyCommitmentRepository(self._session)
         self.idempotency = SqlAlchemyIdempotencyRepository(self._session)
+        self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.briefs = SqlAlchemyBriefRepository(self._session)
+        self.recaps = SqlAlchemyRecapRepository(self._session)
+        self.recovery_attempts = SqlAlchemyRecoveryAttemptRepository(self._session)
+        self.post_contact_escalations = SqlAlchemyPostContactEscalationRepository(self._session)
+        self.notifications = SqlAlchemyNotificationRepository(self._session)
         return self
 
     async def __aexit__(
@@ -70,6 +88,12 @@ class SqlAlchemyOperationUnitOfWork:
             del self.quotes
             del self.commitments
             del self.idempotency
+            del self.evidence
+            del self.briefs
+            del self.recaps
+            del self.recovery_attempts
+            del self.post_contact_escalations
+            del self.notifications
 
     async def commit(self) -> None:
         session = self._require_session()

@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-EXPECTED_TABLES = {
+PHASE08_TABLES = {
     "volta_audit_events",
     "volta_intake_drafts",
     "volta_mandates",
@@ -19,6 +19,14 @@ EXPECTED_TABLES = {
     "volta_quotes",
     "volta_commitments",
     "volta_mutation_idempotency",
+}
+EXPECTED_TABLES = PHASE08_TABLES | {
+    "volta_agreement_evidence",
+    "volta_call_briefs",
+    "volta_recaps",
+    "volta_post_contact_escalations",
+    "volta_recovery_attempts",
+    "volta_notifications",
 }
 PHASE06_TABLES = {
     "volta_audit_events",
@@ -134,6 +142,47 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_mutation_idempotency_result_mapping",
         "ck_volta_mutation_idempotency_key",
         "ck_volta_mutation_idempotency_fingerprint",
+    },
+    "volta_agreement_evidence": {
+        "pk_volta_agreement_evidence",
+        "uq_volta_agreement_evidence_commitment",
+        "fk_volta_agreement_evidence_commitment",
+        "ck_volta_agreement_evidence_audio_start_ms",
+        "ck_volta_agreement_evidence_recording_reference",
+        "ck_volta_agreement_evidence_item_id",
+        "ck_volta_agreement_evidence_event_id",
+    },
+    "volta_call_briefs": {
+        "pk_volta_call_briefs",
+        "uq_volta_call_briefs_commitment",
+        "fk_volta_call_briefs_commitment_operation",
+        "ck_volta_call_briefs_mandate_version",
+    },
+    "volta_recaps": {
+        "pk_volta_recaps",
+        "uq_volta_recaps_commitment",
+        "fk_volta_recaps_commitment_operation",
+        "ck_volta_recaps_disclosure_state",
+    },
+    "volta_post_contact_escalations": {
+        "pk_volta_post_contact_escalations",
+        "uq_volta_post_contact_escalations_id_operation",
+        "fk_volta_post_contact_escalations_commitment_operation",
+        "ck_volta_post_contact_escalations_op_version",
+        "ck_volta_post_contact_escalations_mandate_version",
+        "ck_volta_post_contact_escalations_resolved_state",
+    },
+    "volta_recovery_attempts": {
+        "pk_volta_recovery_attempts",
+        "fk_volta_recovery_attempts_commitment_operation",
+        "fk_volta_recovery_attempts_resulting_commitment_operation",
+        "fk_volta_recovery_attempts_escalation_operation",
+        "ck_volta_recovery_attempts_outcome",
+        "ck_volta_recovery_attempts_outcome_state",
+    },
+    "volta_notifications": {
+        "pk_volta_notifications",
+        "fk_volta_notifications_commitment_operation",
     },
 }
 
@@ -320,6 +369,36 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "uq_volta_mutation_idempotency_quote",
         "uq_volta_mutation_idempotency_commitment",
     }
+    assert indexes["volta_agreement_evidence"] == {  # type: ignore[index]
+        "uq_volta_agreement_evidence_commitment"
+    }
+    assert indexes["volta_call_briefs"] == {  # type: ignore[index]
+        "ix_volta_call_briefs_operation",
+        "uq_volta_call_briefs_commitment",
+    }
+    assert indexes["volta_recaps"] == {  # type: ignore[index]
+        "ix_volta_recaps_operation",
+        "uq_volta_recaps_commitment",
+    }
+    assert indexes["volta_post_contact_escalations"] == {  # type: ignore[index]
+        "ix_volta_post_contact_escalations_operation",
+        "uq_volta_post_contact_escalations_one_unresolved",
+        "uq_volta_post_contact_escalations_id_operation",
+    }
+    assert indexes["volta_recovery_attempts"] == {  # type: ignore[index]
+        "ix_volta_recovery_attempts_operation"
+    }
+    assert indexes["volta_notifications"] == {"ix_volta_notifications_operation"}  # type: ignore[index]
+
+    command.downgrade(alembic_config, "-1")
+    tables_after_one_downgrade, _ = asyncio.run(_volta_tables_and_function(isolated_database_url))
+    assert tables_after_one_downgrade == PHASE08_TABLES
+    _, phase08_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
+    assert "COMMITMENT_SUPERSEDED" in phase08_audit_definition
+    assert "EVIDENCE_RECORDED" not in phase08_audit_definition
+
+    command.upgrade(alembic_config, "head")
+    assert asyncio.run(_schema_evidence(isolated_database_url))["tables"] == EXPECTED_TABLES
 
     asyncio.run(_insert_phase06_sentinel(isolated_database_url))
     command.downgrade(alembic_config, "20260829_06")
