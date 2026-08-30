@@ -56,22 +56,48 @@ def test_call_brief_requires_valid_fields() -> None:
         UUID(int=1),
         UUID(int=2),
         UUID(int=3),
+        UUID(int=9),
         Route("Port A", "Depot B"),
         UUID(int=4),
         UUID(int=5),
         1,
+        ("fact",),
+        (),
+        (),
+        (),
         NOW,
     )
     assert brief.mandate_version == 1
     with pytest.raises(InvalidDomainValue):
         CallBrief(
-            UUID(int=1), UUID(int=2), UUID(int=3), Route("A", "B"), UUID(int=4), UUID(int=5), 0, NOW
+            UUID(int=1), UUID(int=2), UUID(int=3), UUID(int=9), Route("A", "B"),
+            UUID(int=4), UUID(int=5), 0, (), (), (), (), NOW
         )
 
 
 def test_recap_disclosure_state_has_exactly_one_member() -> None:
     assert list(RecapDisclosureState) == [RecapDisclosureState.SIMULATED]
-    recap = Recap(UUID(int=1), UUID(int=2), UUID(int=3), RecapDisclosureState.SIMULATED, NOW)
+    recap = Recap(
+        UUID(int=1), UUID(int=2), UUID(int=3), UUID(int=4),
+        RecapDisclosureState.SIMULATED, "a" * 64, "Confirmed terms", NOW
+    )
     assert recap.disclosure_state is RecapDisclosureState.SIMULATED
     with pytest.raises(InvalidDomainValue):
-        Recap(UUID(int=1), UUID(int=2), UUID(int=3), "SIMULATED", NOW)  # type: ignore[arg-type]
+        Recap(
+            UUID(int=1), UUID(int=2), UUID(int=3), UUID(int=4), "SIMULATED",
+            "a" * 64, "Confirmed terms", NOW
+        )  # type: ignore[arg-type]
+
+
+def test_recap_accepts_exact_10000_unicode_characters_and_rejects_10001() -> None:
+    accepted = "á" * 10_000
+    recap = Recap(
+        UUID(int=1), UUID(int=2), UUID(int=3), UUID(int=4),
+        RecapDisclosureState.SIMULATED, "a" * 64, accepted, NOW
+    )
+    assert len(recap.rendered_content) == 10_000
+    with pytest.raises(InvalidDomainValue):
+        Recap(
+            UUID(int=1), UUID(int=2), UUID(int=3), UUID(int=4),
+            RecapDisclosureState.SIMULATED, "a" * 64, accepted + "á", NOW
+        )

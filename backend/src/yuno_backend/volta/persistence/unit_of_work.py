@@ -2,6 +2,7 @@
 
 from types import TracebackType
 
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -119,6 +120,18 @@ class SqlAlchemyOperationUnitOfWork:
                 await session.rollback()
         except DBAPIError:
             raise PersistenceUnavailable("rollback_failed", "unit_of_work") from None
+
+    async def stabilize_read_snapshot(self) -> None:
+        """Pin subsequent reads to one PostgreSQL MVCC snapshot."""
+        session = self._require_session()
+        try:
+            await session.execute(
+                text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            )
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "snapshot_failed", "unit_of_work"
+            ) from None
 
     def _require_session(self) -> AsyncSession:
         if self._session is None:

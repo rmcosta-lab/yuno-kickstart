@@ -9,6 +9,7 @@ from yuno_backend.volta.recovery.models import (
     PostContactEscalation,
     RecoveryAttempt,
     RecoveryOutcome,
+    RecoveryScenario,
 )
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
@@ -19,11 +20,16 @@ def test_recovery_attempt_replaced_requires_resulting_commitment_only() -> None:
         UUID(int=1),
         UUID(int=2),
         UUID(int=3),
+        RecoveryScenario.MANDATE_SAFE,
+        1,
+        2,
+        "MANDATE_SAFE_REPLACEMENT",
         RecoveryOutcome.REPLACED,
         UUID(int=4),
         None,
         UUID(int=5),
         NOW,
+        UUID(int=6),
     )
     assert attempt.resulting_commitment_id == UUID(int=4)
     with pytest.raises(InvalidDomainValue):
@@ -31,17 +37,26 @@ def test_recovery_attempt_replaced_requires_resulting_commitment_only() -> None:
             UUID(int=1),
             UUID(int=2),
             UUID(int=3),
+            RecoveryScenario.MANDATE_SAFE,
+            1,
+            2,
+            "MANDATE_SAFE_REPLACEMENT",
             RecoveryOutcome.REPLACED,
             None,
             None,
             UUID(int=5),
             NOW,
+            UUID(int=7),
         )
     with pytest.raises(InvalidDomainValue):
         RecoveryAttempt(
             UUID(int=1),
             UUID(int=2),
             UUID(int=3),
+            RecoveryScenario.MANDATE_SAFE,
+            1,
+            2,
+            "MANDATE_SAFE_REPLACEMENT",
             RecoveryOutcome.REPLACED,
             UUID(int=4),
             UUID(int=6),
@@ -55,6 +70,10 @@ def test_recovery_attempt_escalated_requires_escalation_only() -> None:
         UUID(int=1),
         UUID(int=2),
         UUID(int=3),
+        RecoveryScenario.OUT_OF_MANDATE,
+        1,
+        2,
+        "OUT_OF_MANDATE",
         RecoveryOutcome.ESCALATED,
         None,
         UUID(int=4),
@@ -67,6 +86,10 @@ def test_recovery_attempt_escalated_requires_escalation_only() -> None:
             UUID(int=1),
             UUID(int=2),
             UUID(int=3),
+            RecoveryScenario.OUT_OF_MANDATE,
+            1,
+            2,
+            "OUT_OF_MANDATE",
             RecoveryOutcome.ESCALATED,
             None,
             None,

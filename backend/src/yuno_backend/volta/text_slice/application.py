@@ -1,11 +1,22 @@
 """Typed application facade for the PostgreSQL-backed text negotiation slice."""
 
+import base64
+import json
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from yuno_backend.volta.evidence.models import AgreementEvidence
+from yuno_backend.volta.audit.models import AuditEvent
+from yuno_backend.volta.evidence.commands import GenerateBriefCommand, GenerateRecapCommand
+from yuno_backend.volta.evidence.models import AgreementEvidence, CallBrief, Recap
 from yuno_backend.volta.evidence.repositories import EvidenceStorage, OperationUnitOfWork
-from yuno_backend.volta.idempotency import fingerprint, validate_idempotency_key
+from yuno_backend.volta.evidence.services import GenerateBriefService, GenerateRecapService
+from yuno_backend.volta.idempotency import (
+    TextMutationIdempotency,
+    fingerprint,
+    validate_idempotency_key,
+)
 from yuno_backend.volta.intake.extraction import ExtractionRequest, IntakeExtractor
 from yuno_backend.volta.mandates.commands import (
     ApproveOperationCommand,
@@ -41,6 +52,27 @@ from yuno_backend.volta.negotiations.services import (
     RecordQuoteService,
     StartNegotiationService,
 )
+from yuno_backend.volta.recovery.commands import (
+    AcknowledgeNotificationCommand,
+    CreateEscalationCommand,
+    ReplaceMandateCommand,
+    SimulateInboundRecoveryCommand,
+)
+from yuno_backend.volta.recovery.fixtures import (
+    DeterministicRecoveryFixtureCatalog,
+    RecoveryFixtureCatalog,
+)
+from yuno_backend.volta.recovery.models import (
+    Notification,
+    PostContactEscalation,
+    RecoveryAttempt,
+)
+from yuno_backend.volta.recovery.services import (
+    AcknowledgeNotificationService,
+    CreateEscalationService,
+    ReplaceMandateService,
+    SimulateInboundRecoveryService,
+)
 from yuno_backend.volta.text_slice.errors import (
     CommitmentEvidenceNotFound,
     EvidenceArtifactUnavailable,
@@ -48,13 +80,18 @@ from yuno_backend.volta.text_slice.errors import (
     EvidenceReservationNotFound,
 )
 from yuno_backend.volta.text_slice.models import (
+    AcknowledgeNotificationInput,
     ApproveOperationInput,
     AttachCommitmentEvidenceInput,
     AuditProjection,
+    AuditQuery,
     AuditQuoteProjection,
     CommitmentProjection,
+    CreateCallBriefInput,
     CreateCommitmentInput,
+    CreateEscalationInput,
     CreateOperationDraftInput,
+    CreateSimulatedRecapInput,
     DraftProjection,
     EscalationResolutionState,
     EvidenceReservation,
@@ -64,11 +101,17 @@ from yuno_backend.volta.text_slice.models import (
     OperationProjection,
     PreContactEscalationProjection,
     RecordQuoteInput,
+    RecoveryProjection,
+    ReplaceMandateInput,
     SessionProjection,
+    StartInboundRecoveryInput,
     StartNegotiationInput,
 )
+from yuno_backend.volta.text_slice.snapshots import decode_snapshot, encode_snapshot
 
 __all__ = ["OperationUnitOfWorkFactory", "TextNegotiationApplication"]
+
+_MAX_PROJECTION_ROWS = 100
 
 
 class OperationUnitOfWorkFactory(Protocol):
@@ -87,6 +130,7 @@ class TextNegotiationApplication:
         clock: Clock,
         id_generator: IdGenerator,
         evidence_storage: EvidenceStorage,
+        recovery_fixture_catalog: RecoveryFixtureCatalog | None = None,
         extraction_policy_version: str,
     ) -> None:
         self._uow_factory = unit_of_work_factory
@@ -95,6 +139,11 @@ class TextNegotiationApplication:
         self._clock = clock
         self._ids = id_generator
         self._evidence_storage = evidence_storage
+        self._recovery_fixtures = (
+            DeterministicRecoveryFixtureCatalog()
+            if recovery_fixture_catalog is None
+            else recovery_fixture_catalog
+        )
         self._policy_version = extraction_policy_version
 
     async def create_operation_draft(
@@ -139,14 +188,60 @@ class TextNegotiationApplication:
     async def get_operation(self, operation_id: UUID) -> OperationProjection:
         uow = self._uow_factory()
         async with uow:
-            operation = await uow.operations.get(operation_id)
-            if operation is None:
-                raise OperationNotFound(operation_id)
-            negotiation = await uow.negotiations.get_by_operation(operation_id)
-            quotes = await uow.quotes.list_by_operation(operation_id)
-            commitments = await uow.commitments.list_by_operation(operation_id)
-            commitment_history = await self._project_commitments(uow, commitments)
-            events = await uow.audit_events.list_by_operation(operation_id)
+            return await self._get_operation_from_uow(uow, operation_id)
+
+    async def _get_operation_from_uow(
+        self,
+        uow: OperationUnitOfWork,
+        operation_id: UUID,
+        *,
+        include_audit_events: bool = True,
+        enforce_projection_bounds: bool = True,
+    ) -> OperationProjection:
+        operation = await uow.operations.get(operation_id)
+        if operation is None:
+            raise OperationNotFound(operation_id)
+        negotiation = await uow.negotiations.get_by_operation(operation_id)
+        quotes = self._bounded_projection(
+            operation_id,
+            "quotes",
+            await uow.quotes.list_by_operation(
+                operation_id, limit=_MAX_PROJECTION_ROWS + 1
+            ),
+            enforce=enforce_projection_bounds,
+        )
+        commitments = self._bounded_projection(
+            operation_id,
+            "commitments",
+            await uow.commitments.list_by_operation(
+                operation_id, limit=_MAX_PROJECTION_ROWS + 1
+            ),
+            enforce=enforce_projection_bounds,
+        )
+        commitment_history = await self._project_commitments(uow, commitments)
+        events = (
+            self._bounded_projection(
+                operation_id,
+                "audit_events",
+                await uow.audit_events.list_by_operation(
+                    operation_id, limit=_MAX_PROJECTION_ROWS + 1
+                ),
+                enforce=enforce_projection_bounds,
+            )
+            if include_audit_events
+            else ()
+        )
+        open_escalation = await uow.post_contact_escalations.get_unresolved_by_operation(
+            operation_id
+        )
+        notifications = self._bounded_projection(
+            operation_id,
+            "notifications",
+            await uow.notifications.list_by_operation(
+                operation_id, limit=_MAX_PROJECTION_ROWS + 1
+            ),
+            enforce=enforce_projection_bounds,
+        )
         comparison = self._comparison(operation_id, operation.mandate.version, quotes)
         updated_at = operation.status_history[-1].occurred_at
         negotiation_projection = (
@@ -163,12 +258,12 @@ class TextNegotiationApplication:
             )
         )
         return OperationProjection(
-            operation,
-            negotiation_projection,
-            summary,
-            quotes,
-            comparison,
-            next(
+            operation=operation,
+            negotiation=negotiation_projection,
+            negotiation_summary=summary,
+            quotes=quotes,
+            quote_comparison=comparison,
+            active_commitment=next(
                 (
                     item
                     for item in commitment_history
@@ -176,8 +271,10 @@ class TextNegotiationApplication:
                 ),
                 None,
             ),
-            events,
-            updated_at,
+            audit_events=events,
+            updated_at=updated_at,
+            open_escalation=open_escalation,
+            notifications=notifications,
         )
 
     async def start_negotiation(
@@ -302,7 +399,13 @@ class TextNegotiationApplication:
                     raise StaleOperationVersion(
                         operation.id, command.expected_operation_version, operation.version
                     )
-                quotes = await uow.quotes.list_by_operation(operation.id)
+                quotes = self._bounded_projection(
+                    operation.id,
+                    "quotes",
+                    await uow.quotes.list_by_operation(
+                        operation.id, limit=_MAX_PROJECTION_ROWS + 1
+                    ),
+                )
                 comparison = self._comparison(operation.id, operation.mandate.version, quotes)
                 selected_id = None if comparison is None else comparison.selected_quote_id
                 quote = next(
@@ -387,48 +490,485 @@ class TextNegotiationApplication:
                 raise EvidenceReservationMismatch(quote_id, evidence_id)
             return reservation
 
-    async def get_operation_audit(self, operation_id: UUID) -> AuditProjection:
-        projection = await self.get_operation(operation_id)
-        sessions = () if projection.negotiation is None else projection.negotiation.sessions
-        labels = {
-            projected.session.call_id: projected.session.carrier_display_label
-            for projected in sessions
-        }
-        selected_id = (
-            None
-            if projection.quote_comparison is None
-            else projection.quote_comparison.selected_quote_id
+    async def create_simulated_recap(
+        self, command: CreateSimulatedRecapInput
+    ) -> MutationOutcome[Recap]:
+        async def mutate(uow: OperationUnitOfWork) -> Recap:
+            negotiation = await uow.negotiations.get_by_call(command.call_id)
+            if negotiation is None:
+                raise InvalidNegotiationTransition(command.call_id, "call_session_not_found")
+            return await GenerateRecapService(uow, self._clock, self._ids).generate_in_transaction(
+                GenerateRecapCommand(
+                    negotiation.operation_id,
+                    command.call_id,
+                    command.expected_operation_version,
+                    command.commitment_id,
+                    command.rendered_content,
+                    command.correlation_id,
+                )
+            )
+
+        return await self._atomic_mutation(
+            "create_simulated_recap", command, Recap, mutate
         )
-        ranked = (
-            ()
-            if projection.quote_comparison is None
-            else projection.quote_comparison.ranked_quotes
+
+    async def create_call_brief(
+        self, command: CreateCallBriefInput
+    ) -> MutationOutcome[CallBrief]:
+        async def mutate(uow: OperationUnitOfWork) -> CallBrief:
+            negotiation = await uow.negotiations.get_by_call(command.call_id)
+            if negotiation is None:
+                raise InvalidNegotiationTransition(command.call_id, "call_session_not_found")
+            active = await uow.commitments.get_active(negotiation.operation_id)
+            if active is None or active.call_id != command.call_id:
+                raise InvalidNegotiationTransition(
+                    negotiation.operation_id, "active_commitment_for_call_missing"
+                )
+            return await GenerateBriefService(uow, self._clock, self._ids).generate_in_transaction(
+                GenerateBriefCommand(
+                    negotiation.operation_id,
+                    command.call_id,
+                    command.expected_operation_version,
+                    active.id,
+                    command.facts,
+                    command.objections,
+                    command.changes,
+                    command.unresolved_items,
+                    command.correlation_id,
+                )
+            )
+
+        return await self._atomic_mutation("create_call_brief", command, CallBrief, mutate)
+
+    async def start_inbound_recovery(
+        self, command: StartInboundRecoveryInput
+    ) -> MutationOutcome[RecoveryProjection]:
+        replay = await self._read_replay(
+            "start_inbound_simulation", command, RecoveryProjection
         )
-        ranked_ids = {quote.id for quote in ranked}
-        comparison_quotes = (
-            *ranked,
-            *(quote for quote in projection.quotes if quote.id not in ranked_ids),
+        if replay is not None:
+            return MutationOutcome(replay, True)
+        fixture = self._recovery_fixtures.get(command.scenario)
+        if fixture.evidence is not None:
+            try:
+                payload = await self._evidence_storage.retrieve(
+                    fixture.evidence.recording_reference
+                )
+            except (FileNotFoundError, OSError, ValueError):
+                raise EvidenceArtifactUnavailable(
+                    fixture.evidence.recording_reference
+                ) from None
+            if not payload:
+                raise EvidenceArtifactUnavailable(fixture.evidence.recording_reference)
+
+        async def mutate(uow: OperationUnitOfWork) -> RecoveryProjection:
+            attempt = await SimulateInboundRecoveryService(
+                uow, MandatePolicy(), self._clock, self._ids
+            ).simulate_in_transaction(
+                SimulateInboundRecoveryCommand(
+                    operation_id=command.operation_id,
+                    expected_operation_version=command.expected_operation_version,
+                    commitment_id=command.active_commitment_id,
+                    mandate_version=(
+                        await self._required_operation(uow, command.operation_id)
+                    ).mandate.version,
+                    proposed_terms=fixture.proposed_terms,
+                    correlation_id=command.correlation_id,
+                    scenario=fixture.scenario,
+                    decision_reason=fixture.decision_reason,
+                    evidence=fixture.evidence,
+                    escalation_context=fixture.escalation_context,
+                )
+            )
+            return await self._project_recovery(uow, attempt)
+
+        return await self._atomic_mutation(
+            "start_inbound_simulation", command, RecoveryProjection, mutate
+        )
+
+    async def start_inbound_simulation(
+        self, command: StartInboundRecoveryInput
+    ) -> MutationOutcome[RecoveryProjection]:
+        return await self.start_inbound_recovery(command)
+
+    async def replace_mandate(
+        self, command: ReplaceMandateInput
+    ) -> MutationOutcome[OperationProjection]:
+        async def mutate(uow: OperationUnitOfWork) -> OperationProjection:
+            await ReplaceMandateService(
+                uow, MandatePolicy(), self._clock, self._ids
+            ).replace_in_transaction(
+                ReplaceMandateCommand(
+                    command.operation_id,
+                    command.expected_operation_version,
+                    command.resolved_escalation_id,
+                    command.maximum_amount,
+                    command.pickup_window,
+                    command.allowed_conditions,
+                    command.escalation_conditions,
+                    command.approval_actor,
+                    command.correlation_id,
+                )
+            )
+            return await self._get_operation_from_uow(uow, command.operation_id)
+
+        return await self._atomic_mutation(
+            "replace_mandate", command, OperationProjection, mutate
+        )
+
+    async def create_escalation(
+        self, command: CreateEscalationInput
+    ) -> MutationOutcome[PostContactEscalation]:
+        async def mutate(uow: OperationUnitOfWork) -> PostContactEscalation:
+            return await CreateEscalationService(
+                uow, self._clock, self._ids
+            ).create_in_transaction(
+                CreateEscalationCommand(
+                    command.call_id,
+                    command.expected_operation_version,
+                    command.conflict,
+                    command.attempted_alternatives,
+                    command.recommended_action,
+                    command.correlation_id,
+                )
+            )
+
+        return await self._atomic_mutation(
+            "create_escalation", command, PostContactEscalation, mutate
+        )
+
+    async def acknowledge_notification(
+        self, command: AcknowledgeNotificationInput
+    ) -> MutationOutcome[Notification]:
+        async def mutate(uow: OperationUnitOfWork) -> Notification:
+            return await AcknowledgeNotificationService(
+                uow, self._clock, self._ids
+            ).acknowledge_in_transaction(
+                AcknowledgeNotificationCommand(
+                    command.notification_id,
+                    command.expected_operation_version,
+                    command.acknowledged_by,
+                    command.correlation_id,
+                )
+            )
+
+        return await self._atomic_mutation(
+            "acknowledge_notification", command, Notification, mutate
+        )
+
+    async def _atomic_mutation[T](
+        self,
+        operation_name: str,
+        command: object,
+        result_type: type[T],
+        mutate: Callable[[OperationUnitOfWork], Awaitable[T]],
+    ) -> MutationOutcome[T]:
+        key = command.idempotency_key
+        validate_idempotency_key(key)
+        expected_fingerprint = fingerprint(
+            command, exclude=("idempotency_key", "correlation_id")
+        )
+        uow = self._uow_factory()
+        async with uow:
+            try:
+                await uow.text_idempotency.lock(operation_name, key)
+                record = await uow.text_idempotency.get(operation_name, key)
+                if record is not None:
+                    if record.fingerprint != expected_fingerprint:
+                        raise IdempotencyConflict(record.result_id, operation_name, key)
+                    result = decode_snapshot(record.result_snapshot, result_type)
+                    await uow.rollback()
+                    return MutationOutcome(result, True)
+                result = await mutate(uow)
+                result_id = self._result_id(result)
+                now = self._clock.now()
+                await uow.text_idempotency.add(
+                    TextMutationIdempotency(
+                        operation_name,
+                        key,
+                        expected_fingerprint,
+                        result_id,
+                        now,
+                        result_type.__name__,
+                        encode_snapshot(result),
+                    )
+                )
+                await uow.commit()
+                return MutationOutcome(result, False)
+            except Exception:
+                await uow.rollback()
+                raise
+
+    async def _read_replay[T](
+        self, operation_name: str, command: object, result_type: type[T]
+    ) -> T | None:
+        key = command.idempotency_key
+        validate_idempotency_key(key)
+        expected_fingerprint = fingerprint(
+            command, exclude=("idempotency_key", "correlation_id")
+        )
+        uow = self._uow_factory()
+        async with uow:
+            record = await uow.text_idempotency.get(operation_name, key)
+            if record is None:
+                return None
+            if record.fingerprint != expected_fingerprint:
+                raise IdempotencyConflict(record.result_id, operation_name, key)
+            return decode_snapshot(record.result_snapshot, result_type)
+
+    @staticmethod
+    async def _required_operation(uow: OperationUnitOfWork, operation_id: UUID):
+        operation = await uow.operations.get(operation_id)
+        if operation is None:
+            raise OperationNotFound(operation_id)
+        return operation
+
+    @staticmethod
+    def _result_id(result: object) -> UUID:
+        for name in ("id", "operation_id", "notification_id"):
+            value = getattr(result, name, None)
+            if isinstance(value, UUID):
+                return value
+        if isinstance(result, OperationProjection):
+            return result.operation.id
+        if isinstance(result, RecoveryProjection):
+            return result.attempt.id
+        raise InvalidNegotiationTransition(UUID(int=0), "mutation_result_id_missing")
+
+    async def get_operation_audit(
+        self, query: UUID | AuditQuery
+    ) -> AuditProjection:
+        audit_query = AuditQuery(query) if isinstance(query, UUID) else query
+        operation_id = audit_query.operation_id
+        boundary = self._decode_cursor(audit_query.cursor)
+        after = None if boundary is None else boundary[:2]
+        per_type_limit = audit_query.limit + 2
+        uow = self._uow_factory()
+        async with uow:
+            await uow.stabilize_read_snapshot()
+            projection = await self._get_operation_from_uow(
+                uow,
+                operation_id,
+                include_audit_events=False,
+            )
+            sessions = (
+                () if projection.negotiation is None else projection.negotiation.sessions
+            )
+            labels = {
+                projected.session.call_id: projected.session.carrier_display_label
+                for projected in sessions
+            }
+            selected_id = (
+                None
+                if projection.quote_comparison is None
+                else projection.quote_comparison.selected_quote_id
+            )
+            quotes = await uow.quotes.list_by_operation(
+                operation_id,
+                after=after,
+                inclusive=boundary is not None,
+                limit=per_type_limit,
+            )
+            commitment_history = await self._project_commitments(
+                uow,
+                await uow.commitments.list_by_operation(
+                    operation_id,
+                    after=after,
+                    inclusive=boundary is not None,
+                    limit=per_type_limit,
+                ),
+            )
+            recaps = await uow.recaps.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            briefs = await uow.briefs.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            attempts = await uow.recovery_attempts.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            escalations = await uow.post_contact_escalations.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            notifications = await uow.notifications.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            events = await uow.audit_events.list_by_operation(
+                operation_id, after=after, inclusive=boundary is not None,
+                limit=per_type_limit
+            )
+            recoveries: list[RecoveryProjection] = []
+            for attempt in attempts:
+                recoveries.append(await self._project_recovery(uow, attempt))
+
+        page_comparison = self._comparison(
+            operation_id, projection.operation.mandate.version, quotes
+        )
+        page_ranked = () if page_comparison is None else page_comparison.ranked_quotes
+        page_ranked_ids = {quote.id for quote in page_ranked}
+        comparison_page_quotes = (
+            *page_ranked,
+            *(quote for quote in quotes if quote.id not in page_ranked_ids),
         )
         try:
-            rows = tuple(
+            audit_quote_rows = tuple(
                 AuditQuoteProjection(
-                    quote,
-                    labels[quote.call_id],
-                    quote.id == selected_id,
+                    quote, labels[quote.call_id], quote.id == selected_id
                 )
-                for quote in comparison_quotes
+                for quote in comparison_page_quotes
             )
         except KeyError:
             raise InvalidNegotiationTransition(
                 operation_id, "quote_session_projection_missing"
             ) from None
+
+        timeline: list[tuple[datetime, UUID, str, object]] = []
+        timeline.extend(
+            (event.occurred_at, event.event_id, "event", event)
+            for event in events
+        )
+        timeline.extend(
+            (row.quote.created_at, row.quote.id, "quote", row)
+            for row in audit_quote_rows
+        )
+        timeline.extend(
+            (item.commitment.created_at, item.commitment.id, "commitment", item)
+            for item in commitment_history
+        )
+        timeline.extend((item.generated_at, item.id, "recap", item) for item in recaps)
+        timeline.extend((item.generated_at, item.id, "brief", item) for item in briefs)
+        timeline.extend(
+            (item.attempt.created_at, item.attempt.id, "recovery", item)
+            for item in recoveries
+        )
+        timeline.extend(
+            (item.created_at, item.id, "escalation", item) for item in escalations
+        )
+        timeline.extend(
+            (item.created_at, item.id, "notification", item) for item in notifications
+        )
+        timeline.sort(key=lambda item: (item[0], item[1], item[2]))
+        if boundary is not None:
+            if not any(item[:3] == boundary for item in timeline):
+                raise InvalidNegotiationTransition(
+                    operation_id, "audit_cursor_boundary_missing"
+                )
+            timeline = [item for item in timeline if item[:3] > boundary]
+        page = timeline[: audit_query.limit + 1]
+        has_more = len(page) > audit_query.limit
+        selected = page[: audit_query.limit]
+        next_cursor = (
+            self._encode_cursor(selected[-1][:3]) if has_more and selected else None
+        )
+
+        def selected_kind[T](kind: str, expected: type[T]) -> tuple[T, ...]:
+            return tuple(
+                item[3] for item in selected if item[2] == kind and isinstance(item[3], expected)
+            )
+
+        selected_quote_ids = {item[1] for item in selected if item[2] == "quote"}
+        selected_quotes = tuple(
+            row for row in audit_quote_rows if row.quote.id in selected_quote_ids
+        )
+
         return AuditProjection(
             operation_id,
-            projection.audit_events,
+            selected_kind("event", AuditEvent),
             projection.negotiation,
-            rows,
-            await self._commitment_history(operation_id),
+            selected_quotes,
+            selected_kind("commitment", CommitmentProjection),
+            selected_kind("recap", Recap),
+            selected_kind("brief", CallBrief),
+            selected_kind("recovery", RecoveryProjection),
+            selected_kind("escalation", PostContactEscalation),
+            selected_kind("notification", Notification),
+            next_cursor,
         )
+
+    @staticmethod
+    async def _project_recovery(
+        uow: OperationUnitOfWork, attempt: RecoveryAttempt
+    ) -> RecoveryProjection:
+        active = None
+        if attempt.resulting_commitment_id is not None:
+            commitment = await uow.commitments.get(attempt.resulting_commitment_id)
+            if commitment is None:
+                raise InvalidNegotiationTransition(
+                    attempt.operation_id, "recovery_commitment_projection_missing"
+                )
+            evidence = await uow.evidence.get_by_commitment(commitment.id)
+            if evidence is None:
+                raise CommitmentEvidenceNotFound(commitment.id, commitment.evidence_id)
+            active = CommitmentProjection(commitment, evidence)
+        escalation = (
+            None
+            if attempt.escalation_id is None
+            else await uow.post_contact_escalations.get(attempt.escalation_id)
+        )
+        if attempt.escalation_id is not None and escalation is None:
+            raise InvalidNegotiationTransition(
+                attempt.operation_id, "recovery_escalation_projection_missing"
+            )
+        return RecoveryProjection(attempt, active, escalation)
+
+    @staticmethod
+    def _bounded_projection[T](
+        operation_id: UUID,
+        kind: str,
+        values: tuple[T, ...],
+        *,
+        enforce: bool = True,
+    ) -> tuple[T, ...]:
+        if enforce and len(values) > _MAX_PROJECTION_ROWS:
+            raise InvalidNegotiationTransition(
+                operation_id, f"operation_projection_{kind}_overflow"
+            )
+        return values
+
+    @staticmethod
+    def _encode_cursor(boundary: tuple[datetime, UUID, str]) -> str:
+        payload = json.dumps(
+            [boundary[0].isoformat(), str(boundary[1]), boundary[2]],
+            separators=(",", ":"),
+        ).encode()
+        return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+    @staticmethod
+    def _decode_cursor(cursor: str | None) -> tuple[datetime, UUID, str] | None:
+        if cursor is None:
+            return None
+        try:
+            padding = "=" * (-len(cursor) % 4)
+            value = json.loads(base64.urlsafe_b64decode(cursor + padding))
+            if (
+                not isinstance(value, list)
+                or len(value) != 3
+                or value[2]
+                not in {
+                    "event",
+                    "quote",
+                    "commitment",
+                    "recap",
+                    "brief",
+                    "recovery",
+                    "escalation",
+                    "notification",
+                }
+            ):
+                raise ValueError
+            timestamp = datetime.fromisoformat(value[0])
+            if timestamp.utcoffset() is None:
+                raise ValueError
+            return timestamp, UUID(value[1]), value[2]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            from yuno_backend.volta.errors import InvalidDomainValue
+
+            raise InvalidDomainValue("cursor", "malformed_cursor") from None
 
     async def _commitment_replay(
         self, command: CreateCommitmentCommand
@@ -457,14 +997,6 @@ class TextNegotiationApplication:
                 raise CommitmentEvidenceNotFound(commitment.id, commitment.evidence_id)
             return CommitmentProjection(commitment, evidence)
 
-    async def _commitment_history(
-        self, operation_id: UUID
-    ) -> tuple[CommitmentProjection, ...]:
-        uow = self._uow_factory()
-        async with uow:
-            commitments = await uow.commitments.list_by_operation(operation_id)
-            return await self._project_commitments(uow, commitments)
-
     @staticmethod
     async def _project_commitments(
         uow: OperationUnitOfWork,
@@ -473,6 +1005,8 @@ class TextNegotiationApplication:
         projected: list[CommitmentProjection] = []
         for commitment in _ordered_commitment_history(commitments):
             evidence = await uow.evidence.get_by_commitment(commitment.id)
+            if evidence is None:
+                raise CommitmentEvidenceNotFound(commitment.id, commitment.evidence_id)
             projected.append(CommitmentProjection(commitment, evidence))
         return tuple(projected)
 

@@ -10,7 +10,10 @@ from yuno_backend.volta.mandates.models import Route
 
 __all__ = ["AgreementEvidence", "CallBrief", "Recap", "RecapDisclosureState"]
 
-_MAX_TEXT_LENGTH = 200
+_MAX_IDENTIFIER_LENGTH = 200
+_MAX_ITEM_LENGTH = 500
+_MAX_RECAP_LENGTH = 10_000
+_MAX_STRUCTURED_ITEMS = 50
 
 
 def _uuid(value: object, field: str) -> None:
@@ -28,11 +31,11 @@ def _utc(value: object, field: str) -> None:
         raise InvalidDomainValue(field, "aware_utc_required")
 
 
-def _bounded_text(value: object, field: str) -> None:
+def _bounded_text(value: object, field: str, maximum: int = _MAX_IDENTIFIER_LENGTH) -> None:
     if (
         not isinstance(value, str)
         or not value.strip()
-        or len(value) > _MAX_TEXT_LENGTH
+        or len(value) > maximum
         or not value.isprintable()
     ):
         raise InvalidDomainValue(field, "bounded_printable_text_required")
@@ -79,10 +82,15 @@ class CallBrief:
     id: UUID
     commitment_id: UUID
     operation_id: UUID
+    call_id: UUID
     route: Route
     carrier_id: UUID
     agreed_terms_reference: UUID
     mandate_version: int
+    facts: tuple[str, ...]
+    objections: tuple[str, ...]
+    changes: tuple[str, ...]
+    unresolved_items: tuple[str, ...]
     generated_at: datetime
 
     def __post_init__(self) -> None:
@@ -90,6 +98,7 @@ class CallBrief:
             "id",
             "commitment_id",
             "operation_id",
+            "call_id",
             "carrier_id",
             "agreed_terms_reference",
         )
@@ -98,6 +107,12 @@ class CallBrief:
         if not isinstance(self.route, Route):
             raise InvalidDomainValue("route", "route_required")
         _version(self.mandate_version, "mandate_version")
+        for field in ("facts", "objections", "changes", "unresolved_items"):
+            values = getattr(self, field)
+            if not isinstance(values, tuple) or len(values) > _MAX_STRUCTURED_ITEMS:
+                raise InvalidDomainValue(field, "bounded_tuple_required")
+            for value in values:
+                _bounded_text(value, field, _MAX_ITEM_LENGTH)
         _utc(self.generated_at, "generated_at")
 
 
@@ -106,13 +121,29 @@ class Recap:
     id: UUID
     commitment_id: UUID
     operation_id: UUID
+    call_id: UUID
     disclosure_state: RecapDisclosureState
+    content_hash: str
+    rendered_content: str
     generated_at: datetime
 
     def __post_init__(self) -> None:
         _uuid(self.id, "id")
         _uuid(self.commitment_id, "commitment_id")
         _uuid(self.operation_id, "operation_id")
+        _uuid(self.call_id, "call_id")
         if not isinstance(self.disclosure_state, RecapDisclosureState):
             raise InvalidDomainValue("disclosure_state", "recap_disclosure_state_required")
+        if (
+            not isinstance(self.content_hash, str)
+            or len(self.content_hash) != 64
+            or any(char not in "0123456789abcdef" for char in self.content_hash)
+        ):
+            raise InvalidDomainValue("content_hash", "sha256_hex_required")
+        if (
+            not isinstance(self.rendered_content, str)
+            or not self.rendered_content.strip()
+            or len(self.rendered_content) > _MAX_RECAP_LENGTH
+        ):
+            raise InvalidDomainValue("rendered_content", "bounded_text_required")
         _utc(self.generated_at, "generated_at")

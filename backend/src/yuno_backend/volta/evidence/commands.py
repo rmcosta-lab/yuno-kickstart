@@ -21,14 +21,21 @@ class RecordEvidenceCommand:
 @dataclass(frozen=True, slots=True)
 class GenerateBriefCommand:
     operation_id: UUID
+    call_id: UUID
     expected_operation_version: int
     commitment_id: UUID
+    facts: tuple[str, ...]
+    objections: tuple[str, ...]
+    changes: tuple[str, ...]
+    unresolved_items: tuple[str, ...]
     correlation_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
 class GenerateRecapCommand:
     operation_id: UUID
+    call_id: UUID
     expected_operation_version: int
     commitment_id: UUID
+    rendered_content: str
     correlation_id: UUID

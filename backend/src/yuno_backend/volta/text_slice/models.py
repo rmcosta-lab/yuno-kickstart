@@ -7,8 +7,8 @@ from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditEvent
 from yuno_backend.volta.errors import InvalidDomainValue
-from yuno_backend.volta.evidence.models import AgreementEvidence
-from yuno_backend.volta.mandates.models import IntakeDraft, Operation
+from yuno_backend.volta.evidence.models import AgreementEvidence, CallBrief, Recap
+from yuno_backend.volta.mandates.models import IntakeDraft, Money, Operation, PickupWindow
 from yuno_backend.volta.negotiations.models import (
     BrowserChannel,
     CarrierSession,
@@ -19,15 +19,29 @@ from yuno_backend.volta.negotiations.models import (
     QuoteComparison,
     QuoteTerms,
 )
+from yuno_backend.volta.recovery.models import (
+    Notification,
+    PostContactEscalation,
+    RecoveryAttempt,
+    RecoveryScenario,
+)
 
 __all__ = [
     "ApproveOperationInput",
     "AuditQuoteProjection",
     "AuditProjection",
+    "AuditQuery",
     "AttachCommitmentEvidenceInput",
     "CommitmentProjection",
     "CreateCommitmentInput",
     "CreateOperationDraftInput",
+    "CreateSimulatedRecapInput",
+    "CreateCallBriefInput",
+    "StartInboundRecoveryInput",
+    "ReplaceMandateInput",
+    "CreateEscalationInput",
+    "AcknowledgeNotificationInput",
+    "RecoveryProjection",
     "DraftProjection",
     "EscalationResolutionState",
     "MutationOutcome",
@@ -141,6 +155,93 @@ class CreateCommitmentInput:
 
 
 @dataclass(frozen=True, slots=True)
+class CreateSimulatedRecapInput:
+    call_id: UUID
+    expected_operation_version: int
+    commitment_id: UUID
+    rendered_content: str
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class CreateCallBriefInput:
+    call_id: UUID
+    expected_operation_version: int
+    facts: tuple[str, ...]
+    objections: tuple[str, ...]
+    changes: tuple[str, ...]
+    unresolved_items: tuple[str, ...]
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class StartInboundRecoveryInput:
+    operation_id: UUID
+    expected_operation_version: int
+    scenario: RecoveryScenario
+    active_commitment_id: UUID
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaceMandateInput:
+    operation_id: UUID
+    expected_operation_version: int
+    resolved_escalation_id: UUID
+    maximum_amount: Money
+    pickup_window: PickupWindow
+    allowed_conditions: tuple[str, ...]
+    escalation_conditions: tuple[str, ...]
+    approval_actor: str
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class CreateEscalationInput:
+    call_id: UUID
+    expected_operation_version: int
+    conflict: str
+    attempted_alternatives: tuple[str, ...]
+    recommended_action: str
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class AcknowledgeNotificationInput:
+    notification_id: UUID
+    expected_operation_version: int
+    acknowledged_by: str
+    idempotency_key: str
+    correlation_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class AuditQuery:
+    operation_id: UUID
+    cursor: str | None = None
+    limit: int = 100
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.operation_id, UUID):
+            raise InvalidDomainValue("operation_id", "uuid_required")
+        if (
+            not isinstance(self.limit, int)
+            or isinstance(self.limit, bool)
+            or not 1 <= self.limit <= 100
+        ):
+            raise InvalidDomainValue("limit", "integer_1_100_required")
+        if self.cursor is not None and (
+            not isinstance(self.cursor, str) or not self.cursor or len(self.cursor) > 512
+        ):
+            raise InvalidDomainValue("cursor", "bounded_cursor_required")
+
+
+@dataclass(frozen=True, slots=True)
 class DraftProjection:
     draft: IntakeDraft
 
@@ -195,6 +296,8 @@ class OperationProjection:
     active_commitment: CommitmentProjection | None
     audit_events: tuple[AuditEvent, ...]
     updated_at: datetime
+    open_escalation: PostContactEscalation | None = None
+    notifications: tuple[Notification, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +307,19 @@ class AuditProjection:
     negotiation: NegotiationProjection | None
     quote_comparison: tuple["AuditQuoteProjection", ...]
     commitment_history: tuple[CommitmentProjection, ...]
+    recaps: tuple[Recap, ...] = ()
+    briefs: tuple[CallBrief, ...] = ()
+    recoveries: tuple["RecoveryProjection", ...] = ()
+    escalations: tuple[PostContactEscalation, ...] = ()
+    notifications: tuple[Notification, ...] = ()
+    next_cursor: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryProjection:
+    attempt: RecoveryAttempt
+    active_commitment: CommitmentProjection | None
+    escalation: PostContactEscalation | None
 
 
 @dataclass(frozen=True, slots=True)

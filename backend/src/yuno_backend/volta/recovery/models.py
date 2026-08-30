@@ -17,6 +17,7 @@ __all__ = [
     "RecoveryDecision",
     "RecoveryDecisionState",
     "RecoveryOutcome",
+    "RecoveryScenario",
 ]
 
 _MAX_TEXT_LENGTH = 200
@@ -124,29 +125,59 @@ class RecoveryOutcome(StrEnum):
     ESCALATED = "ESCALATED"
 
 
+class RecoveryScenario(StrEnum):
+    MANDATE_SAFE = "MANDATE_SAFE"
+    OUT_OF_MANDATE = "OUT_OF_MANDATE"
+
+
 @dataclass(frozen=True, slots=True)
 class RecoveryAttempt:
     id: UUID
     operation_id: UUID
     commitment_id: UUID
+    scenario: RecoveryScenario
+    before_operation_version: int
+    after_operation_version: int
+    decision_reason: str
     outcome: RecoveryOutcome
     resulting_commitment_id: UUID | None
     escalation_id: UUID | None
     correlation_id: UUID
     created_at: datetime
+    resulting_evidence_id: UUID | None = None
 
     def __post_init__(self) -> None:
         for field in ("id", "operation_id", "commitment_id", "correlation_id"):
             _uuid(getattr(self, field), field)
         if not isinstance(self.outcome, RecoveryOutcome):
             raise InvalidDomainValue("outcome", "recovery_outcome_required")
+        if not isinstance(self.scenario, RecoveryScenario):
+            raise InvalidDomainValue("scenario", "recovery_scenario_required")
+        _version(self.before_operation_version, "before_operation_version")
+        _version(self.after_operation_version, "after_operation_version")
+        if self.after_operation_version != self.before_operation_version + 1:
+            raise InvalidDomainValue("after_operation_version", "must_advance_once")
+        _bounded_text(self.decision_reason, "decision_reason")
         _optional_uuid(self.resulting_commitment_id, "resulting_commitment_id")
         _optional_uuid(self.escalation_id, "escalation_id")
+        _optional_uuid(self.resulting_evidence_id, "resulting_evidence_id")
         if self.outcome is RecoveryOutcome.REPLACED:
-            if self.resulting_commitment_id is None or self.escalation_id is not None:
+            if (
+                self.resulting_commitment_id is None
+                or self.resulting_evidence_id is None
+                or self.escalation_id is not None
+            ):
                 raise InvalidDomainValue("outcome", "replaced_requires_resulting_commitment_only")
-        elif self.resulting_commitment_id is not None or self.escalation_id is None:
+        elif (
+            self.resulting_commitment_id is not None
+            or self.resulting_evidence_id is not None
+            or self.escalation_id is None
+        ):
             raise InvalidDomainValue("outcome", "escalated_requires_escalation_only")
+        if (self.scenario is RecoveryScenario.MANDATE_SAFE) != (
+            self.outcome is RecoveryOutcome.REPLACED
+        ):
+            raise InvalidDomainValue("scenario", "must_match_outcome")
         _utc(self.created_at, "created_at")
 
 

@@ -390,6 +390,10 @@ _commitments = Table(
     Column("superseded_at", DateTime(timezone=True), nullable=True),
     PrimaryKeyConstraint("id", name="pk_volta_commitments"),
     UniqueConstraint("id", "operation_id", name="uq_volta_commitments_id_operation"),
+    UniqueConstraint(
+        "id", "operation_id", "call_id", name="uq_volta_commitments_id_operation_call"
+    ),
+    UniqueConstraint("id", "evidence_id", name="uq_volta_commitments_id_evidence"),
     UniqueConstraint("quote_id", name="uq_volta_commitments_quote"),
     ForeignKeyConstraint(
         ["quote_id", "operation_id", "call_id", "carrier_id"],
@@ -511,6 +515,9 @@ _text_mutation_idempotency = Table(
     Column("fingerprint", Text, nullable=False),
     Column("draft_id", UUID(as_uuid=True), nullable=True),
     Column("operation_id", UUID(as_uuid=True), nullable=True),
+    Column("result_id", UUID(as_uuid=True), nullable=False),
+    Column("result_kind", Text, nullable=False),
+    Column("result_snapshot", JSONB, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint(
         "operation_name",
@@ -528,14 +535,18 @@ _text_mutation_idempotency = Table(
         name="fk_volta_text_idempotency_operation",
     ),
     CheckConstraint(
-        "operation_name IN ('create_operation_draft', 'approve_operation')",
+        "operation_name IN ('create_operation_draft', 'approve_operation', "
+        "'create_simulated_recap', 'create_call_brief', 'start_inbound_simulation', "
+        "'replace_mandate', 'create_escalation', 'acknowledge_notification')",
         name="ck_volta_text_idempotency_operation_name",
     ),
     CheckConstraint(
         "(operation_name = 'create_operation_draft' AND draft_id IS NOT NULL "
         "AND operation_id IS NULL) OR "
         "(operation_name = 'approve_operation' AND draft_id IS NULL "
-        "AND operation_id IS NOT NULL)",
+        "AND operation_id IS NOT NULL) OR "
+        "(operation_name NOT IN ('create_operation_draft', 'approve_operation') "
+        "AND draft_id IS NULL AND operation_id IS NULL)",
         name="ck_volta_text_idempotency_result_mapping",
     ),
     CheckConstraint(
@@ -546,6 +557,26 @@ _text_mutation_idempotency = Table(
     CheckConstraint(
         "fingerprint ~ '^[0-9a-f]{64}$'",
         name="ck_volta_text_idempotency_fingerprint",
+    ),
+    CheckConstraint(
+        "(operation_name IN ('create_operation_draft', 'approve_operation') "
+        "AND result_kind = 'LEGACY_RESOURCE') OR "
+        "(operation_name = 'create_simulated_recap' AND result_kind = 'Recap') OR "
+        "(operation_name = 'create_call_brief' AND result_kind = 'CallBrief') OR "
+        "(operation_name = 'start_inbound_simulation' "
+        "AND result_kind = 'RecoveryProjection') OR "
+        "(operation_name = 'replace_mandate' "
+        "AND result_kind = 'OperationProjection') OR "
+        "(operation_name = 'create_escalation' "
+        "AND result_kind = 'PostContactEscalation') OR "
+        "(operation_name = 'acknowledge_notification' "
+        "AND result_kind = 'Notification')",
+        name="ck_volta_text_idempotency_result_kind",
+    ),
+    CheckConstraint(
+        "jsonb_typeof(result_snapshot) = 'object' "
+        "AND octet_length(result_snapshot::text) <= 33554432",
+        name="ck_volta_text_idempotency_result_snapshot",
     ),
 )
 
@@ -611,10 +642,18 @@ _agreement_evidence = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("id", name="pk_volta_agreement_evidence"),
     UniqueConstraint("commitment_id", name="uq_volta_agreement_evidence_commitment"),
+    UniqueConstraint(
+        "id", "commitment_id", name="uq_volta_agreement_evidence_id_commitment"
+    ),
     ForeignKeyConstraint(
         ["commitment_id"],
         ["volta_commitments.id"],
         name="fk_volta_agreement_evidence_commitment",
+    ),
+    ForeignKeyConstraint(
+        ["commitment_id", "id"],
+        ["volta_commitments.id", "volta_commitments.evidence_id"],
+        name="fk_volta_agreement_evidence_commitment_artifact",
     ),
     CheckConstraint("audio_start_ms >= 0", name="ck_volta_agreement_evidence_audio_start_ms"),
     CheckConstraint(
@@ -674,20 +713,42 @@ _call_briefs = Table(
     Column("id", UUID(as_uuid=True), nullable=False),
     Column("commitment_id", UUID(as_uuid=True), nullable=False),
     Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
     Column("route_origin", Text, nullable=False),
     Column("route_destination", Text, nullable=False),
     Column("carrier_id", UUID(as_uuid=True), nullable=False),
     Column("agreed_terms_reference", UUID(as_uuid=True), nullable=False),
     Column("mandate_version", Integer, nullable=False),
+    Column("facts", ARRAY(Text), nullable=False),
+    Column("objections", ARRAY(Text), nullable=False),
+    Column("changes", ARRAY(Text), nullable=False),
+    Column("unresolved_items", ARRAY(Text), nullable=False),
     Column("generated_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("id", name="pk_volta_call_briefs"),
     UniqueConstraint("commitment_id", name="uq_volta_call_briefs_commitment"),
     ForeignKeyConstraint(
-        ["commitment_id", "operation_id"],
-        ["volta_commitments.id", "volta_commitments.operation_id"],
-        name="fk_volta_call_briefs_commitment_operation",
+        ["commitment_id", "operation_id", "call_id"],
+        [
+            "volta_commitments.id",
+            "volta_commitments.operation_id",
+            "volta_commitments.call_id",
+        ],
+        name="fk_volta_call_briefs_commitment_operation_call",
+    ),
+    ForeignKeyConstraint(
+        ["call_id", "operation_id"],
+        ["volta_carrier_sessions.call_id", "volta_carrier_sessions.operation_id"],
+        name="fk_volta_call_briefs_call_operation",
     ),
     CheckConstraint("mandate_version > 0", name="ck_volta_call_briefs_mandate_version"),
+    CheckConstraint(
+        "cardinality(facts) <= 50 AND volta_bounded_text_array(facts) "
+        "AND cardinality(objections) <= 50 AND volta_bounded_text_array(objections) "
+        "AND cardinality(changes) <= 50 AND volta_bounded_text_array(changes) "
+        "AND cardinality(unresolved_items) <= 50 "
+        "AND volta_bounded_text_array(unresolved_items)",
+        name="ck_volta_call_briefs_structured_fields",
+    ),
 )
 
 _recaps = Table(
@@ -696,16 +757,34 @@ _recaps = Table(
     Column("id", UUID(as_uuid=True), nullable=False),
     Column("commitment_id", UUID(as_uuid=True), nullable=False),
     Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
     Column("disclosure_state", Text, nullable=False),
+    Column("content_hash", Text, nullable=False),
+    Column("rendered_content", Text, nullable=False),
     Column("generated_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("id", name="pk_volta_recaps"),
     UniqueConstraint("commitment_id", name="uq_volta_recaps_commitment"),
     ForeignKeyConstraint(
-        ["commitment_id", "operation_id"],
-        ["volta_commitments.id", "volta_commitments.operation_id"],
-        name="fk_volta_recaps_commitment_operation",
+        ["commitment_id", "operation_id", "call_id"],
+        [
+            "volta_commitments.id",
+            "volta_commitments.operation_id",
+            "volta_commitments.call_id",
+        ],
+        name="fk_volta_recaps_commitment_operation_call",
+    ),
+    ForeignKeyConstraint(
+        ["call_id", "operation_id"],
+        ["volta_carrier_sessions.call_id", "volta_carrier_sessions.operation_id"],
+        name="fk_volta_recaps_call_operation",
     ),
     CheckConstraint("disclosure_state = 'SIMULATED'", name="ck_volta_recaps_disclosure_state"),
+    CheckConstraint(
+        "content_hash ~ '^[0-9a-f]{64}$' AND "
+        "char_length(rendered_content) <= 10000 "
+        "AND char_length(btrim(rendered_content)) >= 1",
+        name="ck_volta_recaps_content",
+    ),
 )
 
 _post_contact_escalations = Table(
@@ -768,8 +847,13 @@ _recovery_attempts = Table(
     Column("id", UUID(as_uuid=True), nullable=False),
     Column("operation_id", UUID(as_uuid=True), nullable=False),
     Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("scenario", Text, nullable=False),
+    Column("before_operation_version", Integer, nullable=False),
+    Column("after_operation_version", Integer, nullable=False),
+    Column("decision_reason", Text, nullable=False),
     Column("outcome", Text, nullable=False),
     Column("resulting_commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("resulting_evidence_id", UUID(as_uuid=True), nullable=True),
     Column("escalation_id", UUID(as_uuid=True), nullable=True),
     Column("correlation_id", UUID(as_uuid=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -785,6 +869,13 @@ _recovery_attempts = Table(
         name="fk_volta_recovery_attempts_resulting_commitment_operation",
     ),
     ForeignKeyConstraint(
+        ["resulting_evidence_id", "resulting_commitment_id"],
+        ["volta_agreement_evidence.id", "volta_agreement_evidence.commitment_id"],
+        name="fk_volta_recovery_attempts_resulting_evidence_commitment",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    ForeignKeyConstraint(
         ["escalation_id", "operation_id"],
         [
             "volta_post_contact_escalations.id",
@@ -796,9 +887,22 @@ _recovery_attempts = Table(
         "outcome IN ('REPLACED', 'ESCALATED')", name="ck_volta_recovery_attempts_outcome"
     ),
     CheckConstraint(
+        "scenario IN ('MANDATE_SAFE', 'OUT_OF_MANDATE') "
+        "AND before_operation_version > 0 "
+        "AND after_operation_version = before_operation_version + 1 "
+        "AND char_length(btrim(decision_reason)) BETWEEN 1 AND 500",
+        name="ck_volta_recovery_attempts_complete_decision",
+    ),
+    CheckConstraint(
+        "(scenario = 'MANDATE_SAFE' AND outcome = 'REPLACED') OR "
+        "(scenario = 'OUT_OF_MANDATE' AND outcome = 'ESCALATED')",
+        name="ck_volta_recovery_attempts_scenario_outcome",
+    ),
+    CheckConstraint(
         "(outcome = 'REPLACED' AND resulting_commitment_id IS NOT NULL AND "
-        "escalation_id IS NULL) OR (outcome = 'ESCALATED' AND resulting_commitment_id IS NULL "
-        "AND escalation_id IS NOT NULL)",
+        "resulting_evidence_id IS NOT NULL AND escalation_id IS NULL) OR "
+        "(outcome = 'ESCALATED' AND resulting_commitment_id IS NULL "
+        "AND resulting_evidence_id IS NULL AND escalation_id IS NOT NULL)",
         name="ck_volta_recovery_attempts_outcome_state",
     ),
 )
@@ -845,10 +949,23 @@ _notifications = Table(
     ),
 )
 
-Index("ix_volta_call_briefs_operation", _call_briefs.c.operation_id)
-Index("ix_volta_recaps_operation", _recaps.c.operation_id)
 Index(
-    "ix_volta_post_contact_escalations_operation", _post_contact_escalations.c.operation_id
+    "ix_volta_call_briefs_operation_order",
+    _call_briefs.c.operation_id,
+    _call_briefs.c.generated_at,
+    _call_briefs.c.id,
+)
+Index(
+    "ix_volta_recaps_operation_order",
+    _recaps.c.operation_id,
+    _recaps.c.generated_at,
+    _recaps.c.id,
+)
+Index(
+    "ix_volta_post_contact_escalations_operation_order",
+    _post_contact_escalations.c.operation_id,
+    _post_contact_escalations.c.created_at,
+    _post_contact_escalations.c.id,
 )
 Index(
     "ix_volta_post_contact_escalations_call",
@@ -867,4 +984,9 @@ Index(
     _recovery_attempts.c.created_at,
     _recovery_attempts.c.id,
 )
-Index("ix_volta_notifications_operation", _notifications.c.operation_id)
+Index(
+    "ix_volta_notifications_operation_order",
+    _notifications.c.operation_id,
+    _notifications.c.created_at,
+    _notifications.c.id,
+)

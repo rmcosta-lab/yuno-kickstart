@@ -26,12 +26,13 @@
 - After group 3: recap hash/content and all four brief collections reload exactly and preserve ownership/order.
 - After groups 4–5: safe recovery has distinct playable evidence for the replacement; bad recovery has complete bounded escalation context and preserves the winner.
 - After group 6: all Fase 24 behavior remains green and the six facade mutations share identical replay semantics.
-- After group 7: operation and audit results contain every accepted artifact, stable order, page bounds, and no raw recording bytes/path, transcript, contact, or provider payload.
+- After group 7: operation and audit results contain every accepted artifact, stable keyset order for artifact histories, the accepted business-ranked quote comparison, page bounds, and no raw recording bytes/path, transcript, contact, or provider payload.
 - Before review: refresh `origin/main`, confirm Fases 10 and 24 remain DONE and conflicts remain absent, then notify the Fase 15 owner to refresh after merge.
 
 ## Shared decisions and temporary waits
 
 - No mission, stack, roadmap, or challenge-plan change is carried by this phase.
+- Contract clarification during integration: the accepted HTTP/API tests establish `quote_comparison` as a deterministic business ranking rather than a timeline collection. The backend keeps selected/better eligible quotes first and rejected quotes afterward; `(created_at, id, kind)` keyset ordering applies to paged artifact histories. This clarification changes no route, DTO, OpenAPI, or generated client and was communicated to the backend writer before final validation.
 - Fase 15 remains paused until Fase 25 completes and merges; its worktree must then refresh from the resulting `origin/main` before API integration resumes.
 - If implementation requires an HTTP-contract change, a provider, or a shared architecture decision, stop and coordinate through `manage-shared-specs` rather than editing API/generated/shared files here.
 

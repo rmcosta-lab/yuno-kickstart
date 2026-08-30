@@ -102,4 +102,12 @@ def create_demo_carrier_catalog() -> SyntheticCarrierCatalog:
 def create_demo_evidence_storage(base_dir: Path | None = None) -> FilesystemEvidenceStorage:
     """Build the local text harness storage outside the source checkout."""
     root = Path(gettempdir()) / "yuno-volta-text-evidence" if base_dir is None else base_dir
-    return FilesystemEvidenceStorage(root)
+    storage = FilesystemEvidenceStorage(root)
+    fixture = root / "fixture-recovery-mandate-safe.webm"
+    try:
+        with fixture.open("xb") as artifact:
+            artifact.write(b"synthetic deterministic recovery evidence")
+        fixture.chmod(0o600)
+    except FileExistsError:
+        pass
+    return storage
