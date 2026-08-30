@@ -202,7 +202,10 @@ Conflicts with: none
 
 Gate: The frontend plays the agreement turn at the stored offset, distinguishes `CANDIDATE`, `SIMULATED`, active, and superseded states, runs reproducible good and bad inbound simulations, shows notifications and escalation context, supports human mandate replacement, and renders the complete correlated audit timeline with loading and failure states.
 
-This frontend-only phase consumes the generated client and does not infer operational state.
+This cross-layer phase adds the smallest authenticated evidence-audio retrieval contract and
+backend storage-resolution service required by the playback gate, regenerates the client, and
+then builds the frontend experience. Browser-facing evidence responses no longer contain the
+opaque storage reference, and the browser does not infer operational state.
 
 ### Fase 17 — Pass the complete P0 browser trial
 
