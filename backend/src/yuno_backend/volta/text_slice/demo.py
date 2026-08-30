@@ -1,6 +1,8 @@
 """Canonical deterministic P0 text fixtures owned by the backend boundary."""
 
 import os
+import re
+import unicodedata
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +23,7 @@ from yuno_backend.volta.mandates.models import (
 )
 from yuno_backend.volta.negotiations.catalog import SyntheticCarrierCatalog
 from yuno_backend.volta.negotiations.models import CarrierProfile
+from yuno_backend.volta.negotiations.repositories import CarrierCatalog
 
 __all__ = [
     "canonical_text_extraction_mapping",
@@ -63,6 +66,31 @@ _RECOVERY_FIXTURE_NAME = "fixture-recovery-mandate-safe.wav"
 _RECOVERY_FIXTURE_PAYLOAD = _pcm_wave_silence(sample_rate=8_000, duration_seconds=3)
 
 
+def _location_words(value: str) -> frozenset[str]:
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    without_accents = "".join(
+        character for character in normalized if not unicodedata.combining(character)
+    )
+    return frozenset(re.findall(r"[a-z0-9]+", without_accents))
+
+
+def _canonical_demo_route(route: Route) -> Route:
+    """Resolve bounded wording variants without weakening generic route coverage."""
+    origin_words = _location_words(route.origin)
+    destination_words = _location_words(route.destination)
+    if "manzanillo" in origin_words and "guadalajara" in destination_words:
+        return _CANONICAL_ROUTE
+    return route
+
+
+class _DemoCarrierCatalog:
+    def __init__(self, catalog: SyntheticCarrierCatalog) -> None:
+        self._catalog = catalog
+
+    def select(self, route: Route, *, limit: int = 3) -> tuple[CarrierProfile, ...]:
+        return self._catalog.select(_canonical_demo_route(route), limit=limit)
+
+
 def canonical_text_extraction_mapping(request: ExtractionRequest) -> OperationProposal:
     """Map the bounded demo prompts without network access or model discretion."""
     normalized = request.source_prompt.casefold()
@@ -97,31 +125,33 @@ def create_demo_text_extractor() -> DeterministicIntakeExtractor:
     return DeterministicIntakeExtractor(mapping=canonical_text_extraction_mapping)
 
 
-def create_demo_carrier_catalog() -> SyntheticCarrierCatalog:
+def create_demo_carrier_catalog() -> CarrierCatalog:
     route = ((_CANONICAL_ROUTE.origin, _CANONICAL_ROUTE.destination),)
-    return SyntheticCarrierCatalog(
-        (
-            CarrierProfile(
-                UUID("1f104db7-49c8-4ee7-86f3-752389f78601"),
-                "Puerto Azul Drayage",
-                route,
-                True,
-                1,
-            ),
-            CarrierProfile(
-                UUID("1f104db7-49c8-4ee7-86f3-752389f78602"),
-                "Ruta Norte Intermodal de Occidente",
-                route,
-                True,
-                2,
-            ),
-            CarrierProfile(
-                UUID("1f104db7-49c8-4ee7-86f3-752389f78603"),
-                "Altamar Logistica Portuaria del Pacifico",
-                route,
-                True,
-                3,
-            ),
+    return _DemoCarrierCatalog(
+        SyntheticCarrierCatalog(
+            (
+                CarrierProfile(
+                    UUID("1f104db7-49c8-4ee7-86f3-752389f78601"),
+                    "Puerto Azul Drayage",
+                    route,
+                    True,
+                    1,
+                ),
+                CarrierProfile(
+                    UUID("1f104db7-49c8-4ee7-86f3-752389f78602"),
+                    "Ruta Norte Intermodal de Occidente",
+                    route,
+                    True,
+                    2,
+                ),
+                CarrierProfile(
+                    UUID("1f104db7-49c8-4ee7-86f3-752389f78603"),
+                    "Altamar Logistica Portuaria del Pacifico",
+                    route,
+                    True,
+                    3,
+                ),
+            )
         )
     )
 
