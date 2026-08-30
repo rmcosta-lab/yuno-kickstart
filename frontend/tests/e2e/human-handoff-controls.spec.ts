@@ -154,6 +154,10 @@ async function loadLiveOperation(page: Page) {
     .getByRole("textbox", { name: "Live operation ID" })
     .fill(OPERATION_ID);
   await page.getByRole("button", { name: "Load server state" }).click();
+  await page
+    .locator("summary")
+    .filter({ hasText: "More Session Tools" })
+    .click();
 }
 
 test("confirms once, polls durable status, and preserves transcript-free context", async ({

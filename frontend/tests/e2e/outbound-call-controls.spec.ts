@@ -187,9 +187,11 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
 
   await loadLiveOperation(page);
   const control = page.getByTestId("outbound-call-control");
-  const startButton = control.getByRole("button", { name: "Start demo call" });
+  const startButton = control.getByRole("button", {
+    name: "Start Authorized Call",
+  });
   const consent = control.getByRole("checkbox", {
-    name: /I confirm the demo participant is authorized/i,
+    name: /I confirm this participant agreed/i,
   });
 
   await expect(control).toContainText("No live operation session available");
@@ -204,6 +206,10 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
   await expect(startButton).toBeDisabled();
   expect(requests).toHaveLength(0);
 
+  await page
+    .locator("summary")
+    .filter({ hasText: "More Session Tools" })
+    .click();
   await expect(page.getByText("Browser voice simulator")).toBeVisible();
   const textFallback = page.getByRole("button", { name: "Use text fallback" });
   await expect(textFallback).toBeVisible();
@@ -216,10 +222,10 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
   await startButton.click();
   await expect(control.getByText("starting", { exact: true })).toBeVisible();
   await expect(
-    control.getByRole("button", { name: /Starting demo call/ }),
+    control.getByRole("button", { name: /Starting Call/ }),
   ).toBeDisabled();
   await control
-    .getByRole("button", { name: /Starting demo call/ })
+    .getByRole("button", { name: /Starting Call/ })
     .dispatchEvent("click");
   expect(requests).toHaveLength(1);
 
@@ -230,7 +236,7 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
     authorized_at: expect.any(String),
     authorized_by: "coordinator-demo",
     call_session_id: LOWEST_RANK_SESSION_ID,
-    destination_label: "synthetic-carrier-one",
+    destination_label: "coordinator-1",
     recording_consent_required: false,
     recording_mode: "DISABLED",
   });

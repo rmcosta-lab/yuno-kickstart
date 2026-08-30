@@ -17,7 +17,7 @@ async function openFallbackWithKeyboard(page: Page) {
   await page.goto("/sessions");
   await expect(page).toHaveTitle("Volta | Control tower");
   await expect(
-    page.getByRole("heading", { name: "Carrier sessions" }),
+    page.getByRole("heading", { name: "Contact the selected carrier" }),
   ).toBeVisible();
 
   const fallback = page.getByRole("button", {

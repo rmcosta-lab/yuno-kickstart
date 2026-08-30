@@ -87,7 +87,7 @@ async function proxy(
     if (value) headers.set(name, value);
   }
   headers.set("Authorization", `Bearer ${bearer}`);
-  headers.set("Origin", requestUrl.origin);
+  headers.set("Origin", request.headers.get("origin") ?? requestUrl.origin);
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   let upstream: Response;
