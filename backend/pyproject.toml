@@ -8,6 +8,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "httpx>=0.28.1",
     "sqlalchemy[asyncio]>=2.0.44",
+    "websockets>=17.1",
 ]
 
 [build-system]

@@ -12,6 +12,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yuno_backend.volta.audit.models import AuditEvent
+from yuno_backend.volta.evidence.models import AgreementEvidence, CallBrief, Recap
 from yuno_backend.volta.mandates.errors import InvalidDomainValue, OperationAlreadyApproved
 from yuno_backend.volta.mandates.models import IntakeDraft, Operation
 from yuno_backend.volta.negotiations.models import (
@@ -24,44 +25,69 @@ from yuno_backend.volta.persistence.errors import PersistenceConflict, Persisten
 from yuno_backend.volta.persistence.mappers import (
     _audit_from_row,
     _audit_to_values,
+    _brief_from_row,
+    _brief_to_values,
     _commitment_from_row,
     _commitment_to_values,
     _draft_from_row,
     _draft_to_values,
     _escalation_to_values,
+    _evidence_from_row,
+    _evidence_to_values,
     _idempotency_from_row,
     _idempotency_to_values,
     _mandate_to_values,
     _negotiation_from_rows,
+    _notification_from_row,
+    _notification_to_values,
     _operation_from_rows,
     _operation_to_values,
+    _post_contact_escalation_from_row,
+    _post_contact_escalation_to_values,
     _quote_from_row,
     _quote_to_values,
+    _recap_from_row,
+    _recap_to_values,
+    _recovery_attempt_from_row,
+    _recovery_attempt_to_values,
     _session_to_values,
     _status_to_values,
 )
 from yuno_backend.volta.persistence.tables import (
+    _agreement_evidence,
     _audit_events,
+    _call_briefs,
     _carrier_sessions,
     _commitments,
     _intake_drafts,
     _mandates,
     _mutation_idempotency,
     _negotiations,
+    _notifications,
     _operation_status_history,
     _operations,
+    _post_contact_escalations,
     _pre_contact_escalations,
     _quotes,
+    _recaps,
+    _recovery_attempts,
 )
+from yuno_backend.volta.recovery.models import Notification, PostContactEscalation, RecoveryAttempt
 
 __all__ = [
     "SqlAlchemyAuditEventRepository",
-    "SqlAlchemyIntakeDraftRepository",
-    "SqlAlchemyOperationRepository",
+    "SqlAlchemyBriefRepository",
     "SqlAlchemyCommitmentRepository",
+    "SqlAlchemyEvidenceRepository",
     "SqlAlchemyIdempotencyRepository",
+    "SqlAlchemyIntakeDraftRepository",
     "SqlAlchemyNegotiationRepository",
+    "SqlAlchemyNotificationRepository",
+    "SqlAlchemyOperationRepository",
+    "SqlAlchemyPostContactEscalationRepository",
     "SqlAlchemyQuoteRepository",
+    "SqlAlchemyRecapRepository",
+    "SqlAlchemyRecoveryAttemptRepository",
 ]
 
 
@@ -469,4 +495,256 @@ class SqlAlchemyIdempotencyRepository:
         except DBAPIError:
             raise PersistenceUnavailable(
                 "write_failed", "idempotency", record.operation_id
+            ) from None
+
+
+class SqlAlchemyEvidenceRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, evidence_id: UUID) -> AgreementEvidence | None:
+        return await self._get_by(_agreement_evidence.c.id == evidence_id)
+
+    async def get_by_commitment(self, commitment_id: UUID) -> AgreementEvidence | None:
+        return await self._get_by(_agreement_evidence.c.commitment_id == commitment_id)
+
+    async def _get_by(self, criterion: Any) -> AgreementEvidence | None:
+        try:
+            row = (
+                await self._session.execute(select(_agreement_evidence).where(criterion))
+            ).first()
+            return None if row is None else _evidence_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "agreement_evidence") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "agreement_evidence") from None
+
+    async def add(self, evidence: AgreementEvidence) -> None:
+        try:
+            await self._session.execute(
+                insert(_agreement_evidence).values(_evidence_to_values(evidence))
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "agreement_evidence", evidence.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "agreement_evidence", evidence.id
+            ) from None
+
+
+class SqlAlchemyBriefRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, brief_id: UUID) -> CallBrief | None:
+        return await self._get_by(_call_briefs.c.id == brief_id)
+
+    async def get_by_commitment(self, commitment_id: UUID) -> CallBrief | None:
+        return await self._get_by(_call_briefs.c.commitment_id == commitment_id)
+
+    async def _get_by(self, criterion: Any) -> CallBrief | None:
+        try:
+            row = (await self._session.execute(select(_call_briefs).where(criterion))).first()
+            return None if row is None else _brief_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "call_brief") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "call_brief") from None
+
+    async def add(self, brief: CallBrief) -> None:
+        try:
+            await self._session.execute(insert(_call_briefs).values(_brief_to_values(brief)))
+        except IntegrityError:
+            raise PersistenceConflict("integrity_constraint", "call_brief", brief.id) from None
+        except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "call_brief", brief.id) from None
+
+
+class SqlAlchemyRecapRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, recap_id: UUID) -> Recap | None:
+        return await self._get_by(_recaps.c.id == recap_id)
+
+    async def get_by_commitment(self, commitment_id: UUID) -> Recap | None:
+        return await self._get_by(_recaps.c.commitment_id == commitment_id)
+
+    async def _get_by(self, criterion: Any) -> Recap | None:
+        try:
+            row = (await self._session.execute(select(_recaps).where(criterion))).first()
+            return None if row is None else _recap_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "recap") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "recap") from None
+
+    async def add(self, recap: Recap) -> None:
+        try:
+            await self._session.execute(insert(_recaps).values(_recap_to_values(recap)))
+        except IntegrityError:
+            raise PersistenceConflict("integrity_constraint", "recap", recap.id) from None
+        except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "recap", recap.id) from None
+
+
+class SqlAlchemyPostContactEscalationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, escalation_id: UUID) -> PostContactEscalation | None:
+        return await self._get_by(_post_contact_escalations.c.id == escalation_id)
+
+    async def get_unresolved_by_operation(
+        self, operation_id: UUID
+    ) -> PostContactEscalation | None:
+        return await self._get_by(
+            (_post_contact_escalations.c.operation_id == operation_id)
+            & (_post_contact_escalations.c.resolved.is_(False))
+        )
+
+    async def _get_by(self, criterion: Any) -> PostContactEscalation | None:
+        try:
+            row = (
+                await self._session.execute(
+                    select(_post_contact_escalations).where(criterion)
+                )
+            ).first()
+            return None if row is None else _post_contact_escalation_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "post_contact_escalation") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable(
+                "invalid_stored_state", "post_contact_escalation"
+            ) from None
+
+    async def add(self, escalation: PostContactEscalation) -> None:
+        try:
+            await self._session.execute(
+                insert(_post_contact_escalations).values(
+                    _post_contact_escalation_to_values(escalation)
+                )
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "post_contact_escalation", escalation.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "post_contact_escalation", escalation.id
+            ) from None
+
+    async def update(self, escalation: PostContactEscalation) -> None:
+        try:
+            changed = (
+                await self._session.execute(
+                    update(_post_contact_escalations)
+                    .where(_post_contact_escalations.c.id == escalation.id)
+                    .values(_post_contact_escalation_to_values(escalation))
+                    .returning(_post_contact_escalations.c.id)
+                )
+            ).scalar_one_or_none()
+            if changed is None:
+                raise PersistenceConflict(
+                    "missing_state", "post_contact_escalation", escalation.id
+                )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "post_contact_escalation", escalation.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "post_contact_escalation", escalation.id
+            ) from None
+
+
+class SqlAlchemyRecoveryAttemptRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, attempt_id: UUID) -> RecoveryAttempt | None:
+        try:
+            row = (
+                await self._session.execute(
+                    select(_recovery_attempts).where(_recovery_attempts.c.id == attempt_id)
+                )
+            ).first()
+            return None if row is None else _recovery_attempt_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "recovery_attempt") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "recovery_attempt") from None
+
+    async def list_by_operation(self, operation_id: UUID) -> tuple[RecoveryAttempt, ...]:
+        try:
+            rows = (
+                await self._session.execute(
+                    select(_recovery_attempts)
+                    .where(_recovery_attempts.c.operation_id == operation_id)
+                    .order_by(_recovery_attempts.c.created_at, _recovery_attempts.c.id)
+                )
+            ).all()
+            return tuple(_recovery_attempt_from_row(_mapping(row)) for row in rows)
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "read_failed", "recovery_attempt", operation_id
+            ) from None
+
+    async def add(self, attempt: RecoveryAttempt) -> None:
+        try:
+            await self._session.execute(
+                insert(_recovery_attempts).values(_recovery_attempt_to_values(attempt))
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "recovery_attempt", attempt.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "recovery_attempt", attempt.id) from None
+
+
+class SqlAlchemyNotificationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(self, notification_id: UUID) -> Notification | None:
+        try:
+            row = (
+                await self._session.execute(
+                    select(_notifications).where(_notifications.c.id == notification_id)
+                )
+            ).first()
+            return None if row is None else _notification_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "notification") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "notification") from None
+
+    async def list_by_operation(self, operation_id: UUID) -> tuple[Notification, ...]:
+        try:
+            rows = (
+                await self._session.execute(
+                    select(_notifications)
+                    .where(_notifications.c.operation_id == operation_id)
+                    .order_by(_notifications.c.created_at, _notifications.c.id)
+                )
+            ).all()
+            return tuple(_notification_from_row(_mapping(row)) for row in rows)
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "notification", operation_id) from None
+
+    async def add(self, notification: Notification) -> None:
+        try:
+            await self._session.execute(
+                insert(_notifications).values(_notification_to_values(notification))
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "notification", notification.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "notification", notification.id
             ) from None

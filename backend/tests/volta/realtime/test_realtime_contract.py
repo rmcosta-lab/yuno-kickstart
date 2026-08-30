@@ -1,0 +1,218 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+import yuno_backend.volta.realtime as realtime
+from yuno_backend.volta.realtime import (
+    PcmAudioFormat,
+    RealtimeError,
+    RealtimePlaybackTruncation,
+    RealtimeSessionRequest,
+    RealtimeToolCallRequested,
+    RealtimeToolDefinition,
+    RealtimeToolOutput,
+)
+
+
+def _tool() -> RealtimeToolDefinition:
+    return RealtimeToolDefinition(
+        name="lookup_reference",
+        description="Read one synthetic reference.",
+        parameters={
+            "type": "object",
+            "properties": {"reference": {"type": "string"}},
+            "required": ["reference"],
+            "additionalProperties": False,
+        },
+    )
+
+
+def test_public_surface_matches_frozen_phase_contract() -> None:
+    assert set(realtime.__all__) == {
+        "InvalidRealtimeEvent",
+        "PcmAudioFormat",
+        "RealtimeAudioDelta",
+        "RealtimeAuthenticationError",
+        "RealtimeConnection",
+        "RealtimeConnectionError",
+        "RealtimeDisconnectedError",
+        "RealtimeError",
+        "RealtimeEvent",
+        "RealtimeGateway",
+        "RealtimeModelUnavailableError",
+        "RealtimePlaybackTruncation",
+        "RealtimeProviderError",
+        "RealtimeRateLimitError",
+        "RealtimeResponseCancelled",
+        "RealtimeResponseCompleted",
+        "RealtimeSessionReady",
+        "RealtimeSessionRequest",
+        "RealtimeSpeechStarted",
+        "RealtimeSpeechStopped",
+        "RealtimeTimeoutError",
+        "RealtimeToolCallRequested",
+        "RealtimeToolDefinition",
+        "RealtimeToolOutput",
+    }
+
+
+def test_provider_neutral_package_has_no_transport_or_framework_imports() -> None:
+    package_root = Path(__file__).parents[3] / "src" / "yuno_backend" / "volta" / "realtime"
+    forbidden = {"websockets", "openai", "fastapi", "pydantic", "sqlalchemy", "twilio"}
+    imported: list[str] = []
+    for source_file in package_root.rglob("*.py"):
+        tree = ast.parse(source_file.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.append(node.module)
+    assert not [name for name in imported if name.split(".")[0] in forbidden]
+
+
+def test_sensitive_values_are_redacted_and_nested_json_is_immutable() -> None:
+    secret_instruction = "private instruction marker"
+    safety_identifier = "a" * 64
+    request = RealtimeSessionRequest(
+        instructions=secret_instruction,
+        safety_identifier=safety_identifier,
+        tools=(_tool(),),
+    )
+    output = RealtimeToolOutput(
+        event_id="evt.output",
+        response_event_id="evt.response",
+        call_id="call.safe",
+        result={"private": {"nested": ["tool-result-marker"]}},
+    )
+    call = RealtimeToolCallRequested(
+        event_id="evt.call",
+        item_id="item.call",
+        call_id="call.safe",
+        name="lookup_reference",
+        arguments={"reference": "argument-marker"},
+    )
+
+    combined_repr = repr(request) + repr(output) + repr(call) + repr(_tool())
+    for marker in (
+        secret_instruction,
+        safety_identifier,
+        "tool-result-marker",
+        "argument-marker",
+    ):
+        assert marker not in combined_repr
+    with pytest.raises(TypeError):
+        output.result["private"] = None  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("factory", "match"),
+    [
+        (lambda: PcmAudioFormat(sample_rate_hz=16_000), "PCM16 mono"),
+        (
+            lambda: RealtimeSessionRequest(
+                instructions="x", safety_identifier="unsafe value"
+            ),
+            "safety_identifier",
+        ),
+        (
+            lambda: RealtimeSessionRequest(
+                instructions="x", safety_identifier="b" * 64, language="pt"  # type: ignore[arg-type]
+            ),
+            "English",
+        ),
+        (
+            lambda: RealtimeToolOutput(
+                event_id="evt",
+                response_event_id="evt.response",
+                call_id="call",
+                result={"x": float("nan")},
+            ),
+            "JSON-compatible",
+        ),
+    ],
+)
+def test_values_reject_unsupported_or_unsafe_data(factory: object, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        factory()  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("safety_identifier", ["alice", "a" * 63, "a" * 65, "A" * 64])
+def test_session_requires_an_opaque_sha256_safety_identifier(
+    safety_identifier: str,
+) -> None:
+    with pytest.raises(ValueError, match="lowercase SHA-256 digest"):
+        RealtimeSessionRequest(instructions="x", safety_identifier=safety_identifier)
+
+
+def test_exceptions_expose_only_allowlisted_safe_metadata() -> None:
+    error = RealtimeError(
+        model_id="gpt-realtime-2.1",
+        event_type="error",
+        event_id="unsafe secret payload",
+        request_id="req.safe",
+        status_code=503,
+        close_code=1006,
+        duration_ms=7,
+    )
+    assert str(error) == "realtime"
+    assert error.event_id is None
+    assert dict(error.safe_metadata) == {
+        "category": "realtime",
+        "model_id": "gpt-realtime-2.1",
+        "event_type": "error",
+        "event_id": None,
+        "request_id": "req.safe",
+        "status_code": 503,
+        "close_code": 1006,
+        "duration_ms": 7,
+    }
+
+
+@pytest.mark.parametrize(
+    "truncation",
+    [
+        RealtimePlaybackTruncation("item.safe", 0, 0),
+        RealtimePlaybackTruncation("item.safe", 1, 1_500),
+    ],
+)
+def test_playback_truncation_is_immutable_and_bounded(
+    truncation: RealtimePlaybackTruncation,
+) -> None:
+    assert truncation.audio_end_ms >= 0
+    with pytest.raises((AttributeError, TypeError)):
+        truncation.audio_end_ms = 2_000  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"item_id": "unsafe value", "content_index": 0, "audio_end_ms": 0},
+        {"item_id": "item.safe", "content_index": -1, "audio_end_ms": 0},
+        {"item_id": "item.safe", "content_index": 0, "audio_end_ms": -1},
+    ],
+)
+def test_playback_truncation_rejects_invalid_values(values: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        RealtimePlaybackTruncation(**values)  # type: ignore[arg-type]
+
+
+def test_deep_application_json_fails_with_a_field_scoped_value_error() -> None:
+    deeply_nested: object = 0
+    for _ in range(10_000):
+        deeply_nested = [deeply_nested]
+
+    with pytest.raises(ValueError, match="tool parameters must be JSON-compatible"):
+        RealtimeToolDefinition(
+            name="deep_tool",
+            description="Reject pathological nesting.",
+            parameters={"value": deeply_nested},  # type: ignore[dict-item]
+        )
+    with pytest.raises(ValueError, match="tool result must be JSON-compatible"):
+        RealtimeToolOutput(
+            event_id="evt.deep",
+            response_event_id="evt.response",
+            call_id="call.deep",
+            result={"value": deeply_nested},  # type: ignore[dict-item]
+        )
