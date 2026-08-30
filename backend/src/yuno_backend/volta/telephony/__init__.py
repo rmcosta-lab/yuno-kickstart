@@ -35,10 +35,6 @@ from yuno_backend.volta.telephony.errors import (
     OutboundCallTimeoutError,
 )
 from yuno_backend.volta.telephony.gateway import HumanHandoffGateway, OutboundCallGateway
-from yuno_backend.volta.telephony.memory import (
-    InMemoryAIAuthorityFence,
-    InMemoryHumanHandoffRepository,
-)
 from yuno_backend.volta.telephony.inbound import (
     AcceptInboundCallInput,
     CompleteInboundRecoveryInput,
@@ -55,6 +51,10 @@ from yuno_backend.volta.telephony.inbound import (
     InboundOperationUnitOfWorkFactory,
     RecordInboundConsentInput,
     StartInboundStreamInput,
+)
+from yuno_backend.volta.telephony.memory import (
+    InMemoryAIAuthorityFence,
+    InMemoryHumanHandoffRepository,
 )
 from yuno_backend.volta.telephony.models import (
     HumanHandoff,
