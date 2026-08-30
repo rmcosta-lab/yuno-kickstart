@@ -13,9 +13,9 @@
 ## Workstreams and ownership
 
 - After task 1 freezes the contracts, the **backend writer** owns the provider-neutral issuer, OpenAI mapping, exports, and backend tests.
-- In parallel, the **API writer** owns settings, extraction construction, HTTP schema/route/service/security/error behavior, and API tests. The API writer uses a fake issuer until the backend contract lands and does not edit backend provider mapping.
-- The **phase coordinator** owns this specification directory plus the serialized `make generate` checkpoint and generated artifacts after both workstreams integrate.
-- There is no handwritten frontend workstream. Phase 13 consumes the generated operation after Phase 12 merges.
+- In parallel, the **API writer** owns `api/**`, including the Pydantic/OpenAPI source, generated `api/openapi.json`, settings, extraction construction, HTTP schema/route/service/security/error behavior, and API tests. As an exact shared-path exception, the API writer also exclusively owns `.env.example`. The API writer uses a fake issuer until the backend contract lands and does not edit backend provider mapping.
+- The **frontend writer** starts only after the API worker reports a stable OpenAPI checkpoint and exclusively owns `frontend/**`, including Orval generation under `frontend/src/lib/api/generated/**`. There is no handwritten UI change.
+- The **phase coordinator** exclusively owns this specification directory, reviews integration, and records validation evidence; it does not regenerate artifacts while a layer worker owns them.
 - Manifest and lockfile files remain untouched unless implementation proves a dependency is necessary; if so, the coordinator becomes their sole writer and records the reason before the paired update.
 
 ## Contract and integration checkpoints

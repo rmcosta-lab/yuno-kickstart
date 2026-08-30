@@ -1,18 +1,25 @@
+import json
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID
 
+import httpx
 import pytest
 from app.config import Settings
 from app.contract_service import ContractServiceError
+from app.main import create_app
 from app.schemas.errors import ApiErrorCode
 from app.volta_text_service import (
     VoltaTextContractService,
+    _create_intake_extractor,
     create_volta_text_contract_service,
 )
+from fastapi.testclient import TestClient
+from yuno_backend.integrations.openai import OpenAIIntakeExtractor
 from yuno_backend.volta.idempotency import IdempotencyResultMissing
+from yuno_backend.volta.intake import DeterministicIntakeExtractor
 from yuno_backend.volta.mandates.errors import (
     DraftNotApprovable,
     DraftNotFound,
@@ -631,3 +638,168 @@ async def test_adapter_closes_owned_resources_once() -> None:
     await adapter.aclose()
 
     assert closed == 1
+
+
+@pytest.mark.asyncio
+async def test_extractor_wiring_is_explicit_and_reuses_caller_owned_client() -> None:
+    transport = httpx.MockTransport(lambda _: httpx.Response(500))
+    async with httpx.AsyncClient(transport=transport) as client:
+        deterministic = _create_intake_extractor(Settings(app_env="test"), client)
+        configured = _create_intake_extractor(
+            Settings(
+                app_env="test",
+                volta_extraction_mode="openai",
+                openai_api_key="standard-sensitive-marker",
+                openai_extraction_model="gpt-5.6-luna",
+                volta_extraction_policy_version="intake-v1",
+            ),
+            client,
+        )
+
+        assert isinstance(deterministic, DeterministicIntakeExtractor)
+        assert isinstance(configured, OpenAIIntakeExtractor)
+        assert configured._client is client
+
+
+class _DisposableEngine:
+    async def dispose(self) -> None:
+        return None
+
+
+class _ExtractorCallingApplication:
+    configured_extractors: list[object] = []
+
+    def __init__(self, *, extractor: object, **_: object) -> None:
+        self._extractor = extractor
+        self.configured_extractors.append(extractor)
+
+    async def create_operation_draft(self, command: object) -> MutationOutcome[DraftProjection]:
+        await self._extractor.extract(  # type: ignore[attr-defined]
+            SimpleNamespace(
+                source_prompt=command.source_prompt,  # type: ignore[attr-defined]
+                requested_language=command.requested_language,  # type: ignore[attr-defined]
+                extraction_policy_version="intake-v1",
+            )
+        )
+        return MutationOutcome(draft_projection(), False)
+
+
+def _completed_extraction_response() -> dict[str, object]:
+    value = {
+        "origin": "Manzanillo",
+        "destination": "Guadalajara",
+        "cargo_label": "Synthetic 40ft dry container",
+        "pickup_date": "2026-09-03",
+        "pickup_window": {"start_date": "2026-09-03", "end_date": "2026-09-03"},
+        "maximum_amount": {"amount": "9000.00", "currency": "MXN"},
+        "allowed_conditions": ["sealed container"],
+        "escalation_conditions": ["higher total rate"],
+    }
+    return {
+        "id": "resp_safe_123",
+        "status": "completed",
+        "model": "gpt-5.6-luna-2026-08-01",
+        "output": [
+            {
+                "type": "message",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": json.dumps(value)}],
+            }
+        ],
+    }
+
+
+def _openai_route_client(monkeypatch: pytest.MonkeyPatch, handler: object) -> TestClient:
+    monkeypatch.setattr(
+        "app.volta_text_service.create_database_engine",
+        lambda _: _DisposableEngine(),
+    )
+    monkeypatch.setattr("app.volta_text_service.create_session_factory", lambda _: object())
+    monkeypatch.setattr(
+        "app.volta_text_service.TextNegotiationApplication",
+        _ExtractorCallingApplication,
+    )
+    application = create_app(
+        Settings(
+            app_env="test",
+            database_url="postgresql+asyncpg://synthetic:synthetic@localhost/synthetic",
+            volta_demo_bearer_token="synthetic-test-token",
+            volta_extraction_mode="openai",
+            openai_api_key="standard-sensitive-marker",
+            openai_extraction_model="gpt-5.6-luna",
+            volta_extraction_policy_version="intake-v1",
+        )
+    )
+    application.state.openai_http_client_factory = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)  # type: ignore[arg-type]
+    )
+    return TestClient(application, raise_server_exceptions=False)
+
+
+def test_operation_draft_route_uses_factory_configured_openai_extractor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[httpx.Request] = []
+    _ExtractorCallingApplication.configured_extractors.clear()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json=_completed_extraction_response())
+
+    with _openai_route_client(monkeypatch, handler) as client:
+        response = client.post(
+            "/v1/operation-drafts",
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Idempotency-Key": "draft-openai-success-001",
+            },
+            json={
+                "source_prompt": "Move a synthetic container from Manzanillo.",
+                "requested_language": "EN_US",
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["draft_id"] == str(IDS["draft"])
+    assert len(captured) == 1
+    assert str(captured[0].url) == "https://api.openai.com/v1/responses"
+    assert json.loads(captured[0].content)["input"] == (
+        "Move a synthetic container from Manzanillo."
+    )
+    assert len(_ExtractorCallingApplication.configured_extractors) == 1
+    assert isinstance(_ExtractorCallingApplication.configured_extractors[0], OpenAIIntakeExtractor)
+
+
+def test_operation_draft_route_redacts_factory_configured_openai_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": {"message": "provider-sensitive-marker"}})
+
+    with _openai_route_client(monkeypatch, handler) as client:
+        response = client.post(
+            "/v1/operation-drafts",
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Idempotency-Key": "draft-openai-failure-001",
+            },
+            json={
+                "source_prompt": "private-sensitive-prompt",
+                "requested_language": "EN_US",
+            },
+        )
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "INTERNAL_ERROR"
+    assert "provider-sensitive-marker" not in response.text
+    assert "private-sensitive-prompt" not in response.text
+
+
+def test_openai_extraction_requires_caller_owned_client_and_server_key() -> None:
+    settings = Settings(
+        app_env="test",
+        volta_extraction_mode="openai",
+        openai_api_key="standard-sensitive-marker",
+    )
+    with pytest.raises(ValueError, match="caller-owned"):
+        _create_intake_extractor(settings, None)

@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import ClassVar
 
 __all__ = [
+    "InvalidRealtimeResponseError",
     "InvalidRealtimeEvent",
     "RealtimeAuthenticationError",
     "RealtimeConnectionError",
@@ -92,6 +93,10 @@ class RealtimeDisconnectedError(RealtimeError):
 
 class InvalidRealtimeEvent(RealtimeError):
     category = "invalid_event"
+
+
+class InvalidRealtimeResponseError(RealtimeError):
+    category = "invalid_response"
 
 
 class RealtimeProviderError(RealtimeError):

@@ -210,9 +210,7 @@ class _OpenAIRealtimeConnection:
                 raise RealtimeTimeoutError(
                     model_id=self._config.model, duration_ms=_duration_ms(started)
                 )
-            message = await self._receive(
-                remaining, started=started
-            )
+            message = await self._receive(remaining, started=started)
             event = self._parse(message)
             if isinstance(event, RealtimeSessionReady):
                 self._ready = event
@@ -297,9 +295,7 @@ class _OpenAIRealtimeConnection:
             return
         self._closed = True
         try:
-            await asyncio.wait_for(
-                self._socket.close(), timeout=self._config.close_timeout_seconds
-            )
+            await asyncio.wait_for(self._socket.close(), timeout=self._config.close_timeout_seconds)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -325,14 +321,10 @@ class _OpenAIRealtimeConnection:
             self._closed = True
             raise RealtimeDisconnectedError(model_id=self._config.model) from None
 
-    async def _receive(
-        self, deadline_seconds: float, *, started: float | None = None
-    ) -> str:
+    async def _receive(self, deadline_seconds: float, *, started: float | None = None) -> str:
         receive_started = time.monotonic() if started is None else started
         try:
-            message = await asyncio.wait_for(
-                self._socket.recv(), timeout=deadline_seconds
-            )
+            message = await asyncio.wait_for(self._socket.recv(), timeout=deadline_seconds)
         except asyncio.CancelledError:
             raise
         except TimeoutError:
@@ -472,36 +464,47 @@ class _OpenAIRealtimeConnection:
 def _session_update(request: RealtimeSessionRequest) -> dict[str, Any]:
     return {
         "type": "session.update",
-        "session": {
-            "type": "realtime",
-            "instructions": f"{request.instructions}\n\n{_ENGLISH_INSTRUCTION}",
-            "output_modalities": ["audio"],
-            "audio": {
-                "input": {
-                    "format": {"type": "audio/pcm", "rate": request.audio_format.sample_rate_hz},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "create_response": True,
-                        "interrupt_response": True,
-                    },
-                },
-                "output": {
-                    "format": {"type": "audio/pcm", "rate": request.audio_format.sample_rate_hz},
-                    "voice": request.voice,
+        "session": realtime_session_config(request),
+    }
+
+
+def realtime_session_config(
+    request: RealtimeSessionRequest, *, model: str | None = None
+) -> dict[str, Any]:
+    """Map the accepted provider-neutral session to OpenAI's session shape."""
+
+    session: dict[str, Any] = {
+        "type": "realtime",
+        "instructions": f"{request.instructions}\n\n{_ENGLISH_INSTRUCTION}",
+        "output_modalities": ["audio"],
+        "audio": {
+            "input": {
+                "format": {"type": "audio/pcm", "rate": request.audio_format.sample_rate_hz},
+                "turn_detection": {
+                    "type": "server_vad",
+                    "create_response": True,
+                    "interrupt_response": True,
                 },
             },
-            "tools": [
-                {
-                    "type": "function",
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": _thaw(tool.parameters),
-                }
-                for tool in request.tools
-            ],
-            "tool_choice": "auto",
+            "output": {
+                "format": {"type": "audio/pcm", "rate": request.audio_format.sample_rate_hz},
+                "voice": request.voice,
+            },
         },
+        "tools": [
+            {
+                "type": "function",
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": _thaw(tool.parameters),
+            }
+            for tool in request.tools
+        ],
+        "tool_choice": "auto",
     }
+    if model is not None:
+        session["model"] = model
+    return session
 
 
 def _thaw(value: Any) -> Any:
@@ -571,9 +574,7 @@ def _status_error(*, status: object, model_id: str, duration_ms: int) -> Realtim
         exception_type = RealtimeRateLimitError
     elif status_code is not None:
         exception_type = RealtimeProviderError
-    return exception_type(
-        model_id=model_id, status_code=status_code, duration_ms=duration_ms
-    )
+    return exception_type(model_id=model_id, status_code=status_code, duration_ms=duration_ms)
 
 
 def _duration_ms(started: float) -> int:

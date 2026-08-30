@@ -46,6 +46,7 @@
           "MANDATE_CONFLICT",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
+          "REALTIME_UNAVAILABLE",
           "INTERNAL_ERROR",
           "CONTRACT_NOT_IMPLEMENTED"
         ],
@@ -1809,6 +1810,45 @@
           "pickup_window"
         ],
         "title": "QuoteTermsRequest",
+        "type": "object"
+      },
+      "RealtimeClientSecretResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "client_secret": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Client Secret",
+            "type": "string"
+          },
+          "expires_at": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Expires At",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "title": "Model",
+            "type": "string"
+          },
+          "session_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_secret",
+          "expires_at",
+          "session_id",
+          "model"
+        ],
+        "title": "RealtimeClientSecretResponse",
         "type": "object"
       },
       "RecoveryDecisionResponse": {
@@ -5553,6 +5593,266 @@
         "summary": "Start Negotiation",
         "tags": [
           "volta"
+        ]
+      }
+    },
+    "/v1/realtime/client-secrets": {
+      "post": {
+        "operationId": "create_realtime_client_secret",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RealtimeClientSecretResponse"
+                }
+              }
+            },
+            "description": "One short-lived, narrowly scoped Realtime credential.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "description": "Bearer authentication challenge for a missing or invalid credential.",
+                "schema": {
+                  "enum": [
+                    "Bearer"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request origin or actor is not authorized.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The configured demo traffic boundary was exceeded.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Whole seconds until credential issuance can be retried.",
+                "schema": {
+                  "minimum": 1.0,
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected failure was translated safely.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Realtime credential issuance is temporarily unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of credentials and route-owned errors.",
+                "schema": {
+                  "enum": [
+                    "no-store, private, max-age=0"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Legacy cache prevention for credential-bearing responses.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Realtime Client Secret",
+        "tags": [
+          "realtime"
         ]
       }
     }

@@ -103,9 +103,10 @@ The backend remains free of FastAPI and Pydantic API schemas. The API never cons
 | `docs/project-specs/2026-08-29-12-expose-realtime-boundary/**` | `ThallesCansi` | Phase coordinator owns planning and validation evidence. |
 | `backend/src/yuno_backend/volta/realtime/**` and focused tests | Phase 12 backend writer | Owns only the provider-neutral client-secret issuer values/protocol and exports; preserves Phase 23 connection contracts. |
 | `backend/src/yuno_backend/integrations/openai/client_secrets.py`, package exports, and focused tests | Phase 12 backend writer | Sole owner of client-secret provider mapping, validation, timeout, and redaction. |
-| `api/app/config.py`, `.env.example`, and configuration tests | Phase 12 API writer | Owns server-only settings and safe inventory names; never adds a public OpenAI secret. |
+| `api/app/config.py`, `.env.example`, and configuration tests | Phase 12 API writer | Exact shared-path exception: the API writer exclusively owns `.env.example` plus server-only settings and safe inventory names; never adds a public OpenAI secret. |
 | `api/app/realtime_service.py`, router/schema/security/error wiring, and `api/tests/**` | Phase 12 API writer | Owns the HTTP boundary, extraction composition, origin/authorization/rate-limit/cache semantics, and safe error mapping. |
-| `api/openapi.json` and `frontend/src/lib/api/generated/**` | Phase 12 coordinator | Generated only through `make generate` after the Pydantic contract is stable; never hand-edited. |
+| `api/openapi.json` | Phase 12 API writer | Generated through `make generate-openapi` after the Pydantic contract is stable; never hand-edited. |
+| `frontend/src/lib/api/generated/**` | Phase 12 frontend writer | Generated through `pnpm --dir frontend api:generate` only after the API worker publishes the OpenAPI checkpoint; never hand-edited. |
 | `frontend/src/**` outside generated client | No Phase 12 writer | No rendered UI or browser Realtime lifecycle change. |
 | `backend/pyproject.toml`, `api/pyproject.toml`, `uv.lock` | No writer expected | Existing `httpx` is reused; a discovered dependency change requires one coordinator-owned manifest/lockfile update. |
 | Mission, stack, roadmap, challenge plan | No Phase 12 writer | No shared decision is planned; a broad discovered decision routes through `manage-shared-specs`. |

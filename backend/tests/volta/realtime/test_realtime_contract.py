@@ -32,9 +32,13 @@ def _tool() -> RealtimeToolDefinition:
 def test_public_surface_matches_frozen_phase_contract() -> None:
     assert set(realtime.__all__) == {
         "InvalidRealtimeEvent",
+        "InvalidRealtimeResponseError",
         "PcmAudioFormat",
         "RealtimeAudioDelta",
         "RealtimeAuthenticationError",
+        "RealtimeClientSecret",
+        "RealtimeClientSecretIssuer",
+        "RealtimeClientSecretRequest",
         "RealtimeConnection",
         "RealtimeConnectionError",
         "RealtimeDisconnectedError",
@@ -60,7 +64,15 @@ def test_public_surface_matches_frozen_phase_contract() -> None:
 
 def test_provider_neutral_package_has_no_transport_or_framework_imports() -> None:
     package_root = Path(__file__).parents[3] / "src" / "yuno_backend" / "volta" / "realtime"
-    forbidden = {"websockets", "openai", "fastapi", "pydantic", "sqlalchemy", "twilio"}
+    forbidden = {
+        "fastapi",
+        "httpx",
+        "openai",
+        "pydantic",
+        "sqlalchemy",
+        "twilio",
+        "websockets",
+    }
     imported: list[str] = []
     for source_file in package_root.rglob("*.py"):
         tree = ast.parse(source_file.read_text())
@@ -111,14 +123,14 @@ def test_sensitive_values_are_redacted_and_nested_json_is_immutable() -> None:
     [
         (lambda: PcmAudioFormat(sample_rate_hz=16_000), "PCM16 mono"),
         (
-            lambda: RealtimeSessionRequest(
-                instructions="x", safety_identifier="unsafe value"
-            ),
+            lambda: RealtimeSessionRequest(instructions="x", safety_identifier="unsafe value"),
             "safety_identifier",
         ),
         (
             lambda: RealtimeSessionRequest(
-                instructions="x", safety_identifier="b" * 64, language="pt"  # type: ignore[arg-type]
+                instructions="x",
+                safety_identifier="b" * 64,
+                language="pt",  # type: ignore[arg-type]
             ),
             "English",
         ),

@@ -52,6 +52,7 @@ import type {
   OperationDraftResponse,
   OperationResponse,
   QuoteResponse,
+  RealtimeClientSecretResponse,
   RecordQuoteHeaders,
   RecoverySimulationResponse,
   ReplaceMandateHeaders,
@@ -2764,4 +2765,139 @@ export const useStartNegotiation = <
   TContext
 > => {
   return useMutation(getStartNegotiationMutationOptions(options), queryClient);
+};
+
+export type createRealtimeClientSecretResponse201 = {
+  data: RealtimeClientSecretResponse;
+  status: 201;
+};
+
+export type createRealtimeClientSecretResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createRealtimeClientSecretResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createRealtimeClientSecretResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createRealtimeClientSecretResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createRealtimeClientSecretResponse502 = {
+  data: ApiErrorResponse;
+  status: 502;
+};
+
+export type createRealtimeClientSecretResponseSuccess =
+  createRealtimeClientSecretResponse201 & {
+    headers: Headers;
+  };
+export type createRealtimeClientSecretResponseError = (
+  | createRealtimeClientSecretResponse401
+  | createRealtimeClientSecretResponse403
+  | createRealtimeClientSecretResponse429
+  | createRealtimeClientSecretResponse500
+  | createRealtimeClientSecretResponse502
+) & {
+  headers: Headers;
+};
+
+export const getCreateRealtimeClientSecretUrl = () => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/realtime/client-secrets`;
+};
+
+/**
+ * @summary Create Realtime Client Secret
+ */
+export const createRealtimeClientSecret = async (
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createRealtimeClientSecretResponseSuccess> => {
+  return voltaFetch<createRealtimeClientSecretResponseSuccess>(
+    getCreateRealtimeClientSecretUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getCreateRealtimeClientSecretMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["createRealtimeClientSecret"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+    void
+  > = () => {
+    return createRealtimeClientSecret(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRealtimeClientSecretMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRealtimeClientSecret>>
+>;
+
+export type CreateRealtimeClientSecretMutationError =
+  ErrorType<ApiErrorResponse>;
+
+/**
+ * @summary Create Realtime Client Secret
+ */
+export const useCreateRealtimeClientSecret = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createRealtimeClientSecret>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getCreateRealtimeClientSecretMutationOptions(options),
+    queryClient,
+  );
 };
