@@ -4,7 +4,7 @@
 
 - [ ] Requirements, contracts, ownership, risks, fallback, and exclusions match the unchanged Phase 19 roadmap gate.
 - [ ] Phase 12 remains DONE; the consumed Phase 18 base and all remote Phase 17/18/19 branches and pull requests are refreshed before implementation and publication.
-- [ ] The 2026-08-30 owner decision to start and implement Phase 19 without waiting for Phase 17 remains explicit; Phase 17/18 are not represented as DONE and the roadmap is unchanged.
+- [ ] The 2026-08-30 owner decision and its timing remain explicit: Phase 19 was claimed while Phase 17 was ACTIVE, PR #25 merged immediately afterward, Phase 18 remains ACTIVE, and the roadmap is unchanged.
 - [ ] Before Phase 19 review/merge, Phase 18 is integrated or explicitly reconciled, the stacked base is refreshed without rewriting Phase 18 history, and the complete deterministic gate is repeated.
 - [ ] Only the phase specification, approved API/BFF source/tests/config, generated OpenAPI/Orval artifacts, and explicitly required paired manifest/lock or safe configuration documentation enter the phase.
 

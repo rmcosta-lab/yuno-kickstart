@@ -37,7 +37,7 @@
    - Run a sandbox call only after a separate authorization names the participant label, country, origin class, public endpoint, disclosure/consent/recording behavior, expected cost, duration, retention, and cleanup. Without that authorization, leave the sandbox criterion unchecked and do not deploy or dial.
 
 8. **Reconcile the stacked branch before review**
-   - The owner-authorized decision allows Phase 19 planning and implementation to proceed without waiting for Phase 17; do not add a Phase 17 pause or claim that it is DONE.
+   - The owner-authorized decision allowed the Phase 19 claim to proceed while Phase 17 was still ACTIVE; PR #25 merged immediately afterward. Preserve that history and add no Phase 17 pause.
    - Before Phase 19 review/merge, require Phase 18's consumed contracts to be integrated or explicitly reconciled, refresh the appropriate base, remove no Phase 18 history, inspect overlapping API/shared-file pull requests, and repeat the complete deterministic gate.
 
 ## Ownership and sequencing
@@ -64,4 +64,4 @@
 - No deployment, production access, account/number/permission mutation, live call, participant contact, recording, Yuno operation, payment, financial mutation, or unrelated remote change is authorized by this plan.
 - Do not log or persist raw audio, transcript, telephone number, signature, authorization header, raw form/frame, provider payload, standard OpenAI credential, or private participant data.
 - Do not return success before verified durable status processing, allow a model/provider event to bypass deterministic services, or retry an ambiguous provider mutation.
-- Do not represent Phase 17 or 18 as DONE, weaken their gates, or rewrite their history. Phase 19 is deliberately stacked on Phase 18 and must be reported that way until reconciled.
+- Represent Phase 17 as DONE only through merged PR #25, keep Phase 18 ACTIVE until its own gate and merge complete, and do not weaken either gate or rewrite their history. Phase 19 is deliberately stacked on Phase 18 and must be reported that way until reconciled.
