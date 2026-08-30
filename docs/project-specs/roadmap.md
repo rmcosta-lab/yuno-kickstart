@@ -271,13 +271,13 @@ This documentation and demo-assets phase can run in parallel with P0.1 implement
 
 Slug: pass-final-telephony-trial
 
-Depends on: 20, 21
+Depends on: 20, 21, 26, 27, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through outbound public switched telephone network (PSTN) sessions, preserves evidence for every selected session, completes at least one end-to-end live negotiation with exactly one active winner, demonstrates browser voice, text, and recording fallbacks after a forced provider or network failure, and delivers all five submission artifacts within the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through overlapping outbound public switched telephone network (PSTN) sessions, completes one real inbound recovery call, sends an externally accepted written recap for every resulting commitment, transfers one live call to the human coordinator without disconnecting or losing context, preserves playable timestamp evidence and a structured brief for every selected session, completes one end-to-end negotiation with exactly one active verified winner, demonstrates browser voice, text, and recording fallbacks after a forced provider or network failure, and delivers all five submission artifacts within the allotted time.
 
-The cross-layer trial reports account restrictions, call outcomes, latency, disconnects, and every remaining challenge gap without presenting simulated delivery as verified.
+The cross-layer trial reports account restrictions, call and delivery outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap without presenting simulated delivery or workflow-only concurrency as challenge-verified evidence.
 
 ### Fase 23 — Implement the OpenAI Realtime adapter
 
@@ -314,3 +314,39 @@ Conflicts with: none
 Gate: Backend-only tests expose one provider-neutral application facade for the accepted recap, brief, inbound-recovery, mandate-replacement, escalation, notification-acknowledgement, operation, and audit behaviors; every mutation has atomic fingerprinted idempotency and durable replay, PostgreSQL persists every accepted response fact, complete bounded projections round-trip in deterministic order, and missing evidence, stale state, rollback, and safe exceptions pass without importing FastAPI or changing the HTTP contract.
 
 This supporting backend phase closes the application and persistence gap discovered when Fase 15 began integration. It persists the accepted structured recap and brief facts, owns the deterministic good and bad recovery scripts, resolves the evidence semantics for a replacement commitment, and publishes complete operation and audit projections for recaps, briefs, recoveries, post-contact escalations, and notifications. It may add the smallest reversible migration and backend repository/query extensions required by those outcomes. It does not implement FastAPI routes, change Pydantic models, regenerate OpenAPI or Orval, add frontend behavior, call a provider, or perform a remote migration.
+
+### Fase 26 — Accept and process inbound Twilio calls
+
+Slug: accept-inbound-twilio-calls
+
+Depends on: 15, 19
+
+Conflicts with: none
+
+Gate: A signed Twilio voice webhook answers an authorized real inbound PSTN call, resolves the allowlisted synthetic caller and exactly one active operation through fail-closed server-owned correlation, applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream, and delegates a driver-delay scenario to the same deterministic recovery services used by the browser; one mandate-safe change updates the operation and one out-of-mandate change escalates without an unauthorized commitment, while status, brief, playable timestamp evidence, audit, duplicate-event, redaction, and authorized sandbox tests pass.
+
+This cross-layer telephony phase replaces the simulated inbound transport without duplicating recovery rules. Provider request parsing, signature verification, TwiML, and media ingress stay in FastAPI; operation correlation, mandate decisions, persistence, and audit stay in backend services, and the existing control tower renders only typed application state.
+
+### Fase 27 — Send and verify written recaps
+
+Slug: send-verified-written-recaps
+
+Depends on: 19, 26
+
+Conflicts with: none
+
+Gate: After each mandate-safe agreement, a provider-neutral delivery service idempotently sends the bounded written recap through at least one real SMS or email channel to an allowlisted synthetic participant, verifies signed asynchronous delivery events, persists provider-neutral delivery state and safe failure reasons, and promotes a `CANDIDATE` or `SIMULATED` agreement to `VERIFIED` only after the external provider accepts the recap and playable `audio_start_ms` evidence exists; retry, duplicate, out-of-order, timeout, redaction, API, generated-client, control-tower, and authorized sandbox tests pass.
+
+This vertical evidence phase owns the external recap adapter, callback ingress, durable verification transition, and visible delivery status. It never stores contact details in public contracts or logs and preserves simulated delivery as the deterministic fallback.
+
+### Fase 28 — Transfer a live call to the human coordinator
+
+Slug: transfer-live-call-to-human
+
+Depends on: 20, 26
+
+Conflicts with: none
+
+Gate: During an authorized inbound or outbound PSTN call, an out-of-mandate or explicit takeover event presents the coordinator with the current mandate, quotes, transcript-free structured context, and call status; one deliberate action joins the coordinator to the same live conversation without disconnecting the remote participant, prevents the artificial intelligence agent from speaking or committing after handoff, preserves media and status correlation, and records takeover, completion, failure, timeout, redaction, and authorized sandbox evidence.
+
+This cross-layer phase keeps provider call-update or conference mapping in the telephony adapter, verified ingress and control actions in FastAPI, human controls in the frontend, and all commitment authority in the backend. A failed handoff leaves the call in an explicit safe state and never fabricates human participation.
