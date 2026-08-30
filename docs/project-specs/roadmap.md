@@ -275,7 +275,7 @@ Depends on: 20, 21, 26, 27, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through overlapping outbound public switched telephone network (PSTN) sessions, completes one real inbound recovery call, sends an externally accepted written recap for every resulting commitment, transfers one live call to the human coordinator without disconnecting or losing context, preserves playable timestamp evidence and a structured brief for every selected session, completes one end-to-end negotiation with exactly one active verified winner, demonstrates browser voice, text, and recording fallbacks after a forced provider or network failure, and delivers all five submission artifacts within the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and sends one externally accepted recap that promotes the final active winner to `VERIFIED`. It also transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains playable timestamp evidence and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
 
 The cross-layer trial reports account restrictions, call and delivery outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap without presenting simulated delivery or workflow-only concurrency as challenge-verified evidence.
 
@@ -323,7 +323,7 @@ Depends on: 15, 19
 
 Conflicts with: none
 
-Gate: A signed Twilio voice webhook answers an authorized real inbound PSTN call, resolves the allowlisted synthetic caller and exactly one active operation through fail-closed server-owned correlation, applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream, and delegates a driver-delay scenario to the same deterministic recovery services used by the browser; one mandate-safe change updates the operation and one out-of-mandate change escalates without an unauthorized commitment, while status, brief, playable timestamp evidence, audit, duplicate-event, redaction, and authorized sandbox tests pass.
+Gate: A signed Twilio voice webhook answers one authorized real inbound PSTN call. Fail-closed server-owned correlation resolves the allowlisted synthetic caller and exactly one active operation. The call applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream. One driver-delay scenario uses the browser's deterministic recovery services, completes one mandate-safe update, and persists its status, brief, playable timestamp evidence, and audit events. Focused tests reject invalid signatures, ambiguous correlation, duplicate events, and out-of-mandate changes. One authorized sandbox call proves the accepted path.
 
 This cross-layer telephony phase replaces the simulated inbound transport without duplicating recovery rules. Provider request parsing, signature verification, TwiML, and media ingress stay in FastAPI; operation correlation, mandate decisions, persistence, and audit stay in backend services, and the existing control tower renders only typed application state.
 
@@ -331,11 +331,11 @@ This cross-layer telephony phase replaces the simulated inbound transport withou
 
 Slug: send-verified-written-recaps
 
-Depends on: 19, 26
+Depends on: 19, 25
 
 Conflicts with: none
 
-Gate: After each mandate-safe agreement, a provider-neutral delivery service idempotently sends the bounded written recap through at least one real SMS or email channel to an allowlisted synthetic participant, verifies signed asynchronous delivery events, persists provider-neutral delivery state and safe failure reasons, and promotes a `CANDIDATE` or `SIMULATED` agreement to `VERIFIED` only after the external provider accepts the recap and playable `audio_start_ms` evidence exists; retry, duplicate, out-of-order, timeout, redaction, API, generated-client, control-tower, and authorized sandbox tests pass.
+Gate: A provider-neutral delivery service idempotently sends the final active winner's bounded recap through one real SMS channel. It addresses the recap to an allowlisted synthetic participant and verifies the signed asynchronous delivery event. It persists provider-neutral delivery state and promotes the agreement to `VERIFIED` only after provider acceptance and playable `audio_start_ms` evidence. Focused tests cover invalid signatures, duplicate or out-of-order events, missing audio evidence, safe errors, and redaction. One authorized sandbox delivery and the visible control-tower status prove the accepted path.
 
 This vertical evidence phase owns the external recap adapter, callback ingress, durable verification transition, and visible delivery status. It never stores contact details in public contracts or logs and preserves simulated delivery as the deterministic fallback.
 
@@ -343,10 +343,10 @@ This vertical evidence phase owns the external recap adapter, callback ingress, 
 
 Slug: transfer-live-call-to-human
 
-Depends on: 20, 26
+Depends on: 20
 
 Conflicts with: none
 
-Gate: During an authorized inbound or outbound PSTN call, an out-of-mandate or explicit takeover event presents the coordinator with the current mandate, quotes, transcript-free structured context, and call status; one deliberate action joins the coordinator to the same live conversation without disconnecting the remote participant, prevents the artificial intelligence agent from speaking or committing after handoff, preserves media and status correlation, and records takeover, completion, failure, timeout, redaction, and authorized sandbox evidence.
+Gate: During one authorized inbound or outbound PSTN call, an explicit takeover action presents the coordinator with the current mandate, quotes, transcript-free structured context, and call status. The action joins the coordinator to the same live conversation without disconnecting the remote participant, prevents the artificial intelligence agent from speaking or committing after handoff, and records the takeover outcome in the audit trail. Focused tests cover failure, timeout, duplicate action, and redaction. One authorized sandbox handoff proves the accepted path.
 
 This cross-layer phase keeps provider call-update or conference mapping in the telephony adapter, verified ingress and control actions in FastAPI, human controls in the frontend, and all commitment authority in the backend. A failed handoff leaves the call in an explicit safe state and never fabricates human participation.

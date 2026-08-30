@@ -24,7 +24,8 @@ The repository's application programming interface (API) remains a backend for f
 | Persistence | PostgreSQL with SQLAlchemy asyncio and `asyncpg` | Matches the current repository and supports transactional winner replacement and auditable state. |
 | Browser voice | OpenAI Realtime over Web Real-Time Communication (WebRTC) | Supports low-latency speech, interruptions, events, and tool calls without routing browser audio through the API. |
 | Server AI | OpenAI API for schema-validated intake extraction | Keeps the prompt policy and standard API credentials server-side; deterministic validation follows every extraction. |
-| Telephony | Twilio Programmable Voice and bidirectional Media Streams behind an adapter | Defines the P0.1 outbound public switched telephone network (PSTN) path while keeping telephony out of domain rules. |
+| Telephony | Twilio Programmable Voice and bidirectional Media Streams behind an adapter | Defines the minimum P0.1 inbound and outbound public switched telephone network (PSTN) path while keeping telephony out of domain rules. |
+| Written recap | One Twilio Short Message Service (SMS) channel behind a provider-neutral delivery adapter | Provides the smallest externally accepted recap path required to promote the active winner to `VERIFIED`. |
 | Local runtime | Docker Compose for PostgreSQL, `uv` for Python, and `pnpm` for the frontend | Reuses the checked-in development workflow and keeps local setup small. |
 
 Dependency versions remain in manifests and lockfiles rather than this document.
@@ -45,7 +46,7 @@ FastAPI owns:
 - versioned `/v1` routes and the committed OpenAPI document;
 - demo authorization, explicit Cross-Origin Resource Sharing (CORS) origins, rate limits, correlation IDs, and safe error translation;
 - minting narrowly scoped Realtime client credentials without caching them;
-- Twilio request verification, call-status webhook ingress, and the server WebSocket boundary for Media Streams;
+- Twilio request verification, inbound voice, call-status and recap-delivery webhook ingress, live-handoff controls, and the server WebSocket boundary for Media Streams;
 - dependency wiring from HTTP or WebSocket ingress to typed core services.
 
 FastAPI remains thin. It does not own carrier ranking, mandate decisions, quote eligibility, winner transitions, persistence queries, or provider payload mapping. Application HTTP contracts are regenerated with `make generate` after a Pydantic change.
@@ -58,7 +59,7 @@ The backend owns:
 - carrier eligibility, fixed ranking, negotiation state, quote validity, and the atomic active-winner transition;
 - commitment evidence, recap state, call briefs, notifications, escalations, and append-only audit events;
 - repositories, transactions, and migrations;
-- provider-neutral Realtime, telephony, recording, and future delivery protocols;
+- provider-neutral Realtime, telephony, recording, and written-delivery protocols;
 - provider adapters containing external URLs, headers, payload models, event mapping, retries, and redaction.
 
 The backend package never imports FastAPI. Provider mutations must be explicit, idempotent where retry is possible, and correlated to the operation and call session.
@@ -82,11 +83,11 @@ Playable demo audio is private and remains outside Git and PostgreSQL binary col
 
 ## Twilio telephony decisions
 
-P0.1 uses Twilio for outbound calls only. A human must explicitly start dialing, and every destination must be allowlisted and authorized. Volta discloses that it is an AI system at the beginning of the call and obtains consent before recording.
+P0.1 uses Twilio for three overlapping outbound calls, one inbound recovery, one SMS recap for the final active winner, and one live coordinator takeover. A human must explicitly start outbound dialing, and every participant must be allowlisted and authorized. Volta discloses that it is an AI system at the beginning of each call and obtains consent before recording.
 
-FastAPI terminates the public HTTPS and secure-WebSocket ingress. The Twilio adapter owns call creation and provider-specific event mapping; the Realtime adapter owns the server-side OpenAI event stream. Both delegate tools and state changes to the same core services used by browser voice and text mode.
+FastAPI terminates the public HTTPS and secure-WebSocket ingress. The Twilio adapters own call creation, recap delivery, live-call updates, and provider-specific event mapping. The Realtime adapter owns the server-side OpenAI event stream. These adapters delegate tools and state changes to the same core services used by browser voice and text mode.
 
-The telephony phase must verify current Twilio signatures, trial restrictions, regional rules, number requirements, recording obligations, and retry behavior against official documentation. Real inbound PSTN, direct Session Initiation Protocol (SIP), Short Message Service (SMS), email, and production call transfer are not selected technologies.
+Each provider phase must verify current Twilio signatures, trial restrictions, regional rules, number requirements, recording obligations, delivery semantics, and retry behavior against official documentation. Direct Session Initiation Protocol (SIP), email, a second recap channel, production contact-center routing, and telephony scale beyond the fixed demo are not selected technologies.
 
 ## Yuno decision
 

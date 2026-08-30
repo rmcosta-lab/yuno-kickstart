@@ -152,11 +152,13 @@ P0.1 includes:
 - The same deterministic backend enforcement for mandate checks, quotes, counteroffers, winner selection, and candidate agreements
 - An explicit human action and destination allowlist before dialing
 - AI disclosure at the beginning of each call and consent before recording
-- One idempotent real SMS or email recap accepted by an external delivery provider before an agreement becomes `VERIFIED`
+- One idempotent real SMS recap accepted by an external delivery provider before the final active winner becomes `VERIFIED`
 - One coordinator takeover that preserves the live remote leg and structured context while preventing further AI commitments
 - Browser voice, text mode, and a recorded trial as fallbacks
 
-The implementation baseline is Twilio's official documentation for inbound and outbound Voice calls, Media Streams, in-progress call modification or conferencing, Messaging status callbacks, and the OpenAI Realtime API. A Twilio free trial may be used for verified test destinations, but the final trial must use an account configuration that can call and message every authorized participant without a trial announcement or destination restriction.
+This list is the minimum hackathon path. Phases 26, 27, and 28 are mandatory. They prove one bounded inbound recovery, one verified recap for the final active winner, and one successful live takeover. Production routing, a second delivery channel, exhaustive provider-failure trials, and scale beyond three authorized outbound calls remain outside the gate.
+
+The implementation baseline is Twilio's official documentation for inbound and outbound Voice calls, Media Streams, in-progress call modification or conferencing, Messaging status callbacks, and the OpenAI Realtime API. A Twilio free trial may be used for verified test destinations. The final trial requires an account that can call and message every authorized participant without a trial announcement or destination restriction.
 
 Each phase specification must verify the current provider API, signatures, account restrictions, regional phone and messaging requirements, calling rules, delivery semantics, and recording obligations before implementation. Twilio remains behind provider protocols so another voice or recap provider can replace it without changing mandate or commitment rules.
 
@@ -164,7 +166,7 @@ Each phase specification must verify the current provider API, signatures, accou
 
 The initial P0 prototype excludes:
 
-- Real PSTN, Twilio, SMS, and email until P0.1; direct SIP trunking and real-carrier integration remain excluded from P0.1
+- Real PSTN, Twilio, and SMS until P0.1; email, direct SIP trunking, and real-carrier integration remain excluded from P0.1
 - A claim that browser audio satisfies the challenge requirement for real phone calls
 - A claim that a simulated recap creates a challenge-verified commitment
 - Real carrier bookings, real rates, or integration with a transportation management system
@@ -253,7 +255,7 @@ The backend needs a small, auditable model:
 | `Quote` | Rate, window, conditions, and validity | Source session and mandate eligibility result |
 | `Commitment` | Agreed facts and `CANDIDATE`, `SIMULATED`, or `VERIFIED` evidence lifecycle | Carrier, quote, mandate version, recap status, active or superseded disposition, replacement link, and agreement evidence |
 | `CommitmentEvidence` | Link from an agreement to the caller turn that confirms it | Call session, playable audio reference, `audio_start_ms`, item ID, and event ID |
-| `WrittenRecap` | Human-readable agreement summary | Channel `simulated`, content hash, and simulated send time |
+| `WrittenRecap` | Human-readable agreement summary and delivery evidence | Channel `simulated` or `sms`, content hash, provider-neutral delivery state, safe provider reference, and accepted time |
 | `CallBrief` | Actions and relevant mentions from the conversation | Structured facts, objections, changes, and unresolved items |
 | `CoordinatorNotification` | Auditable notice for an autonomous mandate-safe recovery | Operation version, before-and-after decision, reason, and acknowledgement state |
 | `Escalation` | Context for human takeover | Trigger, mandate conflict, context package, and resolution |
@@ -292,7 +294,7 @@ These routes are proposed boundaries, not final contracts. The phase specificati
 The submission must contain five artifacts:
 
 1. **Presentation**: Explain the phone-process problem, mandate model, demo story, architecture, known gap, and evidence.
-2. **Demo**: Run three overlapping outbound PSTN negotiations, one inbound recovery, one externally accepted written recap, and one live human takeover; show playable timestamp evidence and structured briefs while keeping browser voice plus video fallbacks.
+2. **Demo**: Run three overlapping outbound PSTN negotiations, one mandate-safe inbound recovery, one externally accepted written recap for the final active winner, and one live human takeover. Show the winner's playable timestamp evidence and structured brief, and keep browser voice plus video fallbacks ready.
 3. **Public GitHub repository**: Add a README with setup, architecture, demo steps, test data, security notes, and known limitations. Remove secrets and private participant data before publication.
 4. **Architecture diagram**: Refine the diagram in this decision record and distinguish the P0 browser harness from the P0.1 Twilio path.
 5. **Decision log**: Preserve the alternatives below and add later decisions as they occur.
@@ -309,10 +311,10 @@ The submission must contain five artifacts:
 | Carrier parallelism | Three overlapping real outbound calls in the final trial | Workflow-only overlap; three sequential calls | It directly proves the challenge's market-negotiation requirement | The account, bridge, and application must sustain three independent live sessions safely |
 | Realtime transport | WebRTC for P0 browser audio and a FastAPI WebSocket bridge for P0.1 Twilio calls | Direct SIP; provider-managed voice-agent platform | Both channels reuse the same backend tools and mandate enforcement | The bridge must be tested under interruption and disconnects |
 | Voice model | `gpt-realtime-2.1` | Another Realtime model available to the account; text-only model | It is the current model recommended in the official Realtime voice-agent overview | Account access and limits must be checked before implementation |
-| Written recap | Simulated delivery in P0 followed by one real SMS or email adapter in P0.1 | Remain simulated; support both channels initially | One real channel is the smallest path to the challenge's verified-commitment requirement | Only externally accepted delivery plus playable timestamp evidence promotes an agreement to `VERIFIED` |
+| Written recap | Simulated delivery in P0 followed by one real SMS adapter in P0.1 | Remain simulated; support SMS and email initially | One real channel is the smallest path to the challenge's verified-commitment requirement | Only externally accepted delivery plus playable timestamp evidence promotes the final active winner to `VERIFIED` |
 | Recovery autonomy | Renegotiate with the winner, then reconfirm the best valid alternative | Always require approval; switch without reconfirmation | It shows bounded autonomy while preventing stale quotes from becoming commitments | Mandate-safe changes notify the coordinator; conflicts or no viable option escalate |
 | Recovery demo | Reproducible browser scripts followed by one authorized real inbound PSTN trial | Browser-only inbound; one improvised branch | Deterministic scripts preserve diagnosis while the real call proves the required channel | Inbound correlation must fail closed before exposing or changing an operation |
-| Human takeover | Join the coordinator to the same live call with structured context and stop further AI commitments | Hang up and call back; simulator-only takeover | It satisfies the explicit no-disconnect escalation requirement without moving mandate authority into the provider | Live-call update, coordinator availability, failure state, and audit evidence require a dedicated vertical phase |
+| Human takeover | Join the coordinator to one live call with structured context and stop further AI commitments | Hang up and call back; simulator-only takeover | It satisfies the explicit no-disconnect escalation requirement without moving mandate authority into the provider | One successful sandbox handoff plus focused failure tests completes the dedicated vertical phase |
 | Payments | No Yuno integration | Add a payment step | Payments do not support the selected Nauta outcome | The existing payment adapter remains unused |
 | Demo format | Live outbound PSTN call with browser and recorded fallbacks | Browser-only trial; video-only demo | It demonstrates the real-phone requirement and preserves deterministic recovery paths | The team must provision and test Twilio before the final trial |
 
@@ -334,7 +336,7 @@ The submission must contain five artifacts:
 | A call is placed without authority or required disclosure | Trust, legal, or provider-policy failure | Allowlist destinations, require an explicit human start action, disclose AI use, and obtain consent before recording |
 | An inbound caller is correlated to the wrong operation | Unauthorized disclosure or mutation | Require an allowlisted participant and fail-closed server-owned correlation to exactly one active synthetic operation |
 | A recap is duplicated, undelivered, or falsely marked verified | Invalid challenge commitment | Use durable idempotency, signed status events, monotonic delivery state, and require playable timestamp evidence before `VERIFIED` |
-| Human takeover disconnects the participant or leaves the AI committing | Failed escalation or conflicting authority | Test the same live call under success, timeout, duplicate action, and provider failure; disable AI commitment tools atomically at handoff |
+| Human takeover disconnects the participant or leaves the AI committing | Failed escalation or conflicting authority | Prove one successful live handoff, test timeout and duplicate actions locally, and disable AI commitment tools atomically at handoff |
 | English speech, noise, accents, or interruptions reduce accuracy | Failed trial by fire | Test a fixed adversarial matrix and escalate when confidence or facts are insufficient |
 | Audio or names leak through the public repository | Privacy or security incident | Use synthetic participants, obtain recording consent, redact logs, and exclude artifacts from Git |
 | The team changes cases late | Lost implementation time | Keep the core mandate, commitment, audit, and tool contracts provider-neutral |
@@ -356,5 +358,6 @@ The case checkpoint selected the complete real-phone challenge path as the P0.1 
 - [Twilio Call resource documentation](https://www.twilio.com/docs/voice/api/call-resource), consulted for modifying an in-progress call during handoff
 - [Twilio Conference documentation](https://www.twilio.com/docs/voice/twiml/conference), consulted for preserving a live remote leg while another participant joins
 - [Twilio Message resource documentation](https://www.twilio.com/docs/messaging/api/message-resource), consulted for real written-recap submission and asynchronous delivery status
+- [Twilio outbound message status documentation](https://www.twilio.com/docs/messaging/guides/track-outbound-message-status), consulted for signed callbacks and out-of-order delivery events
 - [Twilio outbound calls with Python, FastAPI, and OpenAI Realtime](https://www.twilio.com/en-us/blog/outbound-calls-python-openai-realtime-api-voice), selected as the P0.1 implementation baseline
 - [Twilio trial account documentation](https://www.twilio.com/docs/usage/tutorials/how-to-use-your-free-trial-account), consulted for verified-destination and trial-account constraints
