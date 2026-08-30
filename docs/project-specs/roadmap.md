@@ -271,13 +271,13 @@ This documentation and demo-assets phase can run in parallel with P0.1 implement
 
 Slug: pass-final-telephony-trial
 
-Depends on: 20, 21, 26, 27, 28
+Depends on: 20, 21, 26, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and sends one externally accepted recap that promotes the final active winner to `VERIFIED`. It also transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains playable timestamp evidence and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains a recap explicitly labeled `SIMULATED`, playable timestamp evidence, and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
 
-The cross-layer trial reports account restrictions, call and delivery outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap without presenting simulated delivery or workflow-only concurrency as challenge-verified evidence.
+The cross-layer trial reports account restrictions, call outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It explicitly reports that no external recap was delivered and never presents simulated delivery or workflow-only concurrency as challenge-verified evidence.
 
 ### Fase 23 — Implement the OpenAI Realtime adapter
 
@@ -326,18 +326,6 @@ Conflicts with: none
 Gate: A signed Twilio voice webhook answers one authorized real inbound PSTN call. Fail-closed server-owned correlation resolves the allowlisted synthetic caller and exactly one active operation. The call applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream. One driver-delay scenario uses the browser's deterministic recovery services, completes one mandate-safe update, and persists its status, brief, playable timestamp evidence, and audit events. Focused tests reject invalid signatures, ambiguous correlation, duplicate events, and out-of-mandate changes. One authorized sandbox call proves the accepted path.
 
 This cross-layer telephony phase replaces the simulated inbound transport without duplicating recovery rules. Provider request parsing, signature verification, TwiML, and media ingress stay in FastAPI; operation correlation, mandate decisions, persistence, and audit stay in backend services, and the existing control tower renders only typed application state.
-
-### Fase 27 — Send and verify written recaps
-
-Slug: send-verified-written-recaps
-
-Depends on: 19, 25
-
-Conflicts with: none
-
-Gate: A provider-neutral delivery service idempotently sends the final active winner's bounded recap through one real SMS channel. It addresses the recap to an allowlisted synthetic participant and verifies the signed asynchronous delivery event. It persists provider-neutral delivery state and promotes the agreement to `VERIFIED` only after provider acceptance and playable `audio_start_ms` evidence. Focused tests cover invalid signatures, duplicate or out-of-order events, missing audio evidence, safe errors, and redaction. One authorized sandbox delivery and the visible control-tower status prove the accepted path.
-
-This vertical evidence phase owns the external recap adapter, callback ingress, durable verification transition, and visible delivery status. It never stores contact details in public contracts or logs and preserves simulated delivery as the deterministic fallback.
 
 ### Fase 28 — Transfer a live call to the human coordinator
 
