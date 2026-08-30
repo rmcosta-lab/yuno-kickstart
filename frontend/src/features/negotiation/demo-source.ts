@@ -1,6 +1,5 @@
 import type { ApiErrorResponse } from "@/lib/api/generated/models/apiErrorResponse";
 import type { CarrierSessionResponse } from "@/lib/api/generated/models/carrierSessionResponse";
-import type { CommitmentResponse } from "@/lib/api/generated/models/commitmentResponse";
 import type { EscalationResponse } from "@/lib/api/generated/models/escalationResponse";
 import type { NegotiationResponse } from "@/lib/api/generated/models/negotiationResponse";
 import type { OperationResponse } from "@/lib/api/generated/models/operationResponse";
@@ -165,29 +164,6 @@ const QUOTE_THREE = {
   valid_until: "2026-08-29T16:12:00Z",
 } satisfies QuoteResponse;
 
-const ACTIVE_COMMITMENT = {
-  agreed_terms: QUOTE_ONE_CURRENT.terms,
-  call_id: SESSION_ONE.call_id,
-  carrier_id: SESSION_ONE.carrier.carrier_id,
-  commitment_id: "commitment-puerto-azul-01",
-  created_at: "2026-08-29T14:20:00Z",
-  disposition: "ACTIVE",
-  evidence: {
-    audio_start_ms: 0,
-    call_id: SESSION_ONE.call_id,
-    created_at: "2026-08-29T14:20:00Z",
-    event_id: "event-synthetic-001",
-    evidence_id: "evidence-synthetic-001",
-    item_id: "item-synthetic-001",
-    lifecycle: "SIMULATED",
-    recording_reference: "synthetic-evidence-placeholder",
-  },
-  lifecycle: "SIMULATED",
-  mandate_version: 3,
-  operation_id: OPERATION_ID,
-  quote_id: QUOTE_ONE_CURRENT.quote_id,
-} satisfies CommitmentResponse;
-
 const PRE_CONTACT_ESCALATION = {
   attempted_alternatives: [
     "Checked route coverage",
@@ -301,7 +277,6 @@ const TWO_SESSIONS = createOperation({
 });
 
 const ACTIVE_MARKET = createOperation({
-  active_commitment: ACTIVE_COMMITMENT,
   negotiation_summary: {
     active_session_count: 1,
     negotiation_id: NEGOTIATION_ID,
@@ -310,7 +285,6 @@ const ACTIVE_MARKET = createOperation({
   },
   quotes: [QUOTE_ONE_EARLIER, QUOTE_ONE_CURRENT, QUOTE_TWO, QUOTE_THREE],
   sessions: [SESSION_ONE, SESSION_TWO, SESSION_THREE],
-  status: "COMMITTED",
 });
 
 const NO_ELIGIBLE = createOperation({
@@ -324,24 +298,6 @@ const NO_ELIGIBLE = createOperation({
   sessions: [],
   status: "ESCALATED",
   updated_at: PRE_CONTACT_ESCALATION.created_at,
-});
-
-const TERMINAL_SUCCESS = createOperation({
-  active_commitment: ACTIVE_COMMITMENT,
-  negotiation_summary: {
-    active_session_count: 0,
-    negotiation_id: NEGOTIATION_ID,
-    selected_carrier_count: 3,
-    valid_quote_count: 2,
-  },
-  quotes: ACTIVE_MARKET.quotes,
-  sessions: [
-    { ...SESSION_ONE, ended_at: "2026-08-29T14:21:00Z", state: "COMPLETED" },
-    SESSION_TWO,
-    SESSION_THREE,
-  ],
-  status: "COMPLETED",
-  updated_at: "2026-08-29T14:21:00Z",
 });
 
 const TERMINAL_FAILURE = createOperation({
@@ -379,8 +335,8 @@ const SCENARIOS = [
   },
   {
     id: "active-market",
-    label: "3 + winner",
-    description: "Three sessions, a quote revision, and one active commitment.",
+    label: "3 sessions",
+    description: "Three sessions and a quote revision, stopping at comparison.",
   },
   {
     id: "reconnecting",
@@ -396,11 +352,6 @@ const SCENARIOS = [
     id: "no-eligible",
     label: "No eligible",
     description: "A pre-contact escalation appears with zero sessions.",
-  },
-  {
-    id: "terminal-success",
-    label: "Completed",
-    description: "All sessions are terminal and one active winner remains.",
   },
   {
     id: "terminal-failure",
@@ -434,7 +385,7 @@ const SNAPSHOTS = {
   "active-market": {
     mode: "ready",
     announcement:
-      "Three carrier sessions and one server-declared active winner are displayed.",
+      "Three carrier sessions and their comparison are displayed without a winner.",
     data: {
       operation: ACTIVE_MARKET,
       negotiation: createNegotiation(ACTIVE_MARKET.sessions ?? []),
@@ -462,15 +413,6 @@ const SNAPSHOTS = {
     data: {
       operation: NO_ELIGIBLE,
       negotiation: createNegotiation([], PRE_CONTACT_ESCALATION),
-    },
-  },
-  "terminal-success": {
-    mode: "terminal",
-    announcement:
-      "Negotiation is complete with one server-declared active commitment.",
-    data: {
-      operation: TERMINAL_SUCCESS,
-      negotiation: createNegotiation(TERMINAL_SUCCESS.sessions ?? []),
     },
   },
   "terminal-failure": {

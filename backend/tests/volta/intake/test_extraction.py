@@ -23,6 +23,7 @@ def proposal() -> OperationProposal:
     return OperationProposal(
         route=Route("Synthetic Port", "Synthetic Yard"),
         pickup_date=date(2026, 9, 3),
+        cargo_label="Synthetic 40ft dry container",
         mandate=MandateProposal(
             maximum_amount=Money(Decimal("9000"), "MXN"),
             pickup_window=PickupWindow(date(2026, 9, 3), date(2026, 9, 3)),

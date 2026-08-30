@@ -122,9 +122,9 @@ def test_every_route_serializes_its_typed_success_contract(
 def test_default_service_returns_honest_not_implemented_after_validation() -> None:
     with build_client() as client:
         response = client.post(
-            "/v1/operation-drafts",
+            f"/v1/calls/{IDS['call']}/recaps",
             headers=MUTATION_HEADERS,
-            json=request_for("create_operation_draft"),
+            json=request_for("create_simulated_recap"),
         )
 
     assert response.status_code == 501
@@ -380,6 +380,14 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
                 parameters = {item["name"]: item for item in operation["parameters"]}
                 assert parameters["Idempotency-Key"]["required"] is True
                 assert _request_schema(schema, operation)["additionalProperties"] is False
+                rate_limit_headers = operation["responses"]["429"]["headers"]
+                assert rate_limit_headers["X-Request-ID"]["schema"]["type"] == "string"
+                assert rate_limit_headers["Retry-After"]["schema"] == {
+                    "type": "integer",
+                    "minimum": 1,
+                }
+            else:
+                assert "429" not in operation["responses"]
 
     assert set(operations) == set(ROUTES)
     assert len(operations) == 14

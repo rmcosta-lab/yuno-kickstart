@@ -2433,6 +2433,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -2674,6 +2681,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -2915,6 +2929,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -3156,6 +3177,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -3397,6 +3425,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -3638,6 +3673,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -3879,6 +3921,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -4090,6 +4139,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -4321,6 +4377,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -4488,26 +4551,6 @@
               }
             },
             "description": "The request does not satisfy the public contract.",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Correlation identifier preserved or assigned by the API.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
@@ -4706,26 +4749,6 @@
               }
             },
             "description": "The request does not satisfy the public contract.",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Correlation identifier preserved or assigned by the API.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "429": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
@@ -4968,6 +4991,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -5209,6 +5239,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {
@@ -5450,6 +5487,13 @@
             },
             "description": "The configured demo traffic boundary was exceeded.",
             "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
               "X-Request-ID": {
                 "description": "Correlation identifier preserved or assigned by the API.",
                 "schema": {

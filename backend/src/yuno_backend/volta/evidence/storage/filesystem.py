@@ -14,9 +14,9 @@ enumeration API, so a caller without the reference cannot discover or read
 a recording, and a reference that would escape `base_dir` is rejected.
 `delete` is idempotent: removing an already-absent reference is a no-op.
 
-This adapter is for local development only. It applies no access control
-beyond the host filesystem's own permissions (the process umask) and no
-encryption at rest. A production deployment must swap it for a
+This adapter is for local development only. It creates its storage root and
+commitment directories with mode ``0700`` and artifacts with mode ``0600``;
+it provides no encryption at rest. A production deployment must swap it for a
 provider-backed `EvidenceStorage` implementation before handling real
 recordings.
 """
@@ -24,6 +24,7 @@ recordings.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from pathlib import Path
 
@@ -34,14 +35,24 @@ class FilesystemEvidenceStorage:
     def __init__(self, base_dir: Path) -> None:
         self._base_dir = base_dir.resolve()
         self._base_dir.mkdir(parents=True, exist_ok=True)
+        self._base_dir.chmod(0o700)
 
     async def store(self, commitment_id: uuid.UUID, payload: bytes) -> str:
-        reference = f"{commitment_id}/{uuid.uuid4().hex}.bin"
+        suffix = ".wav" if payload.startswith(b"RIFF") and payload[8:12] == b"WAVE" else ".bin"
+        reference = f"{commitment_id}/{uuid.uuid4().hex}{suffix}"
         path = self._resolve(reference)
 
         def _write() -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(payload)
+            path.parent.chmod(0o700)
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                with os.fdopen(descriptor, "wb") as artifact:
+                    artifact.write(payload)
+            except BaseException:
+                path.unlink(missing_ok=True)
+                raise
+            path.chmod(0o600)
 
         await asyncio.to_thread(_write)
         return reference

@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     volta_demo_bearer_token: SecretStr = SecretStr("")
+    database_url: SecretStr = SecretStr("")
+    volta_extraction_policy_version: str = "intake-v1"
+    volta_mutation_rate_limit_requests: int = Field(default=30, ge=1, le=10_000)
+    volta_mutation_rate_limit_window_seconds: float = Field(default=60.0, gt=0, le=86_400)
+    volta_mutation_rate_limit_max_identities: int = Field(default=256, ge=1, le=10_000)
 
     @field_validator("cors_origins")
     @classmethod

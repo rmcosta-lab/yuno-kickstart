@@ -6,13 +6,14 @@ from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from yuno_backend.volta.audit.models import AuditEvent
 from yuno_backend.volta.evidence.models import AgreementEvidence, CallBrief, Recap
+from yuno_backend.volta.idempotency import TextMutationIdempotency
 from yuno_backend.volta.mandates.errors import InvalidDomainValue, OperationAlreadyApproved
 from yuno_backend.volta.mandates.models import IntakeDraft, Operation
 from yuno_backend.volta.negotiations.models import (
@@ -52,6 +53,8 @@ from yuno_backend.volta.persistence.mappers import (
     _recovery_attempt_to_values,
     _session_to_values,
     _status_to_values,
+    _text_idempotency_from_row,
+    _text_idempotency_to_values,
 )
 from yuno_backend.volta.persistence.tables import (
     _agreement_evidence,
@@ -59,6 +62,7 @@ from yuno_backend.volta.persistence.tables import (
     _call_briefs,
     _carrier_sessions,
     _commitments,
+    _evidence_reservations,
     _intake_drafts,
     _mandates,
     _mutation_idempotency,
@@ -71,14 +75,17 @@ from yuno_backend.volta.persistence.tables import (
     _quotes,
     _recaps,
     _recovery_attempts,
+    _text_mutation_idempotency,
 )
 from yuno_backend.volta.recovery.models import Notification, PostContactEscalation, RecoveryAttempt
+from yuno_backend.volta.text_slice.models import EvidenceReservation
 
 __all__ = [
     "SqlAlchemyAuditEventRepository",
     "SqlAlchemyBriefRepository",
     "SqlAlchemyCommitmentRepository",
     "SqlAlchemyEvidenceRepository",
+    "SqlAlchemyEvidenceReservationRepository",
     "SqlAlchemyIdempotencyRepository",
     "SqlAlchemyIntakeDraftRepository",
     "SqlAlchemyNegotiationRepository",
@@ -88,6 +95,7 @@ __all__ = [
     "SqlAlchemyQuoteRepository",
     "SqlAlchemyRecapRepository",
     "SqlAlchemyRecoveryAttemptRepository",
+    "SqlAlchemyTextMutationIdempotencyRepository",
 ]
 
 
@@ -534,6 +542,108 @@ class SqlAlchemyEvidenceRepository:
             ) from None
 
 
+class SqlAlchemyEvidenceReservationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(
+        self, evidence_id: UUID, *, for_update: bool = False
+    ) -> EvidenceReservation | None:
+        statement = select(_evidence_reservations).where(
+            _evidence_reservations.c.id == evidence_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        try:
+            row = (await self._session.execute(statement)).first()
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "read_failed", "evidence_reservation", evidence_id
+            ) from None
+        return None if row is None else self._from_row(_mapping(row))
+
+    async def get_by_quote(self, quote_id: UUID) -> EvidenceReservation | None:
+        try:
+            row = (
+                await self._session.execute(
+                    select(_evidence_reservations).where(
+                        _evidence_reservations.c.quote_id == quote_id
+                    )
+                )
+            ).first()
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "read_failed", "evidence_reservation", quote_id
+            ) from None
+        return None if row is None else self._from_row(_mapping(row))
+
+    async def add(self, value: EvidenceReservation) -> None:
+        try:
+            await self._session.execute(
+                insert(_evidence_reservations).values(
+                    id=value.id,
+                    operation_id=value.operation_id,
+                    call_id=value.call_id,
+                    quote_id=value.quote_id,
+                    recording_reference=value.recording_reference,
+                    audio_start_ms=value.audio_start_ms,
+                    item_id=value.item_id,
+                    event_id=value.event_id,
+                    created_at=value.created_at,
+                    consumed_by_commitment_id=value.consumed_by_commitment_id,
+                )
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "evidence_reservation", value.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "evidence_reservation", value.id
+            ) from None
+
+    async def consume(
+        self, evidence_id: UUID, commitment_id: UUID, call_id: UUID, quote_id: UUID
+    ) -> None:
+        try:
+            changed = (
+                await self._session.execute(
+                    update(_evidence_reservations)
+                    .where(
+                        _evidence_reservations.c.id == evidence_id,
+                        _evidence_reservations.c.call_id == call_id,
+                        _evidence_reservations.c.quote_id == quote_id,
+                        _evidence_reservations.c.consumed_by_commitment_id.is_(None),
+                    )
+                    .values(consumed_by_commitment_id=commitment_id)
+                    .returning(_evidence_reservations.c.id)
+                )
+            ).scalar_one_or_none()
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "evidence_reservation", evidence_id
+            ) from None
+        if changed is None:
+            from yuno_backend.volta.text_slice.errors import EvidenceReservationMismatch
+
+            raise EvidenceReservationMismatch(quote_id, evidence_id)
+
+    @staticmethod
+    def _from_row(row: Mapping[str, Any]) -> EvidenceReservation:
+        return EvidenceReservation(
+            row["id"],
+            row["operation_id"],
+            row["call_id"],
+            row["quote_id"],
+            row["recording_reference"],
+            row["audio_start_ms"],
+            row["item_id"],
+            row["event_id"],
+            row["created_at"],
+            row["consumed_by_commitment_id"],
+        )
+
+
 class SqlAlchemyBriefRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -597,9 +707,7 @@ class SqlAlchemyPostContactEscalationRepository:
     async def get(self, escalation_id: UUID) -> PostContactEscalation | None:
         return await self._get_by(_post_contact_escalations.c.id == escalation_id)
 
-    async def get_unresolved_by_operation(
-        self, operation_id: UUID
-    ) -> PostContactEscalation | None:
+    async def get_unresolved_by_operation(self, operation_id: UUID) -> PostContactEscalation | None:
         return await self._get_by(
             (_post_contact_escalations.c.operation_id == operation_id)
             & (_post_contact_escalations.c.resolved.is_(False))
@@ -608,9 +716,7 @@ class SqlAlchemyPostContactEscalationRepository:
     async def _get_by(self, criterion: Any) -> PostContactEscalation | None:
         try:
             row = (
-                await self._session.execute(
-                    select(_post_contact_escalations).where(criterion)
-                )
+                await self._session.execute(select(_post_contact_escalations).where(criterion))
             ).first()
             return None if row is None else _post_contact_escalation_from_row(_mapping(row))
         except DBAPIError:
@@ -647,9 +753,7 @@ class SqlAlchemyPostContactEscalationRepository:
                 )
             ).scalar_one_or_none()
             if changed is None:
-                raise PersistenceConflict(
-                    "missing_state", "post_contact_escalation", escalation.id
-                )
+                raise PersistenceConflict("missing_state", "post_contact_escalation", escalation.id)
         except IntegrityError:
             raise PersistenceConflict(
                 "integrity_constraint", "post_contact_escalation", escalation.id
@@ -688,9 +792,7 @@ class SqlAlchemyRecoveryAttemptRepository:
             ).all()
             return tuple(_recovery_attempt_from_row(_mapping(row)) for row in rows)
         except DBAPIError:
-            raise PersistenceUnavailable(
-                "read_failed", "recovery_attempt", operation_id
-            ) from None
+            raise PersistenceUnavailable("read_failed", "recovery_attempt", operation_id) from None
 
     async def add(self, attempt: RecoveryAttempt) -> None:
         try:
@@ -745,6 +847,46 @@ class SqlAlchemyNotificationRepository:
                 "integrity_constraint", "notification", notification.id
             ) from None
         except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "notification", notification.id) from None
+
+
+class SqlAlchemyTextMutationIdempotencyRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def lock(self, operation_name: str, key: str) -> None:
+        try:
+            await self._session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+                {"scope": f"{operation_name}:{key}"},
+            )
+        except DBAPIError:
+            raise PersistenceUnavailable("lock_failed", "text_idempotency") from None
+
+    async def get(self, operation_name: str, key: str) -> TextMutationIdempotency | None:
+        try:
+            row = (
+                await self._session.execute(
+                    select(_text_mutation_idempotency).where(
+                        _text_mutation_idempotency.c.operation_name == operation_name,
+                        _text_mutation_idempotency.c.idempotency_key == key,
+                    )
+                )
+            ).first()
+            return None if row is None else _text_idempotency_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "text_idempotency") from None
+
+    async def add(self, record: TextMutationIdempotency) -> None:
+        try:
+            await self._session.execute(
+                insert(_text_mutation_idempotency).values(_text_idempotency_to_values(record))
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "text_idempotency", record.result_id
+            ) from None
+        except DBAPIError:
             raise PersistenceUnavailable(
-                "write_failed", "notification", notification.id
+                "write_failed", "text_idempotency", record.result_id
             ) from None

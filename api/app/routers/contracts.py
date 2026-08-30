@@ -56,6 +56,10 @@ REPLAY_HEADER = {
     "description": "True only when an injected application service replays the original result.",
     "schema": {"type": "string", "enum": ["true"]},
 }
+RETRY_AFTER_HEADER = {
+    "description": "Whole seconds until the authorized mutation window can accept traffic.",
+    "schema": {"type": "integer", "minimum": 1},
+}
 
 
 def error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
@@ -73,7 +77,10 @@ def error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
         code: {
             "model": ApiErrorResponse,
             "description": descriptions[code],
-            "headers": {"X-Request-ID": REQUEST_ID_HEADER},
+            "headers": {
+                "X-Request-ID": REQUEST_ID_HEADER,
+                **({"Retry-After": RETRY_AFTER_HEADER} if code == 429 else {}),
+            },
         }
         for code in status_codes
     }
@@ -101,7 +108,7 @@ def query_responses(*route_status_codes: int) -> dict[int, dict[str, Any]]:
             "description": "Typed query result.",
             "headers": {"X-Request-ID": REQUEST_ID_HEADER},
         },
-        **error_responses(401, 422, 429, 500, 501, *route_status_codes),
+        **error_responses(401, 422, 500, 501, *route_status_codes),
     }
 
 

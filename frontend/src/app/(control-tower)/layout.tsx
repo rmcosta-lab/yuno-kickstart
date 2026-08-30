@@ -37,8 +37,8 @@ export default function ControlTowerLayout({
       </main>
 
       <footer className="border-t border-border px-6 py-6 text-center font-mono text-xs tracking-[0.04em] text-muted-foreground sm:px-10 lg:px-14">
-        Volta control tower &middot; synthetic presentation-only fixtures
-        &middot;{" "}
+        Volta control tower &middot; live text integration &middot; simulated
+        fallback labeled no contact &middot;{" "}
         <Link
           className="underline underline-offset-4 hover:text-foreground"
           href="/health"

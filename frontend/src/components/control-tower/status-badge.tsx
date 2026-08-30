@@ -32,7 +32,7 @@ const TONE_CONFIG: Record<
   },
   success: {
     icon: CheckCircle2,
-    className: "bg-success/15 text-success",
+    className: "border-success/40 bg-transparent text-success",
   },
   warning: {
     icon: CircleAlert,
@@ -40,7 +40,7 @@ const TONE_CONFIG: Record<
   },
   danger: {
     icon: ShieldAlert,
-    className: "bg-destructive/15 text-destructive",
+    className: "border-destructive/40 bg-transparent text-destructive",
   },
 };
 

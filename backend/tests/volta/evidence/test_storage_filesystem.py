@@ -1,3 +1,5 @@
+import asyncio
+import stat
 from pathlib import Path
 from uuid import UUID
 
@@ -23,6 +25,15 @@ async def test_store_writes_outside_the_repository_and_is_opaque(tmp_path: Path)
     reference = await storage.store(UUID(int=1), b"a")
     assert not Path(reference).is_absolute()
     assert (tmp_path / reference).exists()
+    artifact = tmp_path / reference
+    modes = await asyncio.to_thread(
+        lambda: (
+            stat.S_IMODE(tmp_path.stat().st_mode),
+            stat.S_IMODE(artifact.parent.stat().st_mode),
+            stat.S_IMODE(artifact.stat().st_mode),
+        )
+    )
+    assert modes == (0o700, 0o700, 0o600)
 
 
 @pytest.mark.parametrize("escape", ["../outside.bin", "/etc/passwd"])

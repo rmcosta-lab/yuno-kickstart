@@ -102,12 +102,15 @@ class MandateProposal:
 class OperationProposal:
     route: Route
     pickup_date: date
+    cargo_label: str
     mandate: MandateProposal
 
     def __post_init__(self) -> None:
         if not isinstance(self.route, Route):
             raise InvalidDomainValue("route", "route_required")
         _require_date(self.pickup_date, "pickup_date")
+        if not isinstance(self.cargo_label, str):
+            raise InvalidDomainValue("cargo_label", "string_required")
         if not isinstance(self.mandate, MandateProposal):
             raise InvalidDomainValue("mandate", "mandate_proposal_required")
 
@@ -224,6 +227,7 @@ class Operation:
     source_draft_version: int
     route: Route
     pickup_date: date
+    cargo_label: str
     mandate: Mandate
     status: OperationStatus
     status_history: tuple[OperationStatusEntry, ...]
@@ -237,6 +241,8 @@ class Operation:
         if not isinstance(self.route, Route):
             raise InvalidDomainValue("route", "route_required")
         _require_date(self.pickup_date, "pickup_date")
+        if not self.cargo_label.strip() or len(self.cargo_label) > 500:
+            raise InvalidDomainValue("cargo_label", "bounded_non_empty_required")
         if not isinstance(self.mandate, Mandate):
             raise InvalidDomainValue("mandate", "mandate_required")
         if self.mandate.operation_id != self.id:
