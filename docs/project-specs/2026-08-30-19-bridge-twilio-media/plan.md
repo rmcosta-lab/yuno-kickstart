@@ -14,7 +14,7 @@
 
 3. **Wire Phase 18 outbound calling and the minimum terminal status**
    - Map the application request exactly to `OutboundCallRequest` and inject the Phase 18 gateway/store without exposing Twilio configuration or provider payloads through Pydantic models.
-   - Map same-request replay, idempotency conflict, authorization/allowlist, provider, rate-limit, timeout, invalid-response, and uncertain-outcome semantics into the frozen HTTP envelope.
+   - Accept same-request durable replay under the same `201` response without a replay marker, and map idempotency conflict, authorization/allowlist, provider, rate-limit, timeout, invalid-response, and uncertain-outcome semantics into the frozen HTTP envelope.
    - Verify the provider request, normalize the terminal observation needed by the demo, and apply it duplicate-safely through the backend boundary before returning success. Defer the complete status matrix and retry policy.
 
 4. **Implement consent-gated TwiML and stream authorization**
@@ -37,7 +37,7 @@
    - Run a sandbox call only after a separate authorization names the participant label, country, origin class, public endpoint, disclosure/consent/recording behavior, expected cost, duration, retention, and cleanup. Without that authorization, leave the sandbox criterion unchecked and do not deploy or dial.
 
 8. **Reconcile the stacked branch before review**
-   - The owner-authorized decision allowed the Phase 19 claim to proceed while Phase 17 was still ACTIVE; PR #25 merged immediately afterward. Preserve that history and add no Phase 17 pause.
+   - The owner-authorized decision allowed the Phase 19 claim to proceed while Phase 17 was still ACTIVE; PR #25 merged immediately afterward. A second explicit owner decision during `implement-phase` authorizes stacked implementation while Phase 18 remains ACTIVE. Preserve both decisions without representing Phase 18 as DONE.
    - Before Phase 19 review/merge, require Phase 18's consumed contracts to be integrated or explicitly reconciled, refresh the appropriate base, remove no Phase 18 history, inspect overlapping API/shared-file pull requests, and repeat the complete deterministic gate.
 
 ## Ownership and sequencing
@@ -55,8 +55,11 @@
 - **Phase 18 checkpoint:** freeze and test consumed telephony symbols before Pydantic mapping or dependency wiring.
 - **Security checkpoint:** request verification, stream binding, single-stream limits, and focused negative tests pass before bridge acceptance can reach OpenAI.
 - **Application checkpoint:** fake transport tool calls reach the existing Volta facade and replay safely before audio plumbing is considered complete.
+- **Contract correction checkpoint:** Phase 18 exposes `OutboundCall`, not a dispatch/replay wrapper; the public Phase 19 response therefore uses one honest `201` accepted result and no `replayed` field or header.
 - **Generation checkpoint:** Pydantic models and API tests pass before `make generate`; generated artifacts are reviewed before frontend verification.
 - **Stack reconciliation checkpoint:** Phase 18 lands or is explicitly reconciled before Phase 19 review. The phase-local early-start decision does not change the roadmap dependency graph.
+- **Implementation exception checkpoint:** local API/generated-client implementation may proceed on the stacked Phase 18 history by explicit owner authorization; review and merge remain gated on Phase 18 integration or an explicit reconciliation decision.
+- **Submission exception checkpoint:** an explicit owner decision authorizes committing, synchronizing, pushing, and opening the Phase 19 pull request with Phase 18 and sandbox evidence still pending. The PR must remain visibly blocked and no fresh tests or `deep-review` are run for this submission.
 - **Provider checkpoint:** sandbox evidence is separately authorized and reported; deterministic checks never imply that a real call occurred.
 
 ## Guardrails

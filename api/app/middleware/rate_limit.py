@@ -22,6 +22,7 @@ from app.errors import api_error_response
 from app.schemas.errors import ApiErrorCode
 
 _REALTIME_CLIENT_SECRET_PATH = "/v1/realtime/client-secrets"
+_OUTBOUND_CALL_SUFFIX = "/outbound-calls"
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +111,7 @@ class MutationRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if self._has_invalid_realtime_origin(scope):
+        if self._has_invalid_browser_origin(scope):
             # The route dependency owns the 403 response. Do not let an unauthorized
             # browser origin consume the authorized actor's mutation allowance first.
             await self.app(scope, receive, send)
@@ -153,8 +154,9 @@ class MutationRateLimitMiddleware:
             return None
         return fingerprint
 
-    def _has_invalid_realtime_origin(self, scope: Scope) -> bool:
-        if scope.get("path") != _REALTIME_CLIENT_SECRET_PATH:
+    def _has_invalid_browser_origin(self, scope: Scope) -> bool:
+        path = str(scope.get("path", ""))
+        if path != _REALTIME_CLIENT_SECRET_PATH and not path.endswith(_OUTBOUND_CALL_SUFFIX):
             return False
         origin = Headers(scope=scope).get("origin")
         return origin is None or origin not in self._realtime_origins

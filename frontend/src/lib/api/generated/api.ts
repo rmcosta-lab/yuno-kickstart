@@ -42,6 +42,8 @@ import type {
   CreateEscalationRequest,
   CreateOperationDraftHeaders,
   CreateOperationDraftRequest,
+  CreateOutboundCallHeaders,
+  CreateOutboundCallRequest,
   CreateQuoteRequest,
   CreateSimulatedRecapHeaders,
   CreateSimulatedRecapRequest,
@@ -51,6 +53,7 @@ import type {
   NegotiationResponse,
   OperationDraftResponse,
   OperationResponse,
+  OutboundCallResponse,
   QuoteResponse,
   RealtimeClientSecretResponse,
   RecordQuoteHeaders,
@@ -2989,6 +2992,194 @@ export const useStartNegotiation = <
   TContext
 > => {
   return useMutation(getStartNegotiationMutationOptions(options), queryClient);
+};
+
+export type createOutboundCallResponse201 = {
+  data: OutboundCallResponse;
+  status: 201;
+};
+
+export type createOutboundCallResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type createOutboundCallResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type createOutboundCallResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type createOutboundCallResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type createOutboundCallResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type createOutboundCallResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type createOutboundCallResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type createOutboundCallResponse502 = {
+  data: ApiErrorResponse;
+  status: 502;
+};
+
+export type createOutboundCallResponse503 = {
+  data: ApiErrorResponse;
+  status: 503;
+};
+
+export type createOutboundCallResponse504 = {
+  data: ApiErrorResponse;
+  status: 504;
+};
+
+export type createOutboundCallResponseSuccess =
+  createOutboundCallResponse201 & {
+    headers: Headers;
+  };
+export type createOutboundCallResponseError = (
+  | createOutboundCallResponse401
+  | createOutboundCallResponse403
+  | createOutboundCallResponse404
+  | createOutboundCallResponse409
+  | createOutboundCallResponse422
+  | createOutboundCallResponse429
+  | createOutboundCallResponse500
+  | createOutboundCallResponse502
+  | createOutboundCallResponse503
+  | createOutboundCallResponse504
+) & {
+  headers: Headers;
+};
+
+export const getCreateOutboundCallUrl = (operationId: string) => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/operations/${operationId}/outbound-calls`;
+};
+
+/**
+ * @summary Create Outbound Call
+ */
+export const createOutboundCall = async (
+  operationId: string,
+  createOutboundCallRequest: CreateOutboundCallRequest,
+  headers: CreateOutboundCallHeaders,
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<createOutboundCallResponseSuccess> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit["headers"]>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return voltaFetch<createOutboundCallResponseSuccess>(
+    getCreateOutboundCallUrl(operationId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(createOutboundCallRequest),
+    },
+  );
+};
+
+export const getCreateOutboundCallMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createOutboundCall>>,
+    TError,
+    CreateOutboundCallMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createOutboundCall>>,
+  TError,
+  CreateOutboundCallMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["createOutboundCall"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createOutboundCall>>,
+    CreateOutboundCallMutationVariables
+  > = (props) => {
+    const { operationId, data, headers } = props ?? {};
+
+    return createOutboundCall(operationId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateOutboundCallMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createOutboundCall>>
+>;
+export type CreateOutboundCallMutationBody = CreateOutboundCallRequest;
+export type CreateOutboundCallMutationError = ErrorType<ApiErrorResponse>;
+export type CreateOutboundCallMutationVariables = {
+  operationId: string;
+  data: CreateOutboundCallRequest;
+  headers: CreateOutboundCallHeaders;
+};
+
+/**
+ * @summary Create Outbound Call
+ */
+export const useCreateOutboundCall = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createOutboundCall>>,
+      TError,
+      CreateOutboundCallMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof createOutboundCall>>,
+  TError,
+  CreateOutboundCallMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getCreateOutboundCallMutationOptions(options),
+    queryClient,
+  );
 };
 
 export type createRealtimeClientSecretResponse201 = {

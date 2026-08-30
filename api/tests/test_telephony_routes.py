@@ -1,0 +1,820 @@
+"""Focused Phase 19 outbound-call and Twilio ingress tests."""
+
+import asyncio
+import base64
+import json
+import struct
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import UTC, datetime
+from urllib.parse import urlencode
+from uuid import UUID
+
+import httpx
+import pytest
+from app.config import Settings
+from app.contract_service import ContractResult, ContractServiceError
+from app.main import create_app
+from app.schemas.errors import ApiErrorCode
+from app.telephony.bridge import bridge_media_stream, tool_idempotency_key
+from app.telephony.media import pcm24_to_twilio_payload, twilio_payload_to_pcm24
+from app.telephony.service import (
+    LiveTelephonyApplication,
+    MediaBinding,
+    VoltaToolDelegator,
+    create_live_telephony_application,
+)
+from app.telephony.signatures import twilio_signature
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+from yuno_backend.volta.realtime import (
+    RealtimeAudioDelta,
+    RealtimeSessionRequest,
+    RealtimeSpeechStarted,
+    RealtimeToolCallRequested,
+    RealtimeToolOutput,
+)
+from yuno_backend.volta.telephony import (
+    OutboundCall,
+    OutboundCallAuthorization,
+    OutboundCallAuthorizationError,
+    OutboundCallIdempotencyConflict,
+    OutboundCallRequest,
+    OutboundCallStatus,
+    OutboundCallStatusEvent,
+    RecordingMode,
+)
+
+TOKEN = "synthetic-twilio-token"
+ACCOUNT_SID = "AC11111111111111111111111111111111"
+BASE_URL = "https://telephony.example.test"
+MEDIA_URL = "wss://telephony.example.test/v1/telephony/twilio/media"
+OPERATION_ID = UUID("00000000-0000-4000-8000-000000000002")
+CALL_SESSION_ID = UUID("00000000-0000-4000-8000-000000000005")
+BINDING = MediaBinding(
+    operation_id=OPERATION_ID,
+    call_session_id=CALL_SESSION_ID,
+    provider_call_id="CA22222222222222222222222222222222",
+    stream_token="binding-synthetic-001",
+    account_sid=ACCOUNT_SID,
+)
+
+
+class FakeRealtimeConnection:
+    def __init__(self) -> None:
+        self.audio: list[bytes] = []
+        self.tool_outputs: list[RealtimeToolOutput] = []
+        self.closed = False
+
+    async def send_audio(self, chunk: bytes) -> None:
+        self.audio.append(chunk)
+
+    async def truncate_playback(self, truncation: object) -> None:
+        del truncation
+
+    async def send_tool_output(self, output: RealtimeToolOutput) -> None:
+        self.tool_outputs.append(output)
+
+    async def close(self) -> None:
+        self.closed = True
+
+    async def _events(self) -> AsyncIterator[object]:
+        yield RealtimeSpeechStarted(
+            event_id="evt-speech", item_id="item-speech", audio_start_ms=20
+        )
+        yield RealtimeAudioDelta(
+            event_id="evt-audio",
+            response_id="response-audio",
+            item_id="item-audio",
+            content_index=0,
+            audio=b"\x00\x00" * 3 * 160,
+        )
+        yield RealtimeToolCallRequested(
+            event_id="evt-tool",
+            item_id="item-tool",
+            call_id="call-tool-001",
+            name="record_quote",
+            arguments={"call_id": str(CALL_SESSION_ID), "amount_minor": 880000},
+        )
+        await asyncio.Event().wait()
+
+    def events(self) -> AsyncIterator[object]:
+        return self._events()
+
+
+class FakeRealtimeGateway:
+    def __init__(self) -> None:
+        self.connection = FakeRealtimeConnection()
+        self.requests: list[RealtimeSessionRequest] = []
+
+    @asynccontextmanager
+    async def connect(self, request: RealtimeSessionRequest):  # type: ignore[no-untyped-def]
+        self.requests.append(request)
+        try:
+            yield self.connection
+        finally:
+            await self.connection.close()
+
+
+class FakeTelephonyApplication:
+    def __init__(self) -> None:
+        self.twilio_account_sid = ACCOUNT_SID
+        self.realtime_gateway = FakeRealtimeGateway()
+        self.outbound_requests: list[OutboundCallRequest] = []
+        self.status_events: list[OutboundCallStatusEvent] = []
+        self.tool_calls: list[tuple[RealtimeToolCallRequested, str]] = []
+        self.finished: list[tuple[MediaBinding, str]] = []
+
+    async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
+        self.outbound_requests.append(request)
+        return OutboundCall(
+            call_session_id=request.call_session_id,
+            provider_call_id=BINDING.provider_call_id,
+            status=OutboundCallStatus.QUEUED,
+            created_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
+        )
+
+    async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None:
+        return BINDING if provider_call_id == BINDING.provider_call_id else None
+
+    async def binding_for_stream(self, stream_token: str) -> MediaBinding | None:
+        return BINDING if stream_token == BINDING.stream_token else None
+
+    async def observe_status(self, event: OutboundCallStatusEvent) -> None:
+        self.status_events.append(event)
+
+    def realtime_session(self, binding: MediaBinding) -> RealtimeSessionRequest:
+        assert binding == BINDING
+        return RealtimeSessionRequest(
+            instructions="Negotiate only within the approved mandate.",
+            safety_identifier="a" * 64,
+        )
+
+    async def delegate_tool(
+        self,
+        binding: MediaBinding,
+        event: RealtimeToolCallRequested,
+        idempotency_key: str,
+    ) -> Mapping[str, object]:
+        assert binding == BINDING
+        self.tool_calls.append((event, idempotency_key))
+        return {"accepted": True}
+
+    async def stream_finished(self, binding: MediaBinding, outcome: str) -> None:
+        self.finished.append((binding, outcome))
+
+    async def aclose(self) -> None:
+        return None
+
+
+def build_client(application: FakeTelephonyApplication | None = None) -> TestClient:
+    app = create_app(
+        Settings(
+            app_env="test",
+            volta_demo_bearer_token="synthetic-test-token",
+            cors_origins=["http://localhost:3000"],
+            twilio_auth_token=TOKEN,
+            twilio_public_base_url=BASE_URL,
+            twilio_media_ws_url=MEDIA_URL,
+        )
+    )
+    if application is not None:
+        app.state.telephony_application = application
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def signed_form(path: str, fields: dict[str, str]) -> tuple[dict[str, str], str]:
+    return (
+        {"X-Twilio-Signature": twilio_signature(f"{BASE_URL}{path}", fields, TOKEN)},
+        urlencode(fields),
+    )
+
+
+def outbound_body() -> dict[str, object]:
+    return {
+        "call_session_id": str(CALL_SESSION_ID),
+        "destination_label": "synthetic-carrier-one",
+        "authorized_by": "coordinator-demo",
+        "authorized_at": "2026-08-30T12:00:00Z",
+        "ai_disclosure_required": True,
+        "recording_mode": "DISABLED",
+        "recording_consent_required": False,
+    }
+
+
+def media_start(*, binding: str = BINDING.stream_token) -> dict[str, object]:
+    return {
+        "event": "start",
+        "sequenceNumber": "1",
+        "streamSid": "MZ33333333333333333333333333333333",
+        "start": {
+            "accountSid": ACCOUNT_SID,
+            "streamSid": "MZ33333333333333333333333333333333",
+            "callSid": BINDING.provider_call_id,
+            "tracks": ["inbound"],
+            "mediaFormat": {
+                "encoding": "audio/x-mulaw",
+                "sampleRate": 8000,
+                "channels": 1,
+            },
+            "customParameters": {"binding": binding},
+        },
+    }
+
+
+def send_media_preamble(websocket, *, binding: str = BINDING.stream_token) -> None:  # type: ignore[no-untyped-def]
+    websocket.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
+    websocket.send_json(media_start(binding=binding))
+
+
+def receive_until_close(websocket) -> None:  # type: ignore[no-untyped-def]
+    for _ in range(5):
+        websocket.receive_text()
+    raise AssertionError("WebSocket did not close within the bounded test exchange")
+
+
+def test_outbound_call_requires_bearer_and_maps_provider_neutral_request() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/operations/{OPERATION_ID}/outbound-calls"
+    with build_client(application) as client:
+        rejected = client.post(path, json=outbound_body())
+        accepted = client.post(
+            path,
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Origin": "http://localhost:3000",
+                "Idempotency-Key": "outbound-synthetic-001",
+                "X-Request-ID": "outbound-request-001",
+            },
+            json=outbound_body(),
+        )
+
+    assert rejected.status_code == 401
+    assert application.outbound_requests and len(application.outbound_requests) == 1
+    request = application.outbound_requests[0]
+    assert request.operation_id == OPERATION_ID
+    assert request.destination_label == "synthetic-carrier-one"
+    assert request.authorization.recording_mode.value == "DISABLED"
+    assert accepted.status_code == 201
+    assert accepted.json()["provider_call_id"] == BINDING.provider_call_id
+    assert "synthetic-twilio-token" not in accepted.text
+
+
+def test_outbound_same_request_replay_is_201_without_marker() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/operations/{OPERATION_ID}/outbound-calls"
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+        "Idempotency-Key": "outbound-synthetic-replay-001",
+    }
+    with build_client(application) as client:
+        created = client.post(path, headers=headers, json=outbound_body())
+        replayed = client.post(path, headers=headers, json=outbound_body())
+
+    assert created.status_code == replayed.status_code == 201
+    assert created.json() == replayed.json()
+    assert "replayed" not in replayed.json()
+    assert "idempotency-replayed" not in replayed.headers
+
+
+def test_outbound_origin_rejection_consumes_no_quota_or_gateway_io() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/operations/{OPERATION_ID}/outbound-calls"
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Idempotency-Key": "outbound-origin-rejected-001",
+    }
+    with build_client(application) as client:
+        missing = client.post(path, headers=headers, json=outbound_body())
+        invalid = client.post(
+            path,
+            headers={**headers, "Origin": "https://untrusted.example"},
+            json=outbound_body(),
+        )
+        identity_count = client.app.state.mutation_rate_limiter.identity_count
+
+    assert missing.status_code == invalid.status_code == 403
+    assert identity_count == 0
+    assert application.outbound_requests == []
+
+
+def test_outbound_openapi_422_uses_safe_error_envelope() -> None:
+    with build_client() as client:
+        operation = client.app.openapi()["paths"][
+            "/v1/operations/{operation_id}/outbound-calls"
+        ]["post"]
+    assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ApiErrorResponse"
+    }
+
+
+class MissingOperationApplication(FakeTelephonyApplication):
+    async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
+        del request
+        raise ContractServiceError(
+            status_code=404,
+            code=ApiErrorCode.RESOURCE_NOT_FOUND,
+            message="The operation was not found.",
+        )
+
+
+def test_outbound_preflight_preserves_typed_contract_error() -> None:
+    path = f"/v1/operations/{OPERATION_ID}/outbound-calls"
+    with build_client(MissingOperationApplication()) as client:
+        response = client.post(
+            path,
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Origin": "http://localhost:3000",
+                "Idempotency-Key": "outbound-missing-operation-001",
+            },
+            json=outbound_body(),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "RESOURCE_NOT_FOUND"
+    assert response.json()["message"] == "The operation was not found."
+
+
+def test_disclosure_and_consent_precede_media_stream() -> None:
+    application = FakeTelephonyApplication()
+    voice_fields = {"CallSid": BINDING.provider_call_id}
+    voice_fields["AccountSid"] = ACCOUNT_SID
+    voice_headers, voice_body = signed_form("/v1/telephony/twilio/voice", voice_fields)
+    consent_fields = {**voice_fields, "Digits": "1"}
+    consent_headers, consent_body = signed_form(
+        "/v1/telephony/twilio/consent", consent_fields
+    )
+    with build_client(application) as client:
+        disclosure = client.post(
+            "/v1/telephony/twilio/voice",
+            headers=voice_headers,
+            content=voice_body,
+        )
+        consent = client.post(
+            "/v1/telephony/twilio/consent",
+            headers=consent_headers,
+            content=consent_body,
+        )
+
+    assert disclosure.status_code == 200
+    assert "AI assistant" in disclosure.text
+    assert "&lt;Stream" not in disclosure.text and "<Stream" not in disclosure.text
+    assert MEDIA_URL in consent.text
+    assert BINDING.stream_token in consent.text
+    assert "synthetic-twilio-token" not in disclosure.text + consent.text
+
+
+def test_twilio_http_ingress_rejects_missing_and_tampered_signatures() -> None:
+    application = FakeTelephonyApplication()
+    fields = {"CallSid": BINDING.provider_call_id, "AccountSid": ACCOUNT_SID}
+    headers, body = signed_form("/v1/telephony/twilio/voice", fields)
+    with build_client(application) as client:
+        missing = client.post("/v1/telephony/twilio/voice", content=body)
+        tampered = client.post(
+            "/v1/telephony/twilio/voice",
+            headers=headers,
+            content=f"{body}&Digits=1",
+        )
+
+    assert missing.status_code == 403
+    assert tampered.status_code == 403
+
+
+def test_twilio_http_ingress_rejects_oversized_form_before_parsing() -> None:
+    application = FakeTelephonyApplication()
+    with build_client(application) as client:
+        response = client.post(
+            "/v1/telephony/twilio/voice",
+            content=b"Field=" + b"x" * 65_537,
+        )
+    assert response.status_code == 403
+
+
+def test_terminal_status_is_verified_and_normalized() -> None:
+    application = FakeTelephonyApplication()
+    fields = {
+        "CallSid": BINDING.provider_call_id,
+        "AccountSid": ACCOUNT_SID,
+        "CallStatus": "completed",
+        "SequenceNumber": "4",
+        "Timestamp": "Sun, 30 Aug 2026 12:05:00 +0000",
+    }
+    headers, body = signed_form("/v1/telephony/twilio/status", fields)
+    with build_client(application) as client:
+        response = client.post(
+            "/v1/telephony/twilio/status", headers=headers, content=body
+        )
+
+    assert response.status_code == 204
+    assert len(application.status_events) == 1
+    assert application.status_events[0].status is OutboundCallStatus.COMPLETED
+
+
+def test_media_bridge_converts_audio_delegates_tool_and_terminates() -> None:
+    application = FakeTelephonyApplication()
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    inbound_payload = base64.b64encode(b"\xff" * 160).decode()
+    with build_client(application) as client:
+        with client.websocket_connect(
+            "/v1/telephony/twilio/media",
+            headers={"X-Twilio-Signature": signature},
+        ) as websocket:
+            websocket.send_json(
+                {"event": "connected", "protocol": "Call", "version": "1.0.0"}
+            )
+            websocket.send_json(
+                {
+                    "event": "start",
+                    "sequenceNumber": "1",
+                    "streamSid": "MZ33333333333333333333333333333333",
+                    "start": {
+                        "accountSid": ACCOUNT_SID,
+                        "streamSid": "MZ33333333333333333333333333333333",
+                        "callSid": BINDING.provider_call_id,
+                        "tracks": ["inbound"],
+                        "mediaFormat": {
+                            "encoding": "audio/x-mulaw",
+                            "sampleRate": 8000,
+                            "channels": 1,
+                        },
+                        "customParameters": {"binding": BINDING.stream_token},
+                    },
+                }
+            )
+            websocket.send_json(
+                {
+                    "event": "media",
+                    "sequenceNumber": "2",
+                    "streamSid": "MZ33333333333333333333333333333333",
+                    "media": {
+                        "track": "inbound",
+                        "chunk": "1",
+                        "payload": inbound_payload,
+                    },
+                }
+            )
+            clear = websocket.receive_json()
+            outbound = websocket.receive_json()
+            websocket.send_json(
+                {
+                    "event": "stop",
+                    "sequenceNumber": "3",
+                    "streamSid": "MZ33333333333333333333333333333333",
+                    "stop": {"accountSid": ACCOUNT_SID},
+                }
+            )
+
+    assert clear == {"event": "clear", "streamSid": "MZ33333333333333333333333333333333"}
+    assert outbound["event"] == "media"
+    assert outbound["streamSid"] == "MZ33333333333333333333333333333333"
+    assert len(application.realtime_gateway.connection.audio[0]) == 160 * 3 * 2
+    assert application.tool_calls[0][0].call_id == "call-tool-001"
+    assert application.tool_calls[0][1].startswith("twilio-tool-")
+    assert len(application.tool_calls[0][1]) == 76
+    assert application.realtime_gateway.connection.tool_outputs[0].call_id == "call-tool-001"
+    assert application.finished == [(BINDING, "COMPLETED")]
+    assert application.realtime_gateway.connection.closed is True
+
+
+def test_media_websocket_rejects_invalid_signature_before_acceptance() -> None:
+    application = FakeTelephonyApplication()
+    with build_client(application) as client:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(
+                "/v1/telephony/twilio/media",
+                headers={"X-Twilio-Signature": "invalid"},
+            ):
+                pass
+    assert error.value.code == 1008
+
+
+def test_media_websocket_rejects_invalid_binding_and_releases_capacity() -> None:
+    application = FakeTelephonyApplication()
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    with build_client(application) as client:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(
+                "/v1/telephony/twilio/media",
+                headers={"X-Twilio-Signature": signature},
+            ) as websocket:
+                send_media_preamble(websocket, binding="invalid-binding")
+                receive_until_close(websocket)
+        assert client.app.state.twilio_media_active is False
+    assert error.value.code == 1008
+    assert application.finished == []
+
+
+@pytest.mark.parametrize(
+    "bad_frame",
+    [
+        "not-json",
+        "x" * 16_385,
+        (
+            '{"event":"media","sequenceNumber":"2",'
+            '"streamSid":"MZ99999999999999999999999999999999",'
+            '"media":{"track":"inbound","chunk":"1","payload":"/w=="}}'
+        ),
+    ],
+)
+def test_media_websocket_rejects_malformed_or_mismatched_frames_and_releases(
+    bad_frame: str,
+) -> None:
+    application = FakeTelephonyApplication()
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    with build_client(application) as client:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(
+                "/v1/telephony/twilio/media",
+                headers={"X-Twilio-Signature": signature},
+            ) as websocket:
+                send_media_preamble(websocket)
+                websocket.send_text(bad_frame)
+                receive_until_close(websocket)
+        assert client.app.state.twilio_media_active is False
+    assert error.value.code == 1008
+    assert application.finished == [(BINDING, "DISCONNECTED")]
+
+
+class DisconnectingWebSocket:
+    def __init__(self) -> None:
+        self._messages = [
+            '{"event":"connected","protocol":"Call","version":"1.0.0"}',
+            json.dumps(media_start()),
+        ]
+
+    async def receive_text(self) -> str:
+        if self._messages:
+            return self._messages.pop(0)
+        raise WebSocketDisconnect(code=1001)
+
+    async def send_json(self, value: object) -> None:
+        del value
+
+
+async def test_forced_websocket_disconnect_cancels_peer_and_closes_once() -> None:
+    application = FakeTelephonyApplication()
+    websocket = DisconnectingWebSocket()
+
+    await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+
+    assert application.realtime_gateway.connection.closed is True
+    assert application.finished == [(BINDING, "DISCONNECTED")]
+
+
+def test_mulaw_conversion_is_bounded_and_preserves_silence_shape() -> None:
+    pcm = twilio_payload_to_pcm24(base64.b64encode(b"\xff" * 160).decode())
+    assert len(pcm) == 960
+    encoded = pcm24_to_twilio_payload(pcm)
+    assert len(base64.b64decode(encoded)) == 160
+    with pytest.raises(ValueError):
+        twilio_payload_to_pcm24("not-base64")
+
+
+@pytest.mark.parametrize(
+    ("mulaw", "sample", "little_endian"),
+    [
+        (0xFF, 0, b"\x00\x00"),
+        (0x80, 32124, b"\x7c\x7d"),
+        (0x00, -32124, b"\x84\x82"),
+    ],
+)
+def test_mulaw_known_vectors_and_pcm_little_endian(
+    mulaw: int, sample: int, little_endian: bytes
+) -> None:
+    payload = base64.b64encode(bytes([mulaw])).decode()
+    decoded = twilio_payload_to_pcm24(payload)
+    assert decoded == little_endian * 3
+    pcm = struct.pack("<hhh", sample, sample, sample)
+    assert base64.b64decode(pcm24_to_twilio_payload(pcm)) == bytes([mulaw])
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "wss://user:password@telephony.example.test/v1/telephony/twilio/media",
+        "wss://telephony.example.test/v1/telephony/twilio/media#fragment",
+        "wss:///v1/telephony/twilio/media",
+        "wss://telephony.example.test:8443/v1/telephony/twilio/media",
+        "wss://telephony.example.test/another-path",
+        "wss://localhost/v1/telephony/twilio/media",
+        "wss://127.0.0.1/v1/telephony/twilio/media",
+        "wss://[::1]/v1/telephony/twilio/media",
+        "wss://singlelabel/v1/telephony/twilio/media",
+        "wss://invalid_host.example/v1/telephony/twilio/media",
+    ],
+)
+def test_twilio_media_url_rejects_noncanonical_values(url: str) -> None:
+    with pytest.raises(ValueError, match="canonical secure media endpoint"):
+        Settings(twilio_media_ws_url=url)
+
+
+def test_sensitive_allowlist_and_stream_token_are_redacted_from_repr() -> None:
+    number = "+15550001111"
+    settings = Settings(twilio_destination_allowlist={"synthetic": number})
+    assert number not in repr(settings)
+    assert "twilio_destination_allowlist" not in settings.model_dump()
+    assert BINDING.stream_token not in repr(BINDING)
+
+
+async def test_live_runtime_validates_realtime_session_configuration_at_construction() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://demo:demo@localhost/demo",
+        openai_api_key="synthetic-openai-key",
+        twilio_account_sid=ACCOUNT_SID,
+        twilio_api_key_sid="SK44444444444444444444444444444444",
+        twilio_api_key_secret="synthetic-api-key-secret",
+        twilio_from_e164="+15550001111",
+        twilio_destination_allowlist={"synthetic": "+15550002222"},
+        twilio_public_base_url=BASE_URL,
+        twilio_media_ws_url=MEDIA_URL,
+        openai_realtime_safety_identifier_key="",
+    )
+    async with httpx.AsyncClient() as client:
+        with pytest.raises(ValueError, match="safety identifier"):
+            create_live_telephony_application(
+                settings,
+                RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+                client,
+            )
+
+
+class FakeContracts:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object], str | None]] = []
+
+    async def execute(self, operation_id, payload, idempotency_key):  # type: ignore[no-untyped-def]
+        self.calls.append((operation_id, payload, idempotency_key))
+        return ContractResult({"quote_id": "synthetic-quote"})
+
+    async def get_evidence_audio(self, evidence_id):  # type: ignore[no-untyped-def]
+        raise AssertionError(evidence_id)
+
+
+async def test_tool_delegator_allows_quote_but_rejects_commitment_authority() -> None:
+    contracts = FakeContracts()
+    delegator = VoltaToolDelegator(contracts)  # type: ignore[arg-type]
+    quote = RealtimeToolCallRequested(
+        event_id="event-quote",
+        item_id="item-quote",
+        call_id="call-quote",
+        name="record_quote",
+        arguments={"call_id": str(CALL_SESSION_ID), "amount_minor": 880000},
+    )
+    result = await delegator.execute(quote, "twilio-idempotency-quote")
+    assert result == {"quote_id": "synthetic-quote"}
+    assert contracts.calls[0][0] == "record_quote"
+    assert contracts.calls[0][1] == {
+        "call_id": str(CALL_SESSION_ID),
+        "body": {"amount_minor": 880000},
+    }
+
+    commitment = RealtimeToolCallRequested(
+        event_id="event-commitment",
+        item_id="item-commitment",
+        call_id="call-commitment",
+        name="create_candidate_commitment",
+        arguments={},
+    )
+    with pytest.raises(ValueError, match="unsupported"):
+        await delegator.execute(commitment, "twilio-idempotency-commitment")
+
+
+def test_duplicate_tool_event_uses_same_bounded_idempotency_key() -> None:
+    event = RealtimeToolCallRequested(
+        event_id="event-quote-duplicate",
+        item_id="item-quote-duplicate",
+        call_id="call-quote-duplicate",
+        name="record_quote",
+        arguments={"call_id": str(CALL_SESSION_ID), "amount_minor": 880000},
+    )
+    first = tool_idempotency_key(BINDING, event)
+    duplicate = tool_idempotency_key(BINDING, event)
+    assert first == duplicate
+    assert first.startswith("twilio-tool-") and len(first) == 76
+
+
+class RuntimeContracts(FakeContracts):
+    def __init__(self, call_id: UUID | None) -> None:
+        super().__init__()
+        self.call_id = call_id
+
+    async def execute(self, operation_id, payload, idempotency_key):  # type: ignore[no-untyped-def]
+        self.calls.append((operation_id, payload, idempotency_key))
+        if operation_id == "get_operation":
+            sessions = [] if self.call_id is None else [{"call_id": str(self.call_id)}]
+            return ContractResult({"operation_id": str(OPERATION_ID), "sessions": sessions})
+        return ContractResult({"quote_id": "synthetic-quote"})
+
+
+class RuntimeGateway:
+    def __init__(self) -> None:
+        self.requests: list[OutboundCallRequest] = []
+
+    async def create_call(self, request: OutboundCallRequest) -> OutboundCall:
+        self.requests.append(request)
+        return OutboundCall(
+            call_session_id=request.call_session_id,
+            provider_call_id=BINDING.provider_call_id,
+            status=OutboundCallStatus.QUEUED,
+            created_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
+        )
+
+
+class RuntimeAttemptStore:
+    def __init__(self) -> None:
+        self.completions: list[tuple[object, ...]] = []
+
+    async def complete(self, *values: object) -> None:
+        self.completions.append(values)
+
+
+class RuntimeEngine:
+    async def dispose(self) -> None:
+        return None
+
+
+def runtime_request() -> OutboundCallRequest:
+    return OutboundCallRequest(
+        operation_id=OPERATION_ID,
+        call_session_id=CALL_SESSION_ID,
+        correlation_id=UUID("00000000-0000-4000-8000-000000000015"),
+        idempotency_key="runtime-outbound-001",
+        destination_label="synthetic-carrier-one",
+        authorization=OutboundCallAuthorization(
+            actor_id="coordinator-demo",
+            authorized_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
+            recording_mode=RecordingMode.DISABLED,
+        ),
+    )
+
+
+async def test_live_runtime_validates_call_membership_before_provider_io() -> None:
+    contracts = RuntimeContracts(call_id=None)
+    gateway = RuntimeGateway()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=contracts,  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+
+    with pytest.raises(OutboundCallAuthorizationError):
+        await runtime.create_outbound_call(runtime_request())
+    assert gateway.requests == []
+
+
+async def test_live_runtime_claims_stream_once_and_persists_terminal_status() -> None:
+    contracts = RuntimeContracts(call_id=CALL_SESSION_ID)
+    gateway = RuntimeGateway()
+    store = RuntimeAttemptStore()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=contracts,  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=store,  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    first = await runtime.create_outbound_call(runtime_request())
+    replay = await runtime.create_outbound_call(runtime_request())
+    assert replay == first
+    assert len(gateway.requests) == 1
+    conflicting = replace(runtime_request(), destination_label="synthetic-carrier-two")
+    with pytest.raises(OutboundCallIdempotencyConflict):
+        await runtime.create_outbound_call(conflicting)
+    assert len(gateway.requests) == 1
+    binding = await runtime.binding_for_voice(BINDING.provider_call_id)
+    assert binding is not None
+    assert await runtime.binding_for_stream(binding.stream_token) == binding
+    assert await runtime.binding_for_stream(binding.stream_token) is None
+    await runtime.stream_finished(binding, "COMPLETED")
+    assert await runtime.binding_for_stream(binding.stream_token) is None
+
+    event = OutboundCallStatusEvent(
+        provider_event_id="status-event-1",
+        provider_call_id=BINDING.provider_call_id,
+        status=OutboundCallStatus.COMPLETED,
+        sequence_number=1,
+        observed_at=datetime(2026, 8, 30, 12, 5, tzinfo=UTC),
+    )
+    await runtime.observe_status(event)
+    await runtime.observe_status(event)
+    await runtime.observe_status(
+        OutboundCallStatusEvent(
+            provider_event_id="status-event-2",
+            provider_call_id=BINDING.provider_call_id,
+            status=OutboundCallStatus.RINGING,
+            sequence_number=2,
+            observed_at=datetime(2026, 8, 30, 12, 6, tzinfo=UTC),
+        )
+    )
+    assert len(store.completions) == 3
+    assert all(
+        completion[2].status is OutboundCallStatus.COMPLETED
+        for completion in store.completions
+    )

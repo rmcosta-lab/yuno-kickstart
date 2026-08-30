@@ -469,17 +469,20 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             assert "401" in operation["responses"]
             if operation["operationId"] in {
                 "create_realtime_client_secret",
+                "create_outbound_call",
                 "get_evidence_audio",
             }:
                 assert "501" not in operation["responses"]
-                assert "requestBody" not in operation
                 if operation["operationId"] == "create_realtime_client_secret":
+                    assert "requestBody" not in operation
                     assert operation["responses"]["401"]["headers"]["WWW-Authenticate"][
                         "schema"
                     ] == {"type": "string", "enum": ["Bearer"]}
-                assert all(
-                    item["name"] != "Idempotency-Key" for item in operation.get("parameters", [])
-                )
+                if operation["operationId"] != "create_outbound_call":
+                    assert all(
+                        item["name"] != "Idempotency-Key"
+                        for item in operation.get("parameters", [])
+                    )
                 continue
             assert "501" in operation["responses"]
             if method == "post":
@@ -495,9 +498,14 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             else:
                 assert "429" not in operation["responses"]
 
-    assert set(operations) == {*ROUTES, "create_realtime_client_secret", "get_evidence_audio"}
-    assert len(operations) == 16
-    assert len(set(operations)) == 16
+    assert set(operations) == {
+        *ROUTES,
+        "create_realtime_client_secret",
+        "create_outbound_call",
+        "get_evidence_audio",
+    }
+    assert len(operations) == 17
+    assert len(set(operations)) == 17
     assert "example" not in json.dumps(schema["components"]["securitySchemes"]["HTTPBearer"])
     error_properties = schema["components"]["schemas"]["ApiErrorResponse"]["properties"]
     assert "current_draft_version" in error_properties
@@ -531,6 +539,7 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
     for operation_id, operation in operations.items():
         versionless_operations = {
             "create_operation_draft",
+            "create_outbound_call",
             "approve_operation",
             "create_realtime_client_secret",
             "get_evidence_audio",
