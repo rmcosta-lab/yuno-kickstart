@@ -2,9 +2,9 @@
 
 ## Planning and eligibility
 
-- [ ] Fases 12, 14, and 24 remain merged with their gate evidence recorded.
-- [ ] No conflicting phase or competing remote `phase/15-expose-evidence-recovery-routes` claim exists.
-- [ ] The temporary application/query projection checkpoint is resolved before implementation proceeds past the integration map.
+- [x] Fases 12, 14, and 24 remain merged with their gate evidence recorded.
+- [x] No conflicting phase or competing remote `phase/15-expose-evidence-recovery-routes` claim exists.
+- [ ] The temporary application/query projection checkpoint is resolved before implementation proceeds past the integration map. Blocked: specs pull request #19 must merge, then Fase 25 must complete and merge.
 
 ## API behavior
 
@@ -64,3 +64,12 @@
 - Yuno, OpenAI, Twilio, webhook, or credentialed sandbox tests: no provider integration or payment/telephony mutation.
 - Supabase advisors and remote migration: the phase uses the existing local PostgreSQL boundary and changes no schema.
 - Deployment or production validation: explicitly outside scope.
+
+## Recorded checkpoint evidence — 2026-08-30
+
+- Remote coordination: the Fase 15 worktree was clean and exactly synchronized with `origin/phase/15-expose-evidence-recovery-routes`; dependencies 12, 14, and 24 were merged with validation recorded; no Fase 15 pull request, competing claim, tracking Issue, or declared conflict existed.
+- Baseline `uv run pytest api/tests -q`: passed all collected API tests except one expected skip, with one pre-existing Starlette `httpx` deprecation warning.
+- Two independent read-only subagents inspected the API contract and backend application/persistence boundary. Both concluded that the Fase 15 gate cannot be satisfied safely in `api/**` alone.
+- Confirmed blockers: missing durable recap/brief/recovery response facts; missing complete operation/audit projection and list queries; missing atomic fingerprinted idempotency/replay for six mutations; incompatible automatic-escalation and recovery-evidence projections; and no backend facade for the required mappings.
+- `attach_commitment_evidence` is already integrated with durable replay and remains unchanged. The other dependent operations retain the honest `501 CONTRACT_NOT_IMPLEMENTED` fallback.
+- The user approved a supporting backend phase. Specs pull request #19 adds Fase 25 and the dependency from Fase 15. No implementation, provider call, deployment, production access, remote migration, financial operation, contract change, generated-file edit, or force-push occurred.

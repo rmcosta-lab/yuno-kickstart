@@ -35,10 +35,14 @@ Fase 24 completed the three missing recovery mutation services. The merged backe
 
 Implementation therefore pauses after task group 2 if no existing backend boundary satisfies the requirements. The coordinator must then use `manage-shared-specs` to add the smallest backend prerequisite, publish and merge it, and refresh this branch from `origin/main`. This wait does not authorize direct repository access from API code or a change to the accepted HTTP contract.
 
+The task-group-2 audit on 2026-08-30 confirmed that the boundary is absent. Two independent read-only subagents found the same blockers: missing durable HTTP response facts for recaps, briefs, recoveries, post-contact escalations, and notifications; incomplete operation/audit projections; no atomic fingerprinted idempotency for the six remaining mutations; and no safe backend-owned recovery fixture/evidence projection that the API can reuse without inventing state. `attach_commitment_evidence` remains the only Fase 15 operation already integrated honestly.
+
+The user approved the supporting-phase path. Pull request [#19](https://github.com/rmcosta-lab/yuno-kickstart/pull/19) adds Fase 25 — Complete the evidence and recovery application facade — dependent on Fases 10 and 24, and makes Fase 15 depend on it. Fase 15 implementation remains paused until that specification merges, Fase 25 is started, implemented, validated, and merged, and this branch refreshes from the resulting `origin/main`.
+
 ## Shared decisions and branch refresh
 
 - No mission, stack, roadmap, or challenge-plan change is carried by Fase 15.
-- If the query/idempotency checkpoint requires a supporting phase, that separate specs pull request records the new dependency and the Fase 15 plan records the wait until merge.
+- The query/idempotency checkpoint requires Fase 25; the separate specs pull request #19 records the dependency while this plan records the temporary wait.
 - Refresh `origin/main`, the declared dependencies, remote phase refs, and pull requests immediately before implementation publication and again before review.
 
 ## Validation strategy
@@ -52,4 +56,3 @@ Implementation therefore pauses after task group 2 if no existing backend bounda
 ## Explicit limits
 
 No deployment, production access, provider call, live financial or telephony mutation, remote database migration, frontend change, backend change, contract/generated change, or unrelated remote action is authorized.
-
