@@ -30,30 +30,30 @@
 - [x] Focused handoff tests prove explicit authorization, bounded context, duplicate-safe request,
       verified callback-only `JOINED`, remote-leg continuity evidence, AI speech/tool fencing,
       timeout/failure safe states, and redaction.
-- [ ] Terminal projections prove exactly one `ACTIVE` winner, retained `SUPERSEDED` history,
+- [x] Terminal projections prove exactly one `ACTIVE` winner, retained `SUPERSEDED` history,
       idempotent `SIMULATED` recap for the replacement winner, structured brief, playable evidence,
       and correlated audit order.
 
 ## Contracts and repository checks
 
 - [ ] `uv run ruff check .` passes from the repository root.
-- [ ] `uv run pytest` passes from the repository root with provider tests mocked or explicitly
+- [x] `uv run pytest` passes from the repository root with provider tests mocked or explicitly
       deselected when credentialed.
 - [ ] `make python-check` passes, including the focused API/WebSocket concurrency suite.
-- [ ] `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass from `frontend/`.
-- [ ] `make generate` completes and leaves `api/openapi.json` and
+- [x] `pnpm lint`, `pnpm typecheck`, and `pnpm build` pass from `frontend/`.
+- [x] `make generate` completes and leaves `api/openapi.json` and
       `frontend/src/lib/api/generated/**` without semantic change.
 - [ ] `make frontend-check` and `make check` pass on the final implementation/publication SHA; the
       full gate is not inherited from a pre-reconciliation commit.
       `make frontend-check` passed; `make check` remains blocked by the repository-wide Python
       formatting failure recorded below.
-- [ ] `git diff --check`, tracked/untracked review, generated-diff review, and scans for secrets,
+- [x] `git diff --check`, tracked/untracked review, generated-diff review, and scans for secrets,
       E.164 values, participant data, raw audio/transcripts, provider payloads, private paths, and
       recording locators pass.
 
 ## Browser and submission preflight
 
-- [ ] The canonical clean fixture and three carrier sessions render through generated types; start,
+- [x] The canonical clean fixture and three carrier sessions render through generated types; start,
       live, ended, failed, recovery, handoff, evidence, `SIMULATED` recap, brief, audit, and fallback
       states remain truthful.
 - [ ] Desktop and mobile browser passes cover keyboard activation, visible focus, announcements,
@@ -93,28 +93,47 @@
 - [ ] Temporary processes/tunnels stop, authorized provider settings are restored, ambiguous
       mutations are reconciled without new idempotency keys, logs/charges are reviewed, and the
       agreed private-audio retention or deletion action is completed.
-- [ ] Private audio, locators, credentials, phone numbers, participant data, signatures, and raw
+- [x] Private audio, locators, credentials, phone numbers, participant data, signatures, and raw
       provider/model payloads remain outside Git and public artifacts.
-- [ ] If capacity, account restrictions, participant availability, consent, correlation, recovery,
+- [x] If capacity, account restrictions, participant availability, consent, correlation, recovery,
       evidence, or handoff prevents any required outcome, the browser/text/private-recording fallback
       is shown and Phase 22 is recorded as incomplete rather than challenge-verified.
 - [ ] PASS is declared only when the same authorized rehearsal satisfies all unchanged roadmap gate
       clauses and the final public artifacts report no external recap delivery or workflow-only
       concurrency as challenge evidence.
 
-## Executed evidence and current blockers
+## Deterministic execution evidence — 2026-08-30
 
-- `uv run pytest api/tests/test_telephony_routes.py -q`: passed, 76 tests, with one upstream
-  Starlette deprecation warning.
-- `uv run ruff check api/app/main.py api/app/routers/telephony.py api/app/telephony/bridge.py
-  api/app/telephony/service.py api/tests/test_telephony_routes.py`: passed.
-- `make frontend-check`: passed lint, typecheck, and production build.
-- `git diff --check`: passed before the validation update.
-- `make python-check`: blocked before tests by a pre-existing Ruff import-order failure in
-  `backend/src/yuno_backend/volta/telephony/__init__.py`, which is outside the Phase 22 diff and
-  ownership.
-- Safe configuration inspection found server credentials, three outbound labels, and one inbound
-  label, but no non-placeholder public HTTPS or secure-WebSocket ingress. No live call, participant
-  contact, recording, deployment, provider mutation, or credentialed trial was executed.
-- The credentialed overlap, inbound recovery, handoff, browser, timed-artifact, and cleanup gates
-  remain unchecked. Phase 22 is not complete and Phase 27 remains blocked by its dependency.
+- The branch was rebased onto `origin/main` at `5082ab3` before the final deterministic run. No
+  declared dependency or conflict blocked implementation.
+- `DATABASE_URL= uv run ruff check api` passed. The focused API route suite passed with 76 tests,
+  including three-call capacity, concurrent replay, per-call status isolation, one-shot outbound and
+  inbound stream claims, late inbound callback protection, handoff fencing, and cleanup races.
+- `DATABASE_URL= uv run pytest` passed with 720 tests, 48 environment-dependent skips, and two
+  credentialed tests deselected by repository configuration. No real provider mutation ran.
+- `make generate` completed and left `api/openapi.json` plus the generated Orval client unchanged.
+- `make frontend-check` passed lint, TypeScript, and the production Next.js build. The focused
+  outbound, recovery, and human-handoff Playwright run passed all five Chromium cases after its
+  stale automatic-auth and readiness mocks were reconciled with current `origin/main`.
+- Browser Plugin inspection of `/sessions` returned HTTP 200, rendered the automatic-auth fixture,
+  fallback and local diagnostic states, and showed no framework overlay or console warning/error.
+  Only local resources were observed; no API provider, PSTN, or participant interaction occurred.
+- `git diff --check`, generated-diff review, tracked/untracked review, and the redaction scan passed.
+  The implementation contains no number, credential, signature, participant data, raw media,
+  transcript, provider payload, or private locator.
+
+## Open blockers and incomplete verdict
+
+- `uv run ruff check .`, `make python-check`, and therefore `make check` remain blocked by the
+  pre-existing Ruff `I001` import-order error in
+  `backend/src/yuno_backend/volta/telephony/__init__.py`, which is unchanged from `origin/main` and
+  outside this phase's bounded API/test ownership. The complete pytest and frontend portions pass
+  when run independently.
+- No separate authorization record was supplied for destinations, participants, public ingress,
+  recording, provider configuration, duration/cost, retention, or cleanup. Consequently no Twilio
+  account check, three-call PSTN overlap, signed live inbound recovery, live `JOINED` takeover,
+  private recording, terminal provider evidence, or timed clean-environment rehearsal ran.
+- Browser voice, text, and private-recording procedures remain fallbacks only. They do not satisfy
+  the P0.1 roadmap gate. Phase 22 is implemented and deterministically preflighted but remains
+  **incomplete, not challenge-verified**, until every separately authorized live item and the root
+  repository gate pass on the publication SHA.
