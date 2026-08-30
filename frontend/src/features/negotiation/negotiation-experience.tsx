@@ -1,7 +1,6 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Database,
   FlaskConical,
@@ -30,8 +29,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  getGetOperationQueryKey,
   getGetOperationAuditQueryKey,
+  getGetOperationQueryKey,
   useAttachCommitmentEvidence,
   useCreateCandidateCommitment,
   useGetOperation,
@@ -45,6 +44,7 @@ import {
 import {
   ApiErrorCode,
   BrowserChannel,
+  type CommitmentEvidenceResponse,
   CommitmentDisposition,
   type AuditTimelineResponse,
   type CommitmentResponse,
@@ -59,6 +59,11 @@ import {
 
 import { createDemoNegotiationExperienceSource } from "./demo-source";
 import { ComparisonView, SessionsView } from "./presentation";
+import {
+  BrowserVoiceExperience,
+  RealtimeDiagnosticPreview,
+  type AuthoritativeVoiceState,
+} from "../realtime";
 import type {
   DemoScenarioId,
   NegotiationExperienceSnapshot,
@@ -712,6 +717,7 @@ function CommitmentTerminal({
   auditError,
   auditPending,
   onRetryAudit,
+  onEvidenceAttached,
   onStateChanged,
   operation,
 }: {
@@ -719,6 +725,7 @@ function CommitmentTerminal({
   auditError: unknown;
   auditPending: boolean;
   onRetryAudit: () => void;
+  onEvidenceAttached: (evidence: CommitmentEvidenceResponse) => void;
   onStateChanged: () => Promise<unknown>;
   operation: OperationResponse;
 }) {
@@ -927,9 +934,10 @@ function CommitmentTerminal({
             setEvidenceAttempt({ completed: true, key, signature });
           }
         },
-        onSuccess: async () => {
+        onSuccess: async (response) => {
           setEvidenceAttempt({ completed: true, key, signature });
           setEvidenceForCallId(selectedQuote.call_id);
+          onEvidenceAttached(response.data);
           await onStateChanged();
         },
       },
@@ -1229,11 +1237,21 @@ function LiveOperation({
   auditPending: boolean;
   onRetryAudit: () => void;
   operation: OperationResponse;
-  onStateChanged: () => Promise<unknown>;
+  onStateChanged: () => Promise<AuthoritativeVoiceState>;
   surface: NegotiationSurface;
 }) {
+  const [attachedEvidence, setAttachedEvidence] =
+    useState<CommitmentEvidenceResponse | null>(null);
+
   return (
     <div className="space-y-6">
+      <BrowserVoiceExperience
+        operation={operation}
+        audit={audit}
+        attachedEvidence={attachedEvidence}
+        refreshAuthoritativeState={onStateChanged}
+      />
+
       <div className="grid gap-5 xl:grid-cols-2">
         <StartNegotiationControl
           operation={operation}
@@ -1256,6 +1274,7 @@ function LiveOperation({
             auditError={auditError}
             auditPending={auditPending}
             onRetryAudit={onRetryAudit}
+            onEvidenceAttached={setAttachedEvidence}
             onStateChanged={onStateChanged}
             operation={operation}
           />
@@ -1355,6 +1374,7 @@ function SimulatedPreview({
         surface={surface}
         onRetry={() => setRetrySnapshot(source.retry(scenarioId))}
       />
+      <RealtimeDiagnosticPreview />
     </section>
   );
 }
@@ -1366,7 +1386,6 @@ export function NegotiationExperience({
 }: NegotiationExperienceProps) {
   const auth = useDemoAuth();
   const handoffOperationId = useCurrentOperationId();
-  const queryClient = useQueryClient();
   const lookupLabelId = useId();
   const [operationIdInput, setOperationIdInput] = useState("");
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
@@ -1401,14 +1420,17 @@ export function NegotiationExperience({
   };
 
   const refreshOperation = async () => {
-    return Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: getGetOperationQueryKey(operationId),
-      }),
-      queryClient.invalidateQueries({
-        queryKey: getGetOperationAuditQueryKey(operationId),
-      }),
+    const [operationResult, auditResult] = await Promise.all([
+      operationQuery.refetch(),
+      surface === "comparison" ? auditQuery.refetch() : Promise.resolve(null),
     ]);
+    if (!operationResult.data) {
+      throw new Error("Authoritative operation refresh failed");
+    }
+    return {
+      operation: operationResult.data.data,
+      audit: auditResult?.data?.data,
+    } satisfies AuthoritativeVoiceState;
   };
 
   return (
@@ -1517,6 +1539,7 @@ export function NegotiationExperience({
 
       {auth.connected && operationQuery.data ? (
         <LiveOperation
+          key={operationQuery.data.data.operation_id}
           audit={auditQuery.data?.data}
           auditError={surface === "comparison" ? auditQuery.error : null}
           auditPending={

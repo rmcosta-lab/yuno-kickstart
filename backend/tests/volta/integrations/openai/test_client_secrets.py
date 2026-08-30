@@ -148,6 +148,7 @@ async def test_posts_exact_narrow_session_and_keeps_client_caller_owned() -> Non
                         "format": {"type": "audio/pcm", "rate": 24000},
                         "turn_detection": {
                             "type": "server_vad",
+                            "threshold": 0.85,
                             "create_response": True,
                             "interrupt_response": True,
                         },
