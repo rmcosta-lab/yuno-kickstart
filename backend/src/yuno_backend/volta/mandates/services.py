@@ -1,6 +1,7 @@
 """Deterministic draft, approval, and mandate policy services."""
 
 from collections.abc import Iterable
+from datetime import date
 
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
 from yuno_backend.volta.idempotency import (
@@ -317,6 +318,41 @@ class ApproveOperationService:
 
 
 class MandatePolicy:
+    @classmethod
+    def require_valid_mandate(cls, mandate: Mandate, pickup_date: date) -> None:
+        """Reject an invalid active mandate before a persistence mutation."""
+        reasons: list[str] = []
+        if mandate.maximum_amount.amount < 0:
+            reasons.append("amount_must_be_non_negative")
+        if mandate.maximum_amount.currency != "MXN":
+            reasons.append("currency_unsupported")
+        if mandate.pickup_window.end_date < mandate.pickup_window.start_date:
+            reasons.append("pickup_window_invalid_order")
+        if not (
+            mandate.pickup_window.start_date
+            <= pickup_date
+            <= mandate.pickup_window.end_date
+        ):
+            reasons.append("pickup_date_outside_mandate_window")
+        for field, conditions in (
+            ("allowed_conditions", mandate.allowed_conditions),
+            ("escalation_conditions", mandate.escalation_conditions),
+        ):
+            if len(conditions) > MAX_CONDITIONS:
+                reasons.append(f"{field}_too_many")
+            if any(
+                not isinstance(condition, str) or not condition.strip()
+                for condition in conditions
+            ):
+                reasons.append(f"{field}_contains_empty")
+            if any(
+                isinstance(condition, str) and len(condition) > MAX_CONDITION_LENGTH
+                for condition in conditions
+            ):
+                reasons.append(f"{field}_contains_too_long")
+        if reasons:
+            raise MandateConflict(mandate.operation_id, mandate.version, tuple(reasons))
+
     @staticmethod
     def evaluate(mandate: Mandate, command: CheckMandateCommand) -> MandateDecision:
         reasons: list[str] = []

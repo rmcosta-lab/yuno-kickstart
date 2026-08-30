@@ -21,7 +21,7 @@ Complete the typed backend application boundary that Fase 15 needs for the three
 - `AcknowledgeNotificationCommand` and `AcknowledgeNotificationService` for an existing notification. The first acknowledgement stores a bounded actor and aware UTC timestamp; an identical retry returns the stored notification without a second state transition or audit event.
 - Additive recovery models needed by the accepted response boundary: structured escalation context and notification recovery-decision state, correlation, acknowledgement actor, and acknowledgement timestamp.
 - Repository-port and SQLAlchemy changes for inserting and activating immutable mandates, updating notifications, resolving call sessions, and round-tripping the extended recovery values.
-- One additive, reversible Alembic migration for the new recovery context and acknowledgement columns plus constraints and indexes demonstrated by the queries.
+- One additive Alembic migration for the new recovery context and acknowledgement columns plus constraints and indexes demonstrated by the queries. A schema-only or compatible-data downgrade is reversible; a downgrade with phase-24-only facts must fail before data-destructive DDL and require an approved reconciliation procedure.
 - Safe typed exceptions for missing resources, stale versions, wrong-operation relationships, conflicting acknowledgement, invalid or already-resolved escalation state, and invalid bounded context.
 - Deterministic unit tests and isolated PostgreSQL tests for success, replay, stale state, missing/mismatched resources, constraints, migration reversal, and rollback.
 - Allowlisted audit events for mandate replacement, explicit escalation creation, and notification acknowledgement.
@@ -76,7 +76,7 @@ All public exports are explicit. Recovery, mandate, and application modules impo
 - Missing, foreign, resolved, or stale replacement input raises a safe typed exception and leaves the active mandate, escalation, operation version, status history, and audit trail unchanged.
 - Explicit escalation round-trips its bounded conflict, attempted alternatives, recommended action, call/operation/commitment context, correlation ID, and timestamps while leaving every commitment byte-for-byte unchanged.
 - Notification acknowledgement stores the first actor and timestamp; same-actor retries return the stored value without another operation transition or audit event; a different actor cannot overwrite it.
-- PostgreSQL migration upgrade, downgrade, and re-upgrade pass; repositories round-trip every new field; constraints reject partial acknowledgement state, invalid relationships, and unsafe bounds; injected failures roll back all writes.
+- PostgreSQL migration upgrade, compatible-data downgrade, and re-upgrade pass; a downgrade with phase-24-only facts fails before DDL and preserves the current revision; repositories round-trip every new field; constraints reject partial acknowledgement state, invalid relationships, and unsafe bounds; injected failures roll back all writes.
 - `uv run ruff check .`, `uv run pytest`, focused PostgreSQL-backed tests, `make python-check`, and `git diff --check` pass. Diff review confirms no FastAPI/Pydantic import in backend application code, no API/generated/frontend change, no secret/personal/provider payload, and no unrelated edit.
 
 ## Risks and fallback

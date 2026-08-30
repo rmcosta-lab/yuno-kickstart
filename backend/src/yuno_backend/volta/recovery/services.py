@@ -9,6 +9,7 @@ from uuid import UUID
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
 from yuno_backend.volta.mandates.commands import CheckMandateCommand
 from yuno_backend.volta.mandates.models import (
+    Mandate,
     MandateAction,
     Money,
     Operation,
@@ -17,7 +18,7 @@ from yuno_backend.volta.mandates.models import (
 )
 from yuno_backend.volta.mandates.repositories import Clock, IdGenerator
 from yuno_backend.volta.mandates.services import MandatePolicy
-from yuno_backend.volta.negotiations.errors import OperationNotFound
+from yuno_backend.volta.negotiations.errors import CallSessionNotFound, OperationNotFound
 from yuno_backend.volta.negotiations.models import (
     Commitment,
     CommitmentDisposition,
@@ -27,26 +28,42 @@ from yuno_backend.volta.negotiations.models import (
     QuoteTerms,
 )
 from yuno_backend.volta.recovery.commands import (
+    AcknowledgeNotificationCommand,
+    CreateEscalationCommand,
+    ReplaceMandateCommand,
     ResumeAfterEscalationCommand,
     SimulateInboundRecoveryCommand,
 )
 from yuno_backend.volta.recovery.errors import (
     CommitmentNotFound,
+    EscalationAlreadyResolved,
+    EscalationContextConflict,
     EscalationNotFound,
     InvalidCommitmentDisposition,
     MandateVersionNotAdvanced,
+    NotificationAlreadyAcknowledged,
+    NotificationNotFound,
     OperationBlockedByEscalation,
     StaleOperationVersion,
 )
 from yuno_backend.volta.recovery.models import (
+    EscalationContext,
     Notification,
     PostContactEscalation,
     RecoveryAttempt,
+    RecoveryDecision,
+    RecoveryDecisionState,
     RecoveryOutcome,
 )
 from yuno_backend.volta.recovery.repositories import OperationUnitOfWork
 
-__all__ = ["ResumeAfterEscalationService", "SimulateInboundRecoveryService"]
+__all__ = [
+    "AcknowledgeNotificationService",
+    "CreateEscalationService",
+    "ReplaceMandateService",
+    "ResumeAfterEscalationService",
+    "SimulateInboundRecoveryService",
+]
 
 _QUOTE_VALIDITY = timedelta(hours=1)
 
@@ -88,17 +105,234 @@ def _audit(
     event_type: str,
     now: datetime,
     correlation_id: UUID,
+    *,
+    actor_kind: AuditActorKind = AuditActorKind.SYSTEM,
 ) -> AuditEvent:
     return AuditEvent(
         event_id=ids.new_id(),
         operation_id=operation.id,
         operation_version=operation.version,
-        actor_kind=AuditActorKind.SYSTEM,
+        actor_kind=actor_kind,
         event_type=event_type,
         occurred_at=now,
         correlation_id=correlation_id,
         metadata={},
     )
+
+
+def _decision_state(operation: Operation, commitment: Commitment | None) -> RecoveryDecisionState:
+    return RecoveryDecisionState(
+        operation_version=operation.version,
+        operation_status=operation.status,
+        active_commitment_id=None if commitment is None else commitment.id,
+        carrier_id=None if commitment is None else commitment.carrier_id,
+        agreed_terms=None if commitment is None else commitment.agreed_terms,
+    )
+
+
+class ReplaceMandateService:
+    def __init__(
+        self,
+        unit_of_work: OperationUnitOfWork,
+        mandate_policy: MandatePolicy,
+        clock: Clock,
+        id_generator: IdGenerator,
+    ) -> None:
+        self._uow = unit_of_work
+        self._policy = mandate_policy
+        self._clock = clock
+        self._ids = id_generator
+
+    async def replace(self, command: ReplaceMandateCommand) -> Operation:
+        async with self._uow:
+            try:
+                operation = await _locked_operation(self._uow, command.operation_id)
+                _check_version(operation, command.expected_operation_version)
+                escalation = await self._uow.post_contact_escalations.get(
+                    command.resolved_escalation_id
+                )
+                if escalation is None or escalation.operation_id != operation.id:
+                    raise EscalationNotFound(command.resolved_escalation_id)
+                if escalation.resolved:
+                    raise EscalationAlreadyResolved(escalation.id)
+
+                now = self._clock.now()
+                mandate = Mandate(
+                    id=self._ids.new_id(),
+                    operation_id=operation.id,
+                    version=operation.mandate.version + 1,
+                    maximum_amount=command.maximum_amount,
+                    pickup_window=command.pickup_window,
+                    allowed_conditions=command.allowed_conditions,
+                    escalation_conditions=command.escalation_conditions,
+                    authorized_actions=operation.mandate.authorized_actions,
+                    approval_actor=command.approval_actor,
+                    approved_at=now,
+                )
+                self._policy.require_valid_mandate(mandate, operation.pickup_date)
+                self._policy.require_allowed(
+                    mandate,
+                    CheckMandateCommand(
+                        operation.id,
+                        mandate.version,
+                        MandateAction.NEGOTIATE,
+                        mandate.maximum_amount,
+                        mandate.pickup_window.start_date,
+                        (),
+                    ),
+                )
+                active = await self._uow.commitments.get_active(operation.id)
+                status = (
+                    OperationStatus.COMMITTED
+                    if active is not None
+                    else OperationStatus.NEGOTIATING
+                )
+                updated = _transition(
+                    replace(operation, mandate=mandate), status, now, self._ids.new_id()
+                )
+                resolved = replace(escalation, resolved=True, resolved_at=now)
+                await self._uow.operations.replace_mandate(updated)
+                await self._uow.post_contact_escalations.update(resolved)
+                for event_type in ("MANDATE_REPLACED", "ESCALATION_RESOLVED"):
+                    await self._uow.audit_events.add(
+                        _audit(
+                            self._ids,
+                            updated,
+                            event_type,
+                            now,
+                            command.correlation_id,
+                            actor_kind=AuditActorKind.COORDINATOR,
+                        )
+                    )
+                await self._uow.commit()
+                return updated
+            except Exception:
+                await self._uow.rollback()
+                raise
+
+
+class CreateEscalationService:
+    def __init__(
+        self,
+        unit_of_work: OperationUnitOfWork,
+        clock: Clock,
+        id_generator: IdGenerator,
+    ) -> None:
+        self._uow = unit_of_work
+        self._clock = clock
+        self._ids = id_generator
+
+    async def create(self, command: CreateEscalationCommand) -> PostContactEscalation:
+        async with self._uow:
+            try:
+                negotiation = await self._uow.negotiations.get_by_call(command.call_id)
+                if negotiation is None:
+                    raise CallSessionNotFound(command.call_id)
+                operation = await _locked_operation(self._uow, negotiation.operation_id)
+                _check_version(operation, command.expected_operation_version)
+                unresolved = await self._uow.post_contact_escalations.get_unresolved_by_operation(
+                    operation.id
+                )
+                if unresolved is not None:
+                    raise EscalationContextConflict(operation.id, unresolved.id)
+                now = self._clock.now()
+                active = await self._uow.commitments.get_active(operation.id)
+                escalation = PostContactEscalation(
+                    id=self._ids.new_id(),
+                    operation_id=operation.id,
+                    commitment_id=(
+                        active.id
+                        if active is not None and active.call_id == command.call_id
+                        else None
+                    ),
+                    reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                    operation_version=operation.version,
+                    mandate_version=operation.mandate.version,
+                    resolved=False,
+                    correlation_id=command.correlation_id,
+                    created_at=now,
+                    call_id=command.call_id,
+                    context=EscalationContext(
+                        command.conflict,
+                        command.attempted_alternatives,
+                        command.recommended_action,
+                    ),
+                )
+                await self._uow.post_contact_escalations.add(escalation)
+                updated = _transition(operation, OperationStatus.ESCALATED, now, self._ids.new_id())
+                await self._uow.operations.update(updated)
+                await self._uow.audit_events.add(
+                    _audit(
+                        self._ids,
+                        updated,
+                        "EXPLICIT_ESCALATION_CREATED",
+                        now,
+                        command.correlation_id,
+                        actor_kind=AuditActorKind.COORDINATOR,
+                    )
+                )
+                await self._uow.commit()
+                return escalation
+            except Exception:
+                await self._uow.rollback()
+                raise
+
+
+class AcknowledgeNotificationService:
+    def __init__(
+        self,
+        unit_of_work: OperationUnitOfWork,
+        clock: Clock,
+        id_generator: IdGenerator,
+    ) -> None:
+        self._uow = unit_of_work
+        self._clock = clock
+        self._ids = id_generator
+
+    async def acknowledge(self, command: AcknowledgeNotificationCommand) -> Notification:
+        async with self._uow:
+            try:
+                initial = await self._uow.notifications.get(command.notification_id)
+                if initial is None:
+                    raise NotificationNotFound(command.notification_id)
+                operation = await _locked_operation(self._uow, initial.operation_id)
+                notification = await self._uow.notifications.get(
+                    command.notification_id, for_update=True
+                )
+                if notification is None or notification.operation_id != operation.id:
+                    raise NotificationNotFound(command.notification_id)
+                if notification.acknowledged:
+                    if notification.acknowledged_by != command.acknowledged_by:
+                        raise NotificationAlreadyAcknowledged(notification.id)
+                    await self._uow.commit()
+                    return notification
+                _check_version(operation, command.expected_operation_version)
+                now = self._clock.now()
+                updated_operation = _transition(
+                    operation, operation.status, now, self._ids.new_id()
+                )
+                updated_notification = replace(
+                    notification,
+                    acknowledged_by=command.acknowledged_by,
+                    acknowledged_at=now,
+                )
+                await self._uow.operations.update(updated_operation)
+                await self._uow.notifications.update(updated_notification)
+                await self._uow.audit_events.add(
+                    _audit(
+                        self._ids,
+                        updated_operation,
+                        "NOTIFICATION_ACKNOWLEDGED",
+                        now,
+                        command.correlation_id,
+                        actor_kind=AuditActorKind.COORDINATOR,
+                    )
+                )
+                await self._uow.commit()
+                return updated_notification
+            except Exception:
+                await self._uow.rollback()
+                raise
 
 
 def _mandate_reasons(
@@ -277,15 +511,6 @@ class SimulateInboundRecoveryService:
         await self._uow.commitments.update(superseded)
         await self._uow.commitments.add(new_commitment)
 
-        notification = Notification(
-            id=self._ids.new_id(),
-            operation_id=operation.id,
-            commitment_id=new_commitment_id,
-            reason_code="MANDATE_SAFE_REPLACEMENT",
-            created_at=now,
-        )
-        await self._uow.notifications.add(notification)
-
         attempt = RecoveryAttempt(
             id=attempt_id,
             operation_id=operation.id,
@@ -300,6 +525,22 @@ class SimulateInboundRecoveryService:
 
         updated = _transition(operation, OperationStatus.COMMITTED, now, self._ids.new_id())
         await self._uow.operations.update(updated)
+        notification = Notification(
+            id=self._ids.new_id(),
+            operation_id=operation.id,
+            commitment_id=new_commitment_id,
+            reason_code="MANDATE_SAFE_REPLACEMENT",
+            created_at=now,
+            operation_version=updated.version,
+            recovery_decision=RecoveryDecision(
+                before=_decision_state(operation, active),
+                after=_decision_state(updated, new_commitment),
+                reason="MANDATE_SAFE_REPLACEMENT",
+            ),
+            message="A mandate-safe replacement commitment was activated.",
+            correlation_id=command.correlation_id,
+        )
+        await self._uow.notifications.add(notification)
         await self._uow.audit_events.add(
             _audit(self._ids, updated, "COMMITMENT_SUPERSEDED", now, command.correlation_id)
         )

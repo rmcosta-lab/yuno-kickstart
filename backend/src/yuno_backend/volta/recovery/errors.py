@@ -20,10 +20,14 @@ from yuno_backend.volta.negotiations.errors import StaleOperationVersion
 
 __all__ = [
     "CommitmentNotFound",
+    "EscalationAlreadyResolved",
+    "EscalationContextConflict",
     "EscalationNotFound",
     "EvidenceAlreadyRecorded",
     "InvalidCommitmentDisposition",
     "MandateVersionNotAdvanced",
+    "NotificationAlreadyAcknowledged",
+    "NotificationNotFound",
     "OperationBlockedByEscalation",
     "StaleOperationVersion",
 ]
@@ -46,6 +50,39 @@ class EscalationNotFound(_SafeRecoveryError, LookupError):
     def __init__(self, escalation_id: UUID) -> None:
         self.escalation_id = escalation_id
         super().__init__(f"escalation not found: {escalation_id}")
+
+
+class EscalationAlreadyResolved(_SafeRecoveryError):
+    code = "escalation_already_resolved"
+
+    def __init__(self, escalation_id: UUID) -> None:
+        self.escalation_id = escalation_id
+        super().__init__(f"escalation already resolved: {escalation_id}")
+
+
+class EscalationContextConflict(_SafeRecoveryError):
+    code = "escalation_context_conflict"
+
+    def __init__(self, operation_id: UUID, escalation_id: UUID) -> None:
+        self.operation_id = operation_id
+        self.escalation_id = escalation_id
+        super().__init__(f"open escalation already exists: {operation_id} ({escalation_id})")
+
+
+class NotificationNotFound(_SafeRecoveryError, LookupError):
+    code = "notification_not_found"
+
+    def __init__(self, notification_id: UUID) -> None:
+        self.notification_id = notification_id
+        super().__init__(f"notification not found: {notification_id}")
+
+
+class NotificationAlreadyAcknowledged(_SafeRecoveryError):
+    code = "notification_already_acknowledged"
+
+    def __init__(self, notification_id: UUID) -> None:
+        self.notification_id = notification_id
+        super().__init__(f"notification already acknowledged: {notification_id}")
 
 
 class OperationBlockedByEscalation(_SafeRecoveryError):

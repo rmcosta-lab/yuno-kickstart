@@ -4,6 +4,7 @@ from uuid import UUID
 import pytest
 from yuno_backend.volta.errors import InvalidDomainValue
 from yuno_backend.volta.recovery.models import (
+    EscalationContext,
     Notification,
     PostContactEscalation,
     RecoveryAttempt,
@@ -109,3 +110,41 @@ def test_notification_requires_safe_reason_code() -> None:
     assert notification.reason_code == "MANDATE_SAFE_REPLACEMENT"
     with pytest.raises(InvalidDomainValue):
         Notification(UUID(int=1), UUID(int=2), UUID(int=3), "", NOW)
+
+
+def test_escalation_context_is_bounded_and_notification_ack_is_all_or_none() -> None:
+    context = EscalationContext("capacity conflict", ("later pickup",), "human review")
+    assert context.attempted_alternatives == ("later pickup",)
+    with pytest.raises(InvalidDomainValue):
+        EscalationContext("x", tuple("a" for _ in range(26)), "review")
+    with pytest.raises(InvalidDomainValue):
+        PostContactEscalation(
+            UUID(int=1),
+            UUID(int=2),
+            None,
+            "EXPLICIT_COORDINATOR_ESCALATION",
+            1,
+            1,
+            False,
+            UUID(int=4),
+            NOW,
+            call_id=UUID(int=5),
+        )
+    with pytest.raises(InvalidDomainValue):
+        Notification(
+            UUID(int=1),
+            UUID(int=2),
+            UUID(int=3),
+            "MANDATE_SAFE_REPLACEMENT",
+            NOW,
+            operation_version=1,
+        )
+    with pytest.raises(InvalidDomainValue):
+        Notification(
+            UUID(int=1),
+            UUID(int=2),
+            UUID(int=3),
+            "MANDATE_SAFE_REPLACEMENT",
+            NOW,
+            acknowledged_by="coordinator",
+        )
