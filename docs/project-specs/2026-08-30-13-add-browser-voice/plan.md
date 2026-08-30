@@ -32,10 +32,15 @@ One frontend writer owns this isolated workstream. No API or backend writer is r
    - Ensure Stop, route unmount, connect failure, and reconnect leave no active microphone or overlapping connection.
 
 6. **Verify and review the complete gate**
-   - Add source-level fixtures for the pure parser/dispatcher seams and expose deterministic browser scenarios for malformed, unknown, duplicate, failed, pending-disconnect, and reconnected events without a provider credential; record exact manual evidence because no frontend test command exists.
+   - Add source-level fixtures for the pure parser/dispatcher seams and expose deterministic browser scenarios for malformed, unknown, duplicate, failed, pending-disconnect, and reconnected events without a provider credential; automate those scenarios with the phase-owned Playwright harness.
    - Run `make frontend-check`, followed by the Playwright-first and Chrome-DevTools-second browser flow required by `frontend/AGENTS.md`.
    - Run the separately authorized credentialed English WebRTC, natural-pacing, barge-in, reconnect, and two-tool roundtrip trial with synthetic data.
    - Review source, bundle, storage, DOM, console, network, screenshots, diff, and status for secrets, raw content, generated drift, unexpected dependencies, and unrelated changes.
+
+7. **Calibrate server-owned VAD after the human trial**
+   - Preserve `server_vad`, `create_response`, and `interrupt_response`; trial `0.7`, record its failed human noise check, then raise the provider activation threshold to `0.85` for the next calibration pass.
+   - Keep the change inside the OpenAI adapter and its exact-payload tests; do not change the browser, HTTP contract, provider-neutral request, persistence, or generated client.
+   - Run the focused backend tests and `make python-check`, restart the local API, then repeat one intentional barge-in and one ambient-noise observation before closing the quality finding.
 
 ## Contracts, generation, and checkpoints
 
@@ -43,11 +48,12 @@ One frontend writer owns this isolated workstream. No API or backend writer is r
 - No API contract change and no `make generate` run are planned. A missing route, field, tool schema, or safe-error semantic stops frontend work for coordination with the owning API phase; generated files are never hand-edited.
 - The WebRTC lifecycle and tool dispatcher may be implemented independently after the mapping is frozen, but one frontend writer owns their integration paths.
 - The integration checkpoint proves a server result reaches both Realtime with the original provider call ID and the negotiation UI through refreshed server state, without a browser-owned commitment transition.
-- Tests and deterministic guards stay beside the changed behavior. The repository has no frontend test script; do not add a test dependency solely for this phase.
+- Tests and deterministic guards stay beside the changed behavior. The durable verification follow-up adds only `@playwright/test`, a Chromium project for credential-free checks, and a separately gated Realtime project.
 
 ## Ownership, shared files, and authority
 
 - The one-writer matrix in `requirements.md` is authoritative for feature, route, shared component, manifest/lockfile, generated, and shared-spec paths.
-- No mission, tech-stack, roadmap, challenge-plan, generated-client, `.env.example`, manifest, or lockfile edit is anticipated. If any becomes necessary, revise the plan, identify the owner, check overlapping pull requests, and refresh the branch before writing.
+- The phase coordinator owns the explicitly requested durable Playwright addition under `frontend/package.json`, `frontend/pnpm-lock.yaml`, `frontend/playwright.config.ts`, and `frontend/tests/e2e/**`. `@playwright/test` is the only new dependency; deterministic checks remain credential-free, while provider use is isolated behind `RUN_OPENAI_CREDENTIALED=1`. No mission, tech-stack, roadmap, challenge-plan, generated-client, or `.env.example` edit is required.
+- After the human trial exposed ambient-noise false positives, the user explicitly approved one support change owned by the coordinator: `backend/src/yuno_backend/integrations/openai/realtime.py` plus the two exact provider-payload tests. The threshold is fixed server-side; no API, persistence, generated-client, or shared-stack decision changes.
 - No temporary wait exists: Fases 09 and 12 are merged with gate evidence, Fase 13 has no conflicts, and no remote branch or pull request represented it at claim time.
 - This plan authorizes no deployment, production access, real participant or carrier contact, PSTN call, recording retention, Yuno/payment operation, live financial mutation, or unrelated remote change.

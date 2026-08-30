@@ -226,6 +226,7 @@ async def test_exact_headers_session_audio_and_tool_output_mapping() -> None:
                     "format": {"type": "audio/pcm", "rate": 24_000},
                     "turn_detection": {
                         "type": "server_vad",
+                        "threshold": 0.85,
                         "create_response": True,
                         "interrupt_response": True,
                     },

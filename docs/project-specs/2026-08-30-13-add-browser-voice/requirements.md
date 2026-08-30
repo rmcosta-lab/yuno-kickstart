@@ -16,6 +16,7 @@
 Included:
 
 - A native browser WebRTC and media lifecycle behind a narrow client feature, with explicit Start, Stop, and Reconnect actions and only one active connection generation.
+- A user-approved server-policy calibration that keeps `server_vad` but raises its activation threshold to `0.85` after the human browser trial showed ambient-noise false positives and `0.7` remained too sensitive. This is the only backend exception and changes no HTTP or provider-neutral application contract.
 - Minting a scoped, short-lived credential through the generated client, exchanging local SDP with the official Realtime calls endpoint, playing remote audio, and keeping the ephemeral secret only in memory for the required exchange.
 - Allowlisted, bounded Realtime event parsing; human-observed English natural pacing under the server-owned Fase 12 session policy; server-voice-activity and documented cancellation or truncation events during barge-in; visible connection, playback, permission, tool, and error states.
 - Dispatch of the two server-configured tools, `record_quote` and `create_candidate_commitment`, through the generated `/v1` operations. Provider correlation `call_id` stays distinct from the Volta carrier-session `call_id` inside tool arguments.
@@ -26,7 +27,7 @@ Included:
 
 Excluded:
 
-- Pydantic, OpenAPI, Orval, generated-client, API/BFF, backend/core, persistence, migration, mandate, selection, quote-validation, or commitment-rule changes.
+- Pydantic, OpenAPI, Orval, generated-client, API/BFF, persistence, migration, mandate, selection, quote-validation, or commitment-rule changes; backend work is limited to the explicit provider-adapter VAD calibration and its focused tests.
 - Client-selected model, instructions, voice, tools, voice-activity configuration, safety identifier, session expiry, or provider payload fields.
 - Twilio, PSTN, real inbound or outbound calls, recordings, evidence persistence, recovery, recaps, notifications, or audit screens.
 - Raw audio, SDP, transcripts, tool payloads, provider events, authorization values, or credentials in durable browser storage, logs, screenshots, fixtures, or Git.
@@ -99,7 +100,8 @@ The browser requests a no-store ephemeral credential from FastAPI, establishes W
 | `frontend/src/features/negotiation/**`, `frontend/src/app/(control-tower)/sessions/**` | Same Fase 13 frontend writer | Integrate the voice leaf and server-state refresh without recalculating domain state. |
 | `frontend/src/components/control-tower/**` | Same writer only when narrowly required | Preserve all existing consumers and established visual language. |
 | `frontend/package.json`, `pnpm-lock.yaml` | No expected writer | Native browser APIs are sufficient; one coordinator owns both only after an explicit plan revision. |
-| `api/openapi.json`, `frontend/src/lib/api/generated/**`, `api/**`, `backend/**`, `.env.example` | No Fase 13 writer | Consume only; do not edit or regenerate. |
+| `backend/src/yuno_backend/integrations/openai/realtime.py`, `backend/tests/volta/integrations/openai/test_client_secrets.py`, `backend/tests/volta/integrations/openai/test_realtime.py` | Fase 13 coordinator as the user-approved support writer | Add only the fixed `server_vad` activation threshold and exact payload assertions; no application, API, persistence, or generated contract change. |
+| `api/openapi.json`, `frontend/src/lib/api/generated/**`, `api/**`, all other `backend/**`, `.env.example` | No Fase 13 writer | Consume only; do not edit or regenerate. |
 | Mission, tech stack, roadmap, challenge plan, other phase specs | No Fase 13 writer | No shared decision change is required. Use the owning workflow if that changes. |
 | `experiments/openai-capabilities/**` | Read-only reference | Reuse findings, not product code or credentials. |
 
