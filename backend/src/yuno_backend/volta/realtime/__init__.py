@@ -1,7 +1,13 @@
 """Provider-neutral realtime voice contracts."""
 
+from yuno_backend.volta.realtime.client_secrets import (
+    RealtimeClientSecret,
+    RealtimeClientSecretIssuer,
+    RealtimeClientSecretRequest,
+)
 from yuno_backend.volta.realtime.errors import (
     InvalidRealtimeEvent,
+    InvalidRealtimeResponseError,
     RealtimeAuthenticationError,
     RealtimeConnectionError,
     RealtimeDisconnectedError,
@@ -30,9 +36,13 @@ from yuno_backend.volta.realtime.models import (
 
 __all__ = [
     "InvalidRealtimeEvent",
+    "InvalidRealtimeResponseError",
     "PcmAudioFormat",
     "RealtimeAudioDelta",
     "RealtimeAuthenticationError",
+    "RealtimeClientSecret",
+    "RealtimeClientSecretIssuer",
+    "RealtimeClientSecretRequest",
     "RealtimeConnection",
     "RealtimeConnectionError",
     "RealtimeDisconnectedError",

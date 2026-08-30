@@ -16,21 +16,30 @@ from app.errors import (
 )
 from app.logging import configure_logging
 from app.middleware.rate_limit import MutationRateLimitMiddleware, SlidingWindowRateLimiter
+from app.middleware.realtime_cache import RealtimeNoStoreMiddleware
 from app.middleware.request_context import RequestContextMiddleware
 from app.middleware.unexpected_errors import UnexpectedErrorMiddleware
+from app.openai_client import configure_openai_http_client, get_openai_http_client
 from app.routers.contracts import router as contracts_router
 from app.routers.health import router as health_router
+from app.routers.realtime import router as realtime_router
 
 
 @asynccontextmanager
 async def application_lifespan(application: FastAPI) -> AsyncIterator[None]:
+    get_openai_http_client(application)
     try:
         yield
     finally:
-        service = getattr(application.state, "contract_service", None)
-        close = getattr(service, "aclose", None)
-        if close is not None:
-            await close()
+        try:
+            service = getattr(application.state, "contract_service", None)
+            close = getattr(service, "aclose", None)
+            if close is not None:
+                await close()
+        finally:
+            client = getattr(application.state, "openai_http_client", None)
+            if client is not None:
+                await client.aclose()
 
 
 def create_app(
@@ -48,6 +57,7 @@ def create_app(
         lifespan=application_lifespan,
     )
     application.state.settings = resolved_settings
+    configure_openai_http_client(application)
     mutation_rate_limiter = SlidingWindowRateLimiter(
         request_limit=resolved_settings.volta_mutation_rate_limit_requests,
         window_seconds=resolved_settings.volta_mutation_rate_limit_window_seconds,
@@ -69,11 +79,19 @@ def create_app(
         allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
-        expose_headers=["X-Request-ID", "Idempotency-Replayed"],
+        expose_headers=[
+            "X-Request-ID",
+            "Idempotency-Replayed",
+            "Cache-Control",
+            "Pragma",
+            "Retry-After",
+        ],
     )
     application.add_middleware(RequestContextMiddleware)
+    application.add_middleware(RealtimeNoStoreMiddleware)
     application.include_router(health_router)
     application.include_router(contracts_router)
+    application.include_router(realtime_router)
     return application
 
 

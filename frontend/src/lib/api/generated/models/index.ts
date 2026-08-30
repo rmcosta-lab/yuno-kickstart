@@ -56,6 +56,7 @@ export * from "./quoteComparisonRow";
 export * from "./quoteEligibility";
 export * from "./quoteResponse";
 export * from "./quoteTermsRequest";
+export * from "./realtimeClientSecretResponse";
 export * from "./recordQuoteHeaders";
 export * from "./recoveryDecisionResponse";
 export * from "./recoveryDecisionState";

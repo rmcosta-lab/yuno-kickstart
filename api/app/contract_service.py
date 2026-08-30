@@ -69,9 +69,13 @@ def get_contract_service(request: Request) -> ContractService:
     """Return the application-scoped adapter, constructing it lazily when needed."""
     service = getattr(request.app.state, "contract_service", None)
     if service is None:
+        from app.openai_client import get_openai_http_client
         from app.volta_text_service import create_volta_text_contract_service
 
-        service = create_volta_text_contract_service(request.app.state.settings)
+        service = create_volta_text_contract_service(
+            request.app.state.settings,
+            http_client=get_openai_http_client(request.app),
+        )
         request.app.state.contract_service = service
     return service
 

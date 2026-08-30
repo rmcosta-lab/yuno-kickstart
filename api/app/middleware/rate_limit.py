@@ -21,6 +21,8 @@ from app.config import Settings
 from app.errors import api_error_response
 from app.schemas.errors import ApiErrorCode
 
+_REALTIME_CLIENT_SECRET_PATH = "/v1/realtime/client-secrets"
+
 
 @dataclass(frozen=True, slots=True)
 class RateLimitDecision:
@@ -101,9 +103,16 @@ class MutationRateLimitMiddleware:
         self._configured_fingerprint = (
             self._fingerprint(configured_token) if configured_token else None
         )
+        self._realtime_origins = frozenset(settings.cors_origins)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if not self._is_mutation(scope):
+            await self.app(scope, receive, send)
+            return
+
+        if self._has_invalid_realtime_origin(scope):
+            # The route dependency owns the 403 response. Do not let an unauthorized
+            # browser origin consume the authorized actor's mutation allowance first.
             await self.app(scope, receive, send)
             return
 
@@ -143,6 +152,12 @@ class MutationRateLimitMiddleware:
         if not hmac.compare_digest(fingerprint, self._configured_fingerprint):
             return None
         return fingerprint
+
+    def _has_invalid_realtime_origin(self, scope: Scope) -> bool:
+        if scope.get("path") != _REALTIME_CLIENT_SECRET_PATH:
+            return False
+        origin = Headers(scope=scope).get("origin")
+        return origin is None or origin not in self._realtime_origins
 
     def _fingerprint(self, token: str) -> bytes:
         return hmac.digest(

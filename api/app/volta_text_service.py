@@ -8,8 +8,11 @@ from decimal import Decimal
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 from yuno_backend.database import DatabaseConfig, create_database_engine, create_session_factory
+from yuno_backend.integrations.openai import OpenAIExtractionConfig, OpenAIIntakeExtractor
 from yuno_backend.volta.idempotency import IdempotencyConflict, IdempotencyResultMissing
+from yuno_backend.volta.intake import IntakeExtractor
 from yuno_backend.volta.mandates.errors import (
     DraftNotApprovable,
     DraftNotFound,
@@ -261,7 +264,11 @@ class VoltaTextContractService:
         return _query_result(_audit_response(projection))
 
 
-def create_volta_text_contract_service(settings: Settings) -> VoltaTextContractService:
+def create_volta_text_contract_service(
+    settings: Settings,
+    *,
+    http_client: httpx.AsyncClient | None = None,
+) -> VoltaTextContractService:
     """Build the live adapter without opening a database connection at import time."""
 
     engine = None
@@ -273,9 +280,10 @@ def create_volta_text_contract_service(settings: Settings) -> VoltaTextContractS
             raise PersistenceUnavailable("configuration_missing", "database")
         engine = create_database_engine(DatabaseConfig(url=database_url))
         session_factory = create_session_factory(engine)
+        extractor = _create_intake_extractor(settings, http_client)
         return TextNegotiationApplication(
             unit_of_work_factory=lambda: SqlAlchemyOperationUnitOfWork(session_factory),
-            extractor=create_demo_text_extractor(),
+            extractor=extractor,
             carrier_catalog=create_demo_carrier_catalog(),
             clock=_UtcClock(),
             id_generator=_UuidGenerator(),
@@ -288,6 +296,25 @@ def create_volta_text_contract_service(settings: Settings) -> VoltaTextContractS
             await engine.dispose()
 
     return VoltaTextContractService(application_factory=application_factory, close=close)
+
+
+def _create_intake_extractor(
+    settings: Settings,
+    http_client: httpx.AsyncClient | None,
+) -> IntakeExtractor:
+    if settings.volta_extraction_mode == "deterministic":
+        return create_demo_text_extractor()
+    if http_client is None:
+        raise ValueError("caller-owned OpenAI HTTP client is required")
+    return OpenAIIntakeExtractor(
+        http_client,
+        OpenAIExtractionConfig(
+            api_key=settings.openai_api_key.get_secret_value(),
+            base_url=settings.openai_base_url,
+            model=settings.openai_extraction_model,
+            policy_version=settings.volta_extraction_policy_version,
+        ),
+    )
 
 
 def _translate_error(error: Exception) -> ContractServiceError:
