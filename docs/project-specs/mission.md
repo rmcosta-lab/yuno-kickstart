@@ -21,7 +21,7 @@ Volta turns messy carrier conversations into mandate-safe, auditable commitments
 The project commits to both checkpoints:
 
 - **P0, complete browser journey**: A deterministic simulator proves the full intake, negotiation, recovery, escalation, and audit journey with browser voice and text fallback.
-- **P0.1, minimum telephony path**: The same rules and tools support three overlapping outbound calls, one inbound recovery, and one live coordinator takeover before submission. The browser remains the development harness and demo fallback, and written-recap delivery remains explicitly simulated.
+- **P0.1, complete real-channel path**: The same rules and tools support three overlapping outbound calls, one inbound recovery, one delivered WhatsApp recap through Twilio, and one live coordinator takeover before submission. The browser and simulated recap remain the development harness and demo fallback.
 
 The project does not describe browser audio as telephony or a displayed recap as a verified written commitment.
 
@@ -37,7 +37,7 @@ The browser checkpoint follows one approved operation from intake through recove
 6. The control tower shows the agreement evidence, a clearly simulated recap, the call brief, and the append-only audit trail.
 7. A mandate-safe inbound recovery updates or replaces the winner atomically and notifies the coordinator. An out-of-mandate recovery preserves state and escalates for a human decision.
 
-P0.1 runs three overlapping outbound negotiations over the public switched telephone network (PSTN), one authorized inbound recovery, and one live coordinator takeover. Every call includes artificial intelligence (AI) disclosure and recording consent. The final winner retains a recap labeled `SIMULATED`; the hackathon does not claim external written delivery or `VERIFIED` evidence.
+P0.1 runs three overlapping outbound negotiations over the public switched telephone network (PSTN), one authorized inbound recovery, one delivered WhatsApp recap through Twilio, and one live coordinator takeover. Every call includes artificial intelligence (AI) disclosure and recording consent. Only a signed `delivered` callback plus playable timestamp evidence promotes the final active winner to `VERIFIED`.
 
 ## Success signals
 
@@ -56,7 +56,7 @@ The final submission is successful when the P0 evidence remains reproducible and
 
 - three overlapping outbound calls
 - one mandate-safe inbound recovery
-- one recap explicitly labeled `SIMULATED` and linked to playable timestamp evidence
+- one WhatsApp recap delivered to an allowlisted, opted-in Twilio Sandbox participant and linked to playable timestamp evidence
 - one coordinator takeover that does not disconnect the remote participant
 
 Browser voice, text, and a private recording remain ready as fallbacks.
@@ -73,7 +73,7 @@ P0 and P0.1 include only the capabilities required for the accepted demo:
 - PostgreSQL persistence for operational and audit state.
 - OpenAI Realtime browser voice over Web Real-Time Communication (WebRTC), with scoped server-issued client credentials and typed tool roundtrips.
 - Twilio inbound and outbound Voice with bidirectional Media Streams through a provider adapter and FastAPI WebSocket bridge for P0.1.
-- A simulated written recap for the active winner, with no external delivery claim.
+- One WhatsApp recap for the active winner through a provider-neutral delivery boundary backed by Twilio Programmable Messaging, with simulated delivery retained as fallback.
 - One live coordinator takeover that preserves the remote call and prevents further AI commitments.
 - Private demo audio outside Git, synthetic fixtures, consent, redacted logs, and an agreed deletion window.
 
@@ -83,7 +83,7 @@ The prototype excludes production operations and unrelated integrations:
 
 - Real carrier bookings, live rates, transportation-management-system integration, or any production operation.
 - Yuno, payments, payment credentials, or financial mutations.
-- Short Message Service (SMS), email, other external recap delivery, direct Session Initiation Protocol (SIP), real-carrier integration, or production contact-center routing.
+- Short Message Service (SMS), email, a second recap channel, direct Session Initiation Protocol (SIP), real-carrier integration, production WhatsApp onboarding, or production contact-center routing.
 - Telephony scale, routing, and resilience beyond the three authorized outbound calls, one inbound recovery, and one live takeover required by the demo.
 - Production-grade identity, multi-tenancy, compliance, retention, billing, analytics, or high availability.
 - A prompt-policy administration interface or model-controlled carrier selection.
@@ -95,7 +95,7 @@ The prototype excludes production operations and unrelated integrations:
 
 P1 turns the working browser checkpoint into a reliable final submission:
 
-- Complete and rehearse the minimum P0.1 telephony journey, including the mandatory outcomes from Phases 26 and 28.
+- Complete and rehearse the P0.1 real-channel journey, including the mandatory outcomes from Phases 26, 27, and 28.
 - Harden loading, error, reconnect, and provider-failure states.
 - Present audit evidence, privacy boundaries, and known gaps so judges can inspect them.
 - Finish the public setup guide, architecture diagram, presentation, and recorded fallback.
@@ -105,7 +105,7 @@ P1 turns the working browser checkpoint into a reliable final submission:
 
 P2 remains outside the hackathon-critical path:
 
-- Add the first external recap channel and production delivery policies.
+- Replace the WhatsApp Sandbox proof with an approved production sender and template policy, then add a second recap channel.
 - Add general inbound routing, a coordinator queue, and multi-party transfer policies.
 - Scale beyond the three overlapping demo calls and harden multi-call recovery.
 - Add production authorization, retention controls, analytics, and external transportation integrations only after the prototype proves its value.
@@ -115,7 +115,7 @@ P2 remains outside the hackathon-critical path:
 The plan depends on these assumptions:
 
 - The Volta drayage case remains the selected challenge unless an explicit shared decision replaces it.
-- The team can obtain OpenAI Realtime access and provision Twilio Voice for every authorized participant early enough to complete P0.1.
+- The team can obtain OpenAI Realtime access, provision Twilio Voice, and enroll an authorized recap recipient in the Twilio Sandbox for WhatsApp early enough to complete P0.1.
 - The team confirmed English as the primary trial and demo language on 2026-08-29.
 - Team members or judges can act as carrier dispatchers and consent to AI disclosure and private demo recording.
 - Synthetic names, phone numbers, rates, and routes are sufficient to demonstrate the workflow.
@@ -125,7 +125,7 @@ The plan depends on these assumptions:
 
 The phase gates must expose these risks before they threaten the final trial:
 
-- Realtime or Twilio access, account limits, destination restrictions, or hosting constraints may block the PSTN path.
+- Realtime or Twilio access, account limits, destination restrictions, WhatsApp Sandbox enrollment, the 24-hour customer-service window, or hosting constraints may block the real-channel path.
 - Prompt extraction or speech recognition may omit, invent, or mistranscribe a constraint.
 - Model speech may diverge from persisted state or attempt an out-of-mandate action.
 - Concurrent sessions or recovery may create multiple active winners or reuse a stale quote.
