@@ -43,7 +43,7 @@ are not inferred from implemented code, and private fallback evidence never incl
 
 ## Clean-environment reproduction
 
-- [ ] A temporary clean checkout of the published phase head follows README setup with documented
+- [x] A temporary clean checkout of the published phase head follows README setup with documented
   prerequisites, an isolated PostgreSQL database, synthetic values, fresh browser state, and no
   provider credential or private recording copied into the checkout.
 - [x] The documented deterministic text/browser journey reaches one active commitment, private
@@ -104,6 +104,7 @@ are not inferred from implemented code, and private fallback evidence never incl
 - Clean setup found two stale example defaults that Phase 21 is not allowed to edit. The README now requires `NEXT_PUBLIC_INTAKE_USE_TEST_BOUNDARY=false` so the browser uses FastAPI, and it requires removing the blank `VOLTA_EVIDENCE_STORAGE_PATH=` entry so local synthetic evidence uses the application’s operating-system temporary default.
 - `pnpm --dir frontend exec playwright test --project=chromium-trial` passed **3/3** against a production Next.js build, FastAPI, the typed core, migrations through repository head, PostgreSQL, and synthetic temporary WAV evidence. It covered the complete canonical journey, private timestamp playback, `SIMULATED` recap, brief, mandate-safe replacement, out-of-mandate escalation, ordered audit, microphone-denial text fallback, and the Veracruz-to-Puebla no-eligible path.
 - After Fase 20 merged, the root gate and the complete clean-snapshot reproduction were repeated on the refreshed branch. The final clean browser run again passed **3/3** in 14.7 seconds, and the clean `make check` retained the same **637 passed, 44 skipped, 2 deselected** Python result plus successful frontend lint, typecheck, and build.
+- After publication, a new clean clone resolved the remote phase head to `bd6bb84c7c685bba3ba9baa96ec2dcc44328b241`, had an empty worktree, and contained the README and all three submission sources. The authorized user directed submission without rerunning tests, so this published-head confirmation relies on the earlier exact clean setup and browser reproduction plus the already-recorded post-refresh root gate; it does not claim a second test execution.
 - Two diagnostic browser attempts passed the microphone and no-carrier branches but failed the canonical evidence attachment because an explicit evidence-root override did not match the test’s generated fixture. No product defect was inferred. The generated database was reset before the passing run, and the documented removal of the blank override aligned the API with the test fixture.
 - The generated trial database, failed isolated Compose container/network/volume, temporary checkout, and temporary render artifacts were removed. The repository’s pre-existing PostgreSQL container was not stopped or altered beyond creating and dropping the named trial database. No provider, deployment, message, recording, Yuno/payment, or financial mutation occurred.
 
@@ -112,4 +113,4 @@ are not inferred from implemented code, and private fallback evidence never incl
 - The slide allocation and operator table each total **4:50**, and the fallback switch threshold is **15 seconds**. On 2026-08-30, the authorized user explicitly confirmed that all remaining operational acceptance checks should be treated as passing and directed the phase to finish. This confirmation is the operator attestation for both consecutive rehearsals within the documented budget; no invented per-run stopwatch values are recorded.
 - Fase 17 records the existing private fallback as playable, synthetic, access-restricted, and outside Git. The same authorized-user confirmation is recorded as the current playback, story-alignment, access, retention, deletion-owner, and cleanup attestation. The private locator and media remain out of Git.
 - P0.1 telephony outcomes remain explicitly unproved and are not Phase 21 completion evidence. No automated test or `deep-review` was rerun during submission, as explicitly directed; the submission reuses the exact evidence already recorded above.
-- Current verdict: **READY FOR SUBMISSION, SUBJECT TO THE PUBLISHED-HEAD CLEAN-CHECKOUT RECORD BELOW**.
+- Current verdict: **READY FOR PULL-REQUEST REVIEW**.
