@@ -41,7 +41,7 @@ function operationWithSessions(hasSessions: boolean): OperationResponse {
     cargo_label: "Synthetic textiles",
     created_at: timestamp(),
     operation_id: OPERATION_ID,
-    operation_version: 1,
+    operation_version: hasSessions ? 2 : 1,
     route: { origin: "Synthetic origin", destination: "Synthetic destination" },
     sessions: hasSessions
       ? [
@@ -101,6 +101,7 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
   let nextResponse: NextResponse = { kind: "success", status: "QUEUED" };
   const pendingResponse: { release?: () => void } = {};
   let holdResponse = false;
+  let selectionRequests = 0;
   const requests: CapturedRequest[] = [];
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -133,6 +134,26 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(handoffReadiness),
+      });
+    }
+
+    if (
+      request.method() === "POST" &&
+      apiPath === `/v1/operations/${OPERATION_ID}/negotiations`
+    ) {
+      selectionRequests += 1;
+      hasSessions = true;
+      return route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          negotiation_id: "20000000-0000-4000-8000-000000000026",
+          operation_id: OPERATION_ID,
+          operation_version: 2,
+          sessions: operationWithSessions(true).sessions,
+          pre_contact_escalation: null,
+          started_at: timestamp(1),
+        }),
       });
     }
 
@@ -194,16 +215,10 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
     name: /I confirm this participant agreed/i,
   });
 
-  await expect(control).toContainText("No live operation session available");
-  await expect(consent).toBeDisabled();
-  await expect(startButton).toBeDisabled();
-  expect(requests).toHaveLength(0);
-
-  hasSessions = true;
-  await page.getByRole("button", { name: "Reload" }).click();
   await expect(control).toContainText("Synthetic Carrier One");
   await expect(control).not.toContainText("Synthetic Carrier Two");
   await expect(startButton).toBeDisabled();
+  expect(selectionRequests).toBe(1);
   expect(requests).toHaveLength(0);
 
   await page

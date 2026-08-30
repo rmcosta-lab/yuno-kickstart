@@ -17,7 +17,7 @@ __all__ = [
 ]
 
 _ACCOUNT_SID = re.compile(r"^AC[0-9a-fA-F]{32}$")
-_API_KEY_SID = re.compile(r"^SK[0-9a-fA-F]{32}$")
+_REST_CREDENTIAL_SID = re.compile(r"^(?:AC|SK)[0-9a-fA-F]{32}$")
 _E164 = re.compile(r"^\+[1-9][0-9]{7,14}$")
 _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _HOST_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
@@ -105,10 +105,10 @@ class TwilioOutboundCallConfig:
             self.account_sid
         ) is None:
             raise ValueError("Twilio Account SID must be a valid AC SID")
-        if not isinstance(self.api_key_sid, str) or _API_KEY_SID.fullmatch(
+        if not isinstance(self.api_key_sid, str) or _REST_CREDENTIAL_SID.fullmatch(
             self.api_key_sid
         ) is None:
-            raise ValueError("Twilio API key SID must be a valid SK SID")
+            raise ValueError("Twilio REST credential SID must be a valid AC or SK SID")
         if (
             not isinstance(self.api_key_secret, str)
             or not self.api_key_secret.strip()
@@ -174,10 +174,10 @@ class TwilioHumanHandoffConfig:
             self.account_sid
         ) is None:
             raise ValueError("Twilio Account SID must be a valid AC SID")
-        if not isinstance(self.api_key_sid, str) or _API_KEY_SID.fullmatch(
+        if not isinstance(self.api_key_sid, str) or _REST_CREDENTIAL_SID.fullmatch(
             self.api_key_sid
         ) is None:
-            raise ValueError("Twilio API key SID must be a valid SK SID")
+            raise ValueError("Twilio REST credential SID must be a valid AC or SK SID")
         if (
             not isinstance(self.api_key_secret, str)
             or not self.api_key_secret.strip()
