@@ -1631,6 +1631,30 @@ async def test_live_runtime_validates_realtime_session_configuration_at_construc
             )
 
 
+async def test_live_runtime_can_use_account_auth_token_for_rest_calls() -> None:
+    settings = Settings(
+        database_url="postgresql+asyncpg://demo:demo@localhost/demo",
+        openai_api_key="synthetic-openai-key",
+        twilio_account_sid=ACCOUNT_SID,
+        twilio_api_key_sid="",
+        twilio_api_key_secret="",
+        twilio_auth_token="synthetic-auth-token",
+        twilio_from_e164="+15550001111",
+        twilio_destination_allowlist={"synthetic": "+15550002222"},
+        twilio_public_base_url=BASE_URL,
+        twilio_media_ws_url=MEDIA_URL,
+        openai_realtime_safety_identifier_key="synthetic-safety-key",
+    )
+    async with httpx.AsyncClient() as client:
+        application = create_live_telephony_application(
+            settings,
+            RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+            client,
+        )
+
+    await application.aclose()
+
+
 class FakeContracts:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object], str | None]] = []
@@ -1694,8 +1718,39 @@ class RuntimeContracts(FakeContracts):
     async def execute(self, operation_id, payload, idempotency_key):  # type: ignore[no-untyped-def]
         self.calls.append((operation_id, payload, idempotency_key))
         if operation_id == "get_operation":
-            sessions = [{"call_id": str(call_id)} for call_id in self.call_ids]
-            return ContractResult({"operation_id": str(OPERATION_ID), "sessions": sessions})
+            sessions = [
+                {
+                    "call_id": str(call_id),
+                    "carrier": {
+                        "carrier_id": "00000000-0000-4000-8000-000000000071",
+                        "display_name": "Puerto Azul Drayage",
+                    },
+                }
+                for call_id in self.call_ids
+            ]
+            return ContractResult(
+                {
+                    "operation_id": str(OPERATION_ID),
+                    "operation_version": 4,
+                    "route": {
+                        "origin": "Port of Manzanillo",
+                        "destination": "Guadalajara warehouse",
+                    },
+                    "cargo_label": "one 40-foot dry container",
+                    "active_mandate": {
+                        "version": 2,
+                        "maximum_amount_minor": 900000,
+                        "currency": "MXN",
+                        "pickup_window": {
+                            "start_date": "2026-09-03",
+                            "end_date": "2026-09-03",
+                        },
+                        "allowed_conditions": ["standard handling"],
+                        "escalation_conditions": ["amount above MXN 9,000"],
+                    },
+                    "sessions": sessions,
+                }
+            )
         return ContractResult({"quote_id": "synthetic-quote"})
 
 
@@ -1837,6 +1892,12 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     assert len(gateway.requests) == 1
     binding = await runtime.binding_for_voice(first.provider_call_id)
     assert binding is not None
+    session = runtime.realtime_session(binding)
+    assert "Puerto Azul Drayage" in session.instructions
+    assert "Port of Manzanillo" in session.instructions
+    assert "one 40-foot dry container" in session.instructions
+    assert '"maximum_amount_minor":900000' in session.instructions
+    assert f'"call_id":"{CALL_SESSION_ID}"' in session.instructions
     assert (
         await runtime.binding_for_stream(
             binding.stream_token,

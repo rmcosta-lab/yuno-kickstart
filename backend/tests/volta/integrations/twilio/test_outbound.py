@@ -276,7 +276,7 @@ def test_config_and_allowlist_are_immutable_redacted_and_official() -> None:
     ("overrides", "match"),
     [
         ({"account_sid": "ACbad"}, "Account SID"),
-        ({"api_key_sid": "SKbad"}, "API key SID"),
+        ({"api_key_sid": "SKbad"}, "REST credential SID"),
         ({"api_key_secret": ""}, "secret"),
         ({"api_key_secret": "x" * 257}, "secret"),
         ({"from_e164": "not-a-number"}, "E.164"),
@@ -294,6 +294,12 @@ def test_config_and_allowlist_are_immutable_redacted_and_official() -> None:
 def test_config_fails_closed(overrides: dict[str, object], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         _config(**overrides)
+
+
+def test_config_accepts_account_sid_with_auth_token_basic_auth() -> None:
+    config = _config(api_key_sid=ACCOUNT_SID, api_key_secret="synthetic-auth-token")
+
+    assert config.create_call_url.endswith(f"Accounts/{ACCOUNT_SID}/Calls.json")
 
 
 def test_adapter_imports_no_api_frontend_or_provider_sdk() -> None:

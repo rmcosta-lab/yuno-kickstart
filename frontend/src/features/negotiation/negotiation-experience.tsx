@@ -9,6 +9,7 @@ import {
   Send,
 } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -195,16 +196,19 @@ function LiveMutationError({
 }
 
 function StartNegotiationControl({
+  automatic = false,
   operation,
   onStateChanged,
 }: {
+  automatic?: boolean;
   operation: OperationResponse;
   onStateChanged: () => Promise<unknown>;
 }) {
   const [attempt, setAttempt] = useState<MutationAttempt | null>(null);
+  const automaticAttemptedVersion = useRef<number | null>(null);
   const mutation = useStartNegotiation();
 
-  const start = () => {
+  const start = useCallback(() => {
     const data = {
       channel: BrowserChannel.BROWSER_TEXT,
       expected_operation_version: operation.operation_version,
@@ -238,26 +242,61 @@ function StartNegotiationControl({
         },
       },
     );
-  };
+  }, [
+    attempt,
+    mutation,
+    onStateChanged,
+    operation.operation_id,
+    operation.operation_version,
+  ]);
+
+  useEffect(() => {
+    if (
+      !automatic ||
+      (operation.sessions?.length ?? 0) > 0 ||
+      automaticAttemptedVersion.current === operation.operation_version
+    ) {
+      return;
+    }
+    automaticAttemptedVersion.current = operation.operation_version;
+    start();
+  }, [
+    automatic,
+    operation.operation_version,
+    operation.sessions?.length,
+    start,
+  ]);
+
+  if (automatic && (operation.sessions?.length ?? 0) > 0) return null;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-2">
-          <span>Start text negotiation</span>
+          <span>
+            {automatic
+              ? "Selecting the best carrier"
+              : "Start text negotiation"}
+          </span>
           <StatusBadge tone="neutral" label="SYNTHETIC · NO CONTACT" />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          The backend selects eligible synthetic carriers and returns either one
-          to three sessions or a pre-contact escalation. The browser does not
-          rank or filter carriers.
+          {automatic
+            ? "Volta is asking the backend to select an eligible carrier for this mandate."
+            : "The backend selects eligible synthetic carriers and returns either one to three sessions or a pre-contact escalation. The browser does not rank or filter carriers."}
         </p>
-        <Button type="button" onClick={start} disabled={mutation.isPending}>
-          <Send aria-hidden="true" data-icon="inline-start" />
-          {mutation.isPending ? "Starting…" : "Start server selection"}
-        </Button>
+        {!automatic ? (
+          <Button type="button" onClick={start} disabled={mutation.isPending}>
+            <Send aria-hidden="true" data-icon="inline-start" />
+            {mutation.isPending ? "Starting…" : "Start server selection"}
+          </Button>
+        ) : mutation.isPending ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Selecting carrier...
+          </p>
+        ) : null}
         {mutation.isSuccess ? (
           <p className="text-sm text-success" role="status">
             Server selection recorded
@@ -1313,6 +1352,11 @@ function LiveOperation({
   if (surface === "sessions") {
     return (
       <div className="space-y-5">
+        <StartNegotiationControl
+          automatic
+          operation={operation}
+          onStateChanged={onStateChanged}
+        />
         <OutboundCallControl operation={operation} />
 
         <details
@@ -1349,10 +1393,6 @@ function LiveOperation({
               />
 
               <div className="grid gap-5 xl:grid-cols-2">
-                <StartNegotiationControl
-                  operation={operation}
-                  onStateChanged={onStateChanged}
-                />
                 <QuoteControl
                   key={operation.operation_version}
                   operation={operation}
