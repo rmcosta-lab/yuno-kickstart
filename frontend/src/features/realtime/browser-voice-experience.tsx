@@ -253,20 +253,25 @@ export function BrowserVoiceExperience({
     sentContextRef.current = operationalContext;
   }, [operationalContext, state.kind, tool]);
 
-  const reconcileDispatcher = useCallback(async () => {
-    try {
-      if (dispatcher.isReconciling()) setState({ kind: "reconciling" });
-      await dispatcher.reconcile();
-      setState(terminalStateRef.current);
-      return true;
-    } catch {
-      setState({
-        kind: "error",
-        category: "Authoritative voice reconciliation failed",
-      });
-      return false;
-    }
-  }, [dispatcher]);
+  const reconcileDispatcher = useCallback(
+    async (generation: number) => {
+      try {
+        if (dispatcher.isReconciling()) setState({ kind: "reconciling" });
+        await dispatcher.reconcile();
+        if (generation !== generationRef.current) return false;
+        setState(terminalStateRef.current);
+        return true;
+      } catch {
+        if (generation !== generationRef.current) return false;
+        setState({
+          kind: "error",
+          category: "Authoritative voice reconciliation failed",
+        });
+        return false;
+      }
+    },
+    [dispatcher],
+  );
 
   const handleStatus = useCallback(
     (status: BrowserRealtimeStatus) => {
@@ -280,7 +285,7 @@ export function BrowserVoiceExperience({
           category: "Realtime provider reported a session error",
         };
         setState(terminalStateRef.current);
-        void reconcileDispatcher();
+        void reconcileDispatcher(generationRef.current);
         return;
       }
       if (status.category !== "connection") return;
@@ -290,7 +295,7 @@ export function BrowserVoiceExperience({
         dispatcher.markDisconnected();
         terminalStateRef.current = { kind: "disconnected", reason: "clean" };
         setState(terminalStateRef.current);
-        void reconcileDispatcher();
+        void reconcileDispatcher(generationRef.current);
       }
       if (status.state === "disconnected_unclean") {
         dispatcher.markDisconnected();
@@ -299,7 +304,7 @@ export function BrowserVoiceExperience({
           reason: "unclean",
         };
         setState(terminalStateRef.current);
-        void reconcileDispatcher();
+        void reconcileDispatcher(generationRef.current);
       }
     },
     [dispatcher, reconcileDispatcher],
@@ -325,7 +330,7 @@ export function BrowserVoiceExperience({
       attemptInProgressRef.current = true;
       const generation = generationRef.current;
       if (dispatcher.isReconciling()) {
-        const reconciled = await reconcileDispatcher();
+        const reconciled = await reconcileDispatcher(generation);
         if (!reconciled || generation !== generationRef.current) {
           attemptInProgressRef.current = false;
           return;
@@ -349,13 +354,21 @@ export function BrowserVoiceExperience({
         const connection = await connectBrowserRealtime({
           remoteAudio,
           signal: abortController.signal,
-          onStatus: handleStatus,
+          onStatus: (status) => {
+            if (generation === generationRef.current) handleStatus(status);
+          },
           getAuthoritativeContext: () => {
+            if (generation !== generationRef.current) {
+              throw new BrowserRealtimeError("connection");
+            }
             const context = current.getContext();
             sentContextRef.current = context;
             return contextMessage(context);
           },
           issueClientSecret: async () => {
+            if (generation !== generationRef.current) {
+              throw new BrowserRealtimeError("connection");
+            }
             setState({ kind: "connecting" });
             try {
               const response = await createRealtimeClientSecret({
@@ -367,11 +380,16 @@ export function BrowserVoiceExperience({
             }
           },
           dispatchTool: async (request) => {
+            if (generation !== generationRef.current) {
+              throw new BrowserRealtimeError("connection");
+            }
             toolPendingRef.current = true;
             try {
               return await dispatcher.dispatch(request);
             } finally {
-              toolPendingRef.current = false;
+              if (generation === generationRef.current) {
+                toolPendingRef.current = false;
+              }
             }
           },
         });
@@ -416,13 +434,26 @@ export function BrowserVoiceExperience({
 
   const stop = () => {
     closeActive();
+    const generation = generationRef.current;
     terminalStateRef.current = { kind: "disconnected", reason: "clean" };
     setState(
       dispatcher.isReconciling()
         ? { kind: "reconciling" }
         : terminalStateRef.current,
     );
-    void reconcileDispatcher();
+    void reconcileDispatcher(generation);
+  };
+
+  const useTextFallback = () => {
+    closeActive();
+    const generation = generationRef.current;
+    terminalStateRef.current = { kind: "fallback" };
+    setState(
+      dispatcher.isReconciling()
+        ? { kind: "reconciling" }
+        : terminalStateRef.current,
+    );
+    void reconcileDispatcher(generation);
   };
 
   const sendText = (event: FormEvent<HTMLFormElement>) => {
@@ -536,14 +567,7 @@ export function BrowserVoiceExperience({
             <RefreshCw aria-hidden="true" data-icon="inline-start" />
             Reconnect
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              stop();
-              setState({ kind: "fallback" });
-            }}
-          >
+          <Button type="button" variant="ghost" onClick={useTextFallback}>
             Use text fallback
           </Button>
         </div>
