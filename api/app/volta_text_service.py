@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 import httpx
 from yuno_backend.database import DatabaseConfig, create_database_engine, create_session_factory
 from yuno_backend.integrations.openai import OpenAIExtractionConfig, OpenAIIntakeExtractor
+from yuno_backend.volta.errors import InvalidDomainValue
+from yuno_backend.volta.evidence import CallBrief, Recap
 from yuno_backend.volta.idempotency import IdempotencyConflict, IdempotencyResultMissing
 from yuno_backend.volta.intake import IntakeExtractor
 from yuno_backend.volta.mandates.errors import (
@@ -20,7 +22,13 @@ from yuno_backend.volta.mandates.errors import (
     OperationAlreadyApproved,
     StaleDraftVersion,
 )
-from yuno_backend.volta.mandates.models import Mandate
+from yuno_backend.volta.mandates.models import (
+    Mandate,
+    Money,
+)
+from yuno_backend.volta.mandates.models import (
+    PickupWindow as MandatePickupWindow,
+)
 from yuno_backend.volta.negotiations.errors import (
     CallSessionNotFound,
     CarrierSessionMismatch,
@@ -37,16 +45,39 @@ from yuno_backend.volta.negotiations.errors import (
 from yuno_backend.volta.negotiations.models import Quote
 from yuno_backend.volta.persistence.errors import PersistenceConflict, PersistenceUnavailable
 from yuno_backend.volta.persistence.unit_of_work import SqlAlchemyOperationUnitOfWork
+from yuno_backend.volta.recovery import (
+    CommitmentNotFound,
+    EscalationAlreadyResolved,
+    EscalationContextConflict,
+    EscalationNotFound,
+    EvidenceAlreadyRecorded,
+    InvalidCommitmentDisposition,
+    MandateVersionNotAdvanced,
+    Notification,
+    NotificationAlreadyAcknowledged,
+    NotificationNotFound,
+    OperationBlockedByEscalation,
+    PostContactEscalation,
+    RecoveryDecisionState,
+    RecoveryEvidenceRequired,
+    RecoveryScenario,
+    RecoveryScenarioMismatch,
+)
 from yuno_backend.volta.text_slice import (
+    AcknowledgeNotificationInput,
     ApproveOperationInput,
     AttachCommitmentEvidenceInput,
     AuditProjection,
+    AuditQuery,
     AuditQuoteProjection,
     BrowserChannel,
     CommitmentEvidenceNotFound,
     CommitmentProjection,
+    CreateCallBriefInput,
     CreateCommitmentInput,
+    CreateEscalationInput,
     CreateOperationDraftInput,
+    CreateSimulatedRecapInput,
     DraftProjection,
     EvidenceArtifactUnavailable,
     EvidenceReservation,
@@ -58,7 +89,10 @@ from yuno_backend.volta.text_slice import (
     PreContactEscalationProjection,
     QuoteTerms,
     RecordQuoteInput,
+    RecoveryProjection,
+    ReplaceMandateInput,
     SessionProjection,
+    StartInboundRecoveryInput,
     StartNegotiationInput,
     TextNegotiationApplication,
     create_demo_carrier_catalog,
@@ -77,10 +111,12 @@ from app.schemas.common import ResponseModel
 from app.schemas.contracts import (
     AuditEventResponse,
     AuditTimelineResponse,
+    CallBriefResponse,
     CarrierResponse,
     CarrierSessionResponse,
     CommitmentEvidenceResponse,
     CommitmentResponse,
+    CoordinatorNotificationResponse,
     EscalationResponse,
     MandateResponse,
     NegotiationResponse,
@@ -91,7 +127,13 @@ from app.schemas.contracts import (
     ProposedMandate,
     QuoteComparisonRow,
     QuoteResponse,
+    RecoveryDecisionResponse,
+    RecoverySimulationResponse,
     ValidationIssue,
+    WrittenRecapResponse,
+)
+from app.schemas.contracts import (
+    RecoveryDecisionState as RecoveryDecisionStateResponse,
 )
 from app.schemas.errors import ApiErrorCode
 
@@ -104,6 +146,12 @@ _INTEGRATED_OPERATIONS = frozenset(
         "record_quote",
         "attach_commitment_evidence",
         "create_candidate_commitment",
+        "create_simulated_recap",
+        "create_call_brief",
+        "start_inbound_simulation",
+        "replace_mandate",
+        "create_escalation",
+        "acknowledge_notification",
         "get_operation_audit",
     }
 )
@@ -260,7 +308,108 @@ class VoltaTextContractService:
                 )
             )
             return _mutation_result(_commitment_response(outcome.value), outcome)
-        projection = await application.get_operation_audit(_path_uuid(payload, "operation_id"))
+        if operation_id == "create_simulated_recap":
+            body = _body(payload)
+            outcome = await application.create_simulated_recap(
+                CreateSimulatedRecapInput(
+                    call_id=_path_uuid(payload, "call_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    commitment_id=_uuid(body, "commitment_id"),
+                    rendered_content=_string(body, "rendered_content"),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_recap_response(outcome.value), outcome)
+        if operation_id == "create_call_brief":
+            body = _body(payload)
+            outcome = await application.create_call_brief(
+                CreateCallBriefInput(
+                    call_id=_path_uuid(payload, "call_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    facts=tuple(_strings(body, "facts")),
+                    objections=tuple(_strings(body, "objections")),
+                    changes=tuple(_strings(body, "changes")),
+                    unresolved_items=tuple(_strings(body, "unresolved_items")),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_brief_response(outcome.value), outcome)
+        if operation_id == "start_inbound_simulation":
+            body = _body(payload)
+            outcome = await application.start_inbound_simulation(
+                StartInboundRecoveryInput(
+                    operation_id=_path_uuid(payload, "operation_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    scenario=RecoveryScenario(_string(body, "scenario")),
+                    active_commitment_id=_uuid(body, "active_commitment_id"),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_recovery_response(outcome.value), outcome)
+        if operation_id == "replace_mandate":
+            body = _body(payload)
+            pickup_window = _mapping(body, "pickup_window")
+            outcome = await application.replace_mandate(
+                ReplaceMandateInput(
+                    operation_id=_path_uuid(payload, "operation_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    resolved_escalation_id=_uuid(body, "resolved_escalation_id"),
+                    maximum_amount=Money(
+                        Decimal(_integer(body, "maximum_amount_minor")) / Decimal(100),
+                        _string(body, "currency"),
+                    ),
+                    pickup_window=MandatePickupWindow(
+                        _date(pickup_window, "start_date"),
+                        _date(pickup_window, "end_date"),
+                    ),
+                    allowed_conditions=tuple(_strings(body, "allowed_conditions")),
+                    escalation_conditions=tuple(
+                        _strings(body, "escalation_conditions")
+                    ),
+                    approval_actor=_string(body, "approval_actor"),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_operation_response(outcome.value), outcome)
+        if operation_id == "create_escalation":
+            body = _body(payload)
+            outcome = await application.create_escalation(
+                CreateEscalationInput(
+                    call_id=_path_uuid(payload, "call_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    conflict=_string(body, "conflict"),
+                    attempted_alternatives=tuple(
+                        _strings(body, "attempted_alternatives")
+                    ),
+                    recommended_action=_string(body, "recommended_action"),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_post_contact_escalation_response(outcome.value), outcome)
+        if operation_id == "acknowledge_notification":
+            body = _body(payload)
+            outcome = await application.acknowledge_notification(
+                AcknowledgeNotificationInput(
+                    notification_id=_path_uuid(payload, "notification_id"),
+                    expected_operation_version=_integer(body, "expected_operation_version"),
+                    acknowledged_by=_string(body, "acknowledged_by"),
+                    idempotency_key=_required_idempotency_key(idempotency_key),
+                    correlation_id=self._correlation_ids(),
+                )
+            )
+            return _mutation_result(_notification_response(outcome.value), outcome)
+        projection = await application.get_operation_audit(
+            AuditQuery(
+                operation_id=_path_uuid(payload, "operation_id"),
+                cursor=_optional_string(payload, "cursor"),
+                limit=_integer(payload, "limit"),
+            )
+        )
         return _query_result(_audit_response(projection))
 
 
@@ -324,6 +473,16 @@ def _translate_error(error: Exception) -> ContractServiceError:
         return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.operation_id)
     if isinstance(error, CallSessionNotFound):
         return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.call_id)
+    if isinstance(error, CommitmentNotFound):
+        return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.commitment_id)
+    if isinstance(error, EscalationNotFound):
+        return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.escalation_id)
+    if isinstance(error, NotificationNotFound):
+        return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.notification_id)
+    if isinstance(error, EvidenceArtifactUnavailable):
+        return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, None)
+    if isinstance(error, EvidenceReservationNotFound):
+        return _public_error(404, ApiErrorCode.RESOURCE_NOT_FOUND, error.evidence_id)
     if isinstance(error, StaleDraftVersion):
         return ContractServiceError(
             status_code=409,
@@ -345,6 +504,12 @@ def _translate_error(error: Exception) -> ContractServiceError:
         return _public_error(409, ApiErrorCode.MANDATE_CONFLICT, resource_id)
     if isinstance(error, IdempotencyConflict):
         return _public_error(409, ApiErrorCode.IDEMPOTENCY_KEY_REUSED, error.operation_id)
+    if isinstance(error, InvalidDomainValue):
+        return ContractServiceError(
+            status_code=422,
+            code=ApiErrorCode.VALIDATION_ERROR,
+            message="The request does not satisfy the public contract.",
+        )
     if isinstance(
         error,
         (
@@ -353,15 +518,22 @@ def _translate_error(error: Exception) -> ContractServiceError:
             NegotiationAlreadyStarted,
             CarrierSessionMismatch,
             CommitmentEvidenceNotFound,
-            EvidenceArtifactUnavailable,
             EvidenceReservationMismatch,
-            EvidenceReservationNotFound,
+            EscalationAlreadyResolved,
+            EscalationContextConflict,
+            EvidenceAlreadyRecorded,
             IdempotencyResultMissing,
+            InvalidCommitmentDisposition,
             InvalidNegotiationTransition,
+            MandateVersionNotAdvanced,
+            NotificationAlreadyAcknowledged,
+            OperationBlockedByEscalation,
             QuoteNotFound,
             QuoteNotEligible,
             QuoteExpired,
             QuoteNotBestCandidate,
+            RecoveryEvidenceRequired,
+            RecoveryScenarioMismatch,
             PersistenceConflict,
         ),
     ):
@@ -396,7 +568,17 @@ def _public_error(
 
 
 def _safe_resource_id(error: Exception) -> UUID | None:
-    for name in ("operation_id", "draft_id", "call_id", "quote_id", "resource_id"):
+    for name in (
+        "operation_id",
+        "draft_id",
+        "call_id",
+        "quote_id",
+        "commitment_id",
+        "evidence_id",
+        "escalation_id",
+        "notification_id",
+        "resource_id",
+    ):
         value = getattr(error, name, None)
         if isinstance(value, UUID):
             return value
@@ -453,8 +635,16 @@ def _operation_response(projection: OperationProjection) -> OperationResponse:
         [] if negotiation is None else [_session_response(item) for item in negotiation.sessions]
     )
     quotes = [_quote_response(item) for item in projection.quotes]
-    escalation = None
-    if negotiation is not None and negotiation.pre_contact_escalation is not None:
+    escalation = (
+        None
+        if projection.open_escalation is None
+        else _post_contact_escalation_response(projection.open_escalation)
+    )
+    if (
+        escalation is None
+        and negotiation is not None
+        and negotiation.pre_contact_escalation is not None
+    ):
         escalation = _escalation_response(negotiation.pre_contact_escalation)
     summary_projection = projection.negotiation_summary
     summary = None
@@ -484,7 +674,7 @@ def _operation_response(projection: OperationProjection) -> OperationResponse:
             else _commitment_response(projection.active_commitment)
         ),
         open_escalation=escalation,
-        notifications=[],
+        notifications=[_notification_response(item) for item in projection.notifications],
         created_at=operation.created_at,
         updated_at=projection.updated_at,
     )
@@ -619,6 +809,133 @@ def _evidence_response(reservation: EvidenceReservation) -> CommitmentEvidenceRe
     )
 
 
+def _recap_response(recap: Recap) -> WrittenRecapResponse:
+    return WrittenRecapResponse(
+        recap_id=recap.id,
+        operation_id=recap.operation_id,
+        call_id=recap.call_id,
+        commitment_id=recap.commitment_id,
+        channel=recap.disclosure_state.value,
+        content_hash=recap.content_hash,
+        rendered_content=recap.rendered_content,
+        created_at=recap.generated_at,
+    )
+
+
+def _brief_response(brief: CallBrief) -> CallBriefResponse:
+    return CallBriefResponse(
+        brief_id=brief.id,
+        operation_id=brief.operation_id,
+        call_id=brief.call_id,
+        facts=list(brief.facts),
+        objections=list(brief.objections),
+        changes=list(brief.changes),
+        unresolved_items=list(brief.unresolved_items),
+        created_at=brief.generated_at,
+    )
+
+
+def _recovery_response(projection: RecoveryProjection) -> RecoverySimulationResponse:
+    attempt = projection.attempt
+    active_commitment = projection.active_commitment
+    return RecoverySimulationResponse(
+        recovery_id=attempt.id,
+        operation_id=attempt.operation_id,
+        scenario=attempt.scenario.value,
+        before_operation_version=attempt.before_operation_version,
+        after_operation_version=attempt.after_operation_version,
+        decision_reason=attempt.decision_reason,
+        active_commitment=(
+            None
+            if active_commitment is None or active_commitment.evidence is None
+            else _commitment_response(active_commitment)
+        ),
+        escalation=(
+            None
+            if projection.escalation is None
+            else _post_contact_escalation_response(projection.escalation)
+        ),
+        correlation_id=attempt.correlation_id,
+        created_at=attempt.created_at,
+    )
+
+
+def _post_contact_escalation_response(
+    escalation: PostContactEscalation,
+) -> EscalationResponse:
+    context = escalation.context
+    return EscalationResponse(
+        escalation_id=escalation.id,
+        operation_id=escalation.operation_id,
+        call_id=escalation.call_id,
+        conflict=escalation.reason_code if context is None else context.conflict,
+        attempted_alternatives=(
+            [] if context is None else list(context.attempted_alternatives)
+        ),
+        recommended_action=(
+            "Coordinator review required"
+            if context is None
+            else context.recommended_action
+        ),
+        resolution_state="RESOLVED" if escalation.resolved else "OPEN",
+        correlation_id=escalation.correlation_id,
+        created_at=escalation.created_at,
+        resolved_at=escalation.resolved_at,
+    )
+
+
+def _notification_response(notification: Notification) -> CoordinatorNotificationResponse:
+    if (
+        notification.operation_version is None
+        or notification.recovery_decision is None
+        or notification.message is None
+        or notification.correlation_id is None
+    ):
+        raise ValueError("notification recovery projection is incomplete")
+    decision = notification.recovery_decision
+    return CoordinatorNotificationResponse(
+        notification_id=notification.id,
+        operation_id=notification.operation_id,
+        operation_version=notification.operation_version,
+        recovery_decision=RecoveryDecisionResponse(
+            before=_recovery_decision_state_response(decision.before),
+            after=_recovery_decision_state_response(decision.after),
+            reason=decision.reason,
+        ),
+        message=notification.message,
+        acknowledged=notification.acknowledged,
+        acknowledged_by=notification.acknowledged_by,
+        acknowledged_at=notification.acknowledged_at,
+        correlation_id=notification.correlation_id,
+        created_at=notification.created_at,
+    )
+
+
+def _recovery_decision_state_response(
+    state: RecoveryDecisionState,
+) -> RecoveryDecisionStateResponse:
+    terms = state.agreed_terms
+    return RecoveryDecisionStateResponse(
+        operation_version=state.operation_version,
+        operation_status=state.operation_status.value,
+        active_commitment_id=state.active_commitment_id,
+        carrier_id=state.carrier_id,
+        agreed_terms=(
+            None
+            if terms is None
+            else {
+                "amount_minor": _minor_amount(terms.amount),
+                "currency": terms.currency,
+                "pickup_window": {
+                    "start_date": terms.pickup_window_start,
+                    "end_date": terms.pickup_window_end,
+                },
+                "conditions": list(terms.conditions),
+            }
+        ),
+    )
+
+
 def _escalation_response(projection: PreContactEscalationProjection) -> EscalationResponse:
     escalation = projection.escalation
     return EscalationResponse(
@@ -636,7 +953,9 @@ def _escalation_response(projection: PreContactEscalationProjection) -> Escalati
 
 
 def _audit_response(projection: AuditProjection) -> AuditTimelineResponse:
-    escalations = []
+    escalations = [
+        _post_contact_escalation_response(item) for item in projection.escalations
+    ]
     if projection.negotiation is not None:
         escalation = projection.negotiation.pre_contact_escalation
         if escalation is not None:
@@ -661,12 +980,12 @@ def _audit_response(projection: AuditProjection) -> AuditTimelineResponse:
             for item in projection.commitment_history
             if item.evidence is not None
         ],
-        recaps=[],
-        briefs=[],
-        recoveries=[],
+        recaps=[_recap_response(item) for item in projection.recaps],
+        briefs=[_brief_response(item) for item in projection.briefs],
+        recoveries=[_recovery_response(item) for item in projection.recoveries],
         escalations=escalations,
-        notifications=[],
-        next_cursor=None,
+        notifications=[_notification_response(item) for item in projection.notifications],
+        next_cursor=projection.next_cursor,
     )
 
 
@@ -728,6 +1047,15 @@ def _string(values: dict[str, JsonValue], key: str) -> str:
     value = values.get(key)
     if not isinstance(value, str):
         raise ValueError("validated string value is missing")
+    return value
+
+
+def _optional_string(values: dict[str, JsonValue], key: str) -> str | None:
+    value = values.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("validated optional string value is invalid")
     return value
 
 

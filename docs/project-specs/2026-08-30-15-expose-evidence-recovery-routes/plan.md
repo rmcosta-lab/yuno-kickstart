@@ -37,12 +37,12 @@ Implementation therefore pauses after task group 2 if no existing backend bounda
 
 The task-group-2 audit on 2026-08-30 confirmed that the boundary is absent. Two independent read-only subagents found the same blockers: missing durable HTTP response facts for recaps, briefs, recoveries, post-contact escalations, and notifications; incomplete operation/audit projections; no atomic fingerprinted idempotency for the six remaining mutations; and no safe backend-owned recovery fixture/evidence projection that the API can reuse without inventing state. `attach_commitment_evidence` remains the only Fase 15 operation already integrated honestly.
 
-The user approved the supporting-phase path. Merged pull request [#19](https://github.com/rmcosta-lab/yuno-kickstart/pull/19) added Fase 25 — Complete the evidence and recovery application facade — dependent on Fases 10 and 24, and made Fase 15 depend on it. This branch refreshed from the resulting `origin/main`. Fase 15 implementation remains paused until Fase 25 is started, implemented, validated, and merged, then refreshes once more from the resulting `origin/main`.
+The user approved the supporting-phase path. Merged pull request [#19](https://github.com/rmcosta-lab/yuno-kickstart/pull/19) added Fase 25 — Complete the evidence and recovery application facade — dependent on Fases 10 and 24, and made Fase 15 depend on it. Fase 25 completed in merged pull request [#21](https://github.com/rmcosta-lab/yuno-kickstart/pull/21) with its backend gate recorded. This branch refreshed from the resulting `origin/main`; the temporary wait is resolved and implementation resumed against the typed Fase 25 facade.
 
 ## Shared decisions and branch refresh
 
 - No mission, stack, roadmap, or challenge-plan change is carried by Fase 15.
-- The query/idempotency checkpoint requires Fase 25; merged specs pull request #19 records the dependency while this plan records the temporary wait.
+- The query/idempotency checkpoint was resolved by merged Fase 25 pull request #21; merged specs pull request #19 remains the dependency decision record.
 - Refresh `origin/main`, the declared dependencies, remote phase refs, and pull requests immediately before implementation publication and again before review.
 
 ## Validation strategy
