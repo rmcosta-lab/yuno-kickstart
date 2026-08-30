@@ -66,7 +66,7 @@ def create_app(
     )
     application.state.settings = resolved_settings
     application.state.twilio_media_lock = asyncio.Lock()
-    application.state.twilio_media_active = False
+    application.state.twilio_media_active = set()
     configure_openai_http_client(application)
     mutation_rate_limiter = SlidingWindowRateLimiter(
         request_limit=resolved_settings.volta_mutation_rate_limit_requests,
