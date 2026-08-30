@@ -166,6 +166,22 @@ def derive_safety_identifier(key: str, subject: str) -> str:
     return hmac.new(key.encode(), subject.encode(), hashlib.sha256).hexdigest()
 
 
+def build_telephony_realtime_session(settings: Settings) -> RealtimeSessionRequest:
+    """Reuse browser voice policy while exposing only the non-authoritative quote tool."""
+
+    return RealtimeSessionRequest(
+        instructions=_SESSION_INSTRUCTIONS,
+        safety_identifier=derive_safety_identifier(
+            settings.openai_realtime_safety_identifier_key.get_secret_value(),
+            settings.volta_realtime_subject,
+        ),
+        tools=(_TOOLS[0],),
+        language="en",
+        voice=settings.volta_realtime_voice,
+        vad="server_vad",
+    )
+
+
 def build_realtime_client_secret_service(
     settings: Settings,
     client: httpx.AsyncClient,

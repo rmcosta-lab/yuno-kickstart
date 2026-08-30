@@ -68,10 +68,11 @@ PHASE14_TABLES = PHASE08_TABLES | {
     "volta_recovery_attempts",
     "volta_notifications",
 }
-EXPECTED_TABLES = PHASE14_TABLES | {
+PRE_PHASE18_TABLES = PHASE14_TABLES | {
     "volta_evidence_reservations",
     "volta_text_mutation_idempotency",
 }
+EXPECTED_TABLES = PRE_PHASE18_TABLES | {"volta_outbound_call_attempts"}
 PHASE06_TABLES = {
     "volta_audit_events",
     "volta_intake_drafts",
@@ -266,6 +267,24 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_text_idempotency_fingerprint",
         "ck_volta_text_idempotency_result_kind",
         "ck_volta_text_idempotency_result_snapshot",
+    },
+    "volta_outbound_call_attempts": {
+        "pk_volta_outbound_call_attempts",
+        "fk_volta_outbound_call_attempts_operation",
+        "uq_volta_outbound_call_attempts_provider_call",
+        "ck_volta_outbound_call_attempts_key",
+        "ck_volta_outbound_call_attempts_fingerprint",
+        "ck_volta_outbound_call_attempts_state",
+        "ck_volta_outbound_call_attempts_payload",
+        "ck_volta_outbound_call_attempts_call_status",
+        "ck_volta_outbound_call_attempts_provider_call",
+        "ck_volta_outbound_call_attempts_cursor",
+        "ck_volta_outbound_call_attempts_processed_events",
+        "ck_volta_outbound_call_attempts_uncertainty",
+        "ck_volta_outbound_call_attempts_failure",
+        "ck_volta_outbound_call_attempts_failure_status",
+        "ck_volta_outbound_call_attempts_call_timestamps",
+        "ck_volta_outbound_call_attempts_timestamps",
     },
 }
 
@@ -485,10 +504,14 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "ix_volta_text_idempotency_draft",
         "ix_volta_text_idempotency_operation",
     }
+    assert indexes["volta_outbound_call_attempts"] == {  # type: ignore[index]
+        "ix_volta_outbound_call_attempts_operation",
+        "uq_volta_outbound_call_attempts_provider_call",
+    }
 
     command.downgrade(alembic_config, "-1")
     tables_after_one_downgrade, _ = asyncio.run(_volta_tables_and_function(isolated_database_url))
-    assert tables_after_one_downgrade == EXPECTED_TABLES
+    assert tables_after_one_downgrade == PRE_PHASE18_TABLES
     _, phase14_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
     assert "COMMITMENT_SUPERSEDED" in phase14_audit_definition
     assert "EVIDENCE_RECORDED" in phase14_audit_definition

@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from time import monotonic
@@ -23,6 +24,7 @@ from app.openai_client import configure_openai_http_client, get_openai_http_clie
 from app.routers.contracts import router as contracts_router
 from app.routers.health import router as health_router
 from app.routers.realtime import router as realtime_router
+from app.routers.telephony import router as telephony_router
 
 
 @asynccontextmanager
@@ -32,14 +34,20 @@ async def application_lifespan(application: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         try:
-            service = getattr(application.state, "contract_service", None)
-            close = getattr(service, "aclose", None)
-            if close is not None:
-                await close()
+            telephony = getattr(application.state, "telephony_application", None)
+            telephony_close = getattr(telephony, "aclose", None)
+            if telephony_close is not None:
+                await telephony_close()
         finally:
-            client = getattr(application.state, "openai_http_client", None)
-            if client is not None:
-                await client.aclose()
+            try:
+                service = getattr(application.state, "contract_service", None)
+                close = getattr(service, "aclose", None)
+                if close is not None:
+                    await close()
+            finally:
+                client = getattr(application.state, "openai_http_client", None)
+                if client is not None:
+                    await client.aclose()
 
 
 def create_app(
@@ -57,6 +65,8 @@ def create_app(
         lifespan=application_lifespan,
     )
     application.state.settings = resolved_settings
+    application.state.twilio_media_lock = asyncio.Lock()
+    application.state.twilio_media_active = False
     configure_openai_http_client(application)
     mutation_rate_limiter = SlidingWindowRateLimiter(
         request_limit=resolved_settings.volta_mutation_rate_limit_requests,
@@ -92,6 +102,7 @@ def create_app(
     application.include_router(health_router)
     application.include_router(contracts_router)
     application.include_router(realtime_router)
+    application.include_router(telephony_router)
     return application
 
 

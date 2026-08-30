@@ -47,6 +47,8 @@
           "MANDATE_CONFLICT",
           "VALIDATION_ERROR",
           "RATE_LIMITED",
+          "TELEPHONY_UNAVAILABLE",
+          "TELEPHONY_OUTCOME_UNCERTAIN",
           "REALTIME_UNAVAILABLE",
           "INTERNAL_ERROR",
           "CONTRACT_NOT_IMPLEMENTED"
@@ -953,6 +955,59 @@
         "title": "CreateOperationDraftRequest",
         "type": "object"
       },
+      "CreateOutboundCallRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ai_disclosure_required": {
+            "const": true,
+            "title": "Ai Disclosure Required",
+            "type": "boolean"
+          },
+          "authorized_at": {
+            "format": "date-time",
+            "title": "Authorized At",
+            "type": "string"
+          },
+          "authorized_by": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Authorized By",
+            "type": "string"
+          },
+          "call_session_id": {
+            "format": "uuid",
+            "title": "Call Session Id",
+            "type": "string"
+          },
+          "destination_label": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Destination Label",
+            "type": "string"
+          },
+          "recording_consent_required": {
+            "const": false,
+            "title": "Recording Consent Required",
+            "type": "boolean"
+          },
+          "recording_mode": {
+            "const": "DISABLED",
+            "title": "Recording Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_session_id",
+          "destination_label",
+          "authorized_by",
+          "authorized_at",
+          "ai_disclosure_required",
+          "recording_mode",
+          "recording_consent_required"
+        ],
+        "title": "CreateOutboundCallRequest",
+        "type": "object"
+      },
       "CreateQuoteRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1554,6 +1609,56 @@
         ],
         "title": "OperationStatus",
         "type": "string"
+      },
+      "OutboundCallResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "call_session_id": {
+            "format": "uuid",
+            "title": "Call Session Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "provider_call_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Provider Call Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "QUEUED",
+              "INITIATED",
+              "RINGING",
+              "IN_PROGRESS",
+              "COMPLETED",
+              "BUSY",
+              "FAILED",
+              "NO_ANSWER",
+              "CANCELED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_updated_at": {
+            "format": "date-time",
+            "title": "Status Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_session_id",
+          "provider_call_id",
+          "status",
+          "created_at",
+          "status_updated_at"
+        ],
+        "title": "OutboundCallResponse",
+        "type": "object"
       },
       "PickupWindow": {
         "additionalProperties": false,
@@ -5789,6 +5894,245 @@
         "summary": "Start Negotiation",
         "tags": [
           "volta"
+        ]
+      }
+    },
+    "/v1/operations/{operation_id}/outbound-calls": {
+      "post": {
+        "operationId": "create_outbound_call",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Printable ASCII key reused for one logical mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "description": "Printable ASCII key reused for one logical mutation.",
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[\\x20-\\x7E]+$",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOutboundCallRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboundCallResponse"
+                }
+              }
+            },
+            "description": "The call was accepted."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The authenticated actor lacks authority.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The referenced resource was not found.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request conflicts with current state or idempotency history.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request does not satisfy the public contract.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The configured demo traffic boundary was exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected failure was translated safely.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Provider failure."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unavailable or uncertain outcome."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Provider timeout."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Outbound Call",
+        "tags": [
+          "telephony"
         ]
       }
     },
