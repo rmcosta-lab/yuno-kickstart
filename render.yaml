@@ -4,20 +4,15 @@ services:
     name: volta-api
     runtime: python
     region: virginia
-    plan: 0.5c-512mb
+    plan: free
     numInstances: 1
     buildCommand: uv sync --frozen --all-packages --no-dev
-    preDeployCommand: uv run --no-sync alembic -c backend/alembic.ini upgrade head
     startCommand: >-
-      uv run --no-sync --package yuno-api uvicorn app.main:app
+      uv run --no-sync alembic -c backend/alembic.ini upgrade head &&
+      exec uv run --no-sync --package yuno-api uvicorn app.main:app
       --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
-    maxShutdownDelaySeconds: 60
     autoDeployTrigger: checksPass
-    disk:
-      name: volta-evidence
-      mountPath: /var/data/volta-evidence
-      sizeGB: 1
     envVars:
       - key: APP_ENV
         value: production
@@ -34,7 +29,7 @@ services:
       - key: VOLTA_DEMO_BEARER_TOKEN
         sync: false
       - key: VOLTA_EVIDENCE_STORAGE_PATH
-        value: /var/data/volta-evidence
+        value: /tmp/yuno-volta-text-evidence
       - key: VOLTA_EXTRACTION_MODE
         value: openai
       - key: OPENAI_API_KEY
@@ -55,8 +50,7 @@ services:
 databases:
   - name: volta-postgres
     region: virginia
-    plan: 0.1c-256mb
-    diskSizeGB: 1
+    plan: free
     postgresMajorVersion: "17"
     databaseName: volta
     user: volta
