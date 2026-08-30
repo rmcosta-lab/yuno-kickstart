@@ -2,6 +2,7 @@
 
 from sqlalchemy import (
     ARRAY,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Column,
@@ -579,6 +580,130 @@ _text_mutation_idempotency = Table(
         name="ck_volta_text_idempotency_result_snapshot",
     ),
 )
+
+_outbound_call_attempts = Table(
+    "volta_outbound_call_attempts",
+    _metadata,
+    Column("idempotency_key", Text, nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("request_fingerprint", Text, nullable=False),
+    Column("state", Text, nullable=False),
+    Column("call_session_id", UUID(as_uuid=True), nullable=True),
+    Column("provider_call_id", Text, nullable=True),
+    Column("call_status", Text, nullable=True),
+    Column("call_created_at", DateTime(timezone=True), nullable=True),
+    Column("status_updated_at", DateTime(timezone=True), nullable=True),
+    Column("last_status_event_id", Text, nullable=True),
+    Column("last_status_sequence_number", BigInteger, nullable=True),
+    Column("processed_status_event_ids", ARRAY(Text), nullable=True),
+    Column("uncertainty_reason", Text, nullable=True),
+    Column("uncertainty_occurred_at", DateTime(timezone=True), nullable=True),
+    Column("failure_category", Text, nullable=True),
+    Column("failure_status_code", Integer, nullable=True),
+    Column("failure_occurred_at", DateTime(timezone=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("idempotency_key", name="pk_volta_outbound_call_attempts"),
+    ForeignKeyConstraint(
+        ["operation_id"],
+        ["volta_operations.id"],
+        name="fk_volta_outbound_call_attempts_operation",
+    ),
+    UniqueConstraint(
+        "provider_call_id", name="uq_volta_outbound_call_attempts_provider_call"
+    ),
+    CheckConstraint(
+        "char_length(idempotency_key) BETWEEN 8 AND 128 "
+        "AND idempotency_key ~ '^[ -~]+$'",
+        name="ck_volta_outbound_call_attempts_key",
+    ),
+    CheckConstraint(
+        "request_fingerprint ~ '^[0-9a-f]{64}$'",
+        name="ck_volta_outbound_call_attempts_fingerprint",
+    ),
+    CheckConstraint(
+        "state IN ('PENDING', 'SUCCEEDED', 'UNCERTAIN', 'FAILED')",
+        name="ck_volta_outbound_call_attempts_state",
+    ),
+    CheckConstraint(
+        "(state = 'PENDING' AND call_session_id IS NULL AND provider_call_id IS NULL "
+        "AND call_status IS NULL AND call_created_at IS NULL AND status_updated_at IS NULL "
+        "AND last_status_event_id IS NULL AND last_status_sequence_number IS NULL "
+        "AND processed_status_event_ids IS NULL AND uncertainty_reason IS NULL "
+        "AND uncertainty_occurred_at IS NULL AND failure_category IS NULL "
+        "AND failure_status_code IS NULL AND failure_occurred_at IS NULL) OR "
+        "(state = 'SUCCEEDED' AND call_session_id IS NOT NULL "
+        "AND provider_call_id IS NOT NULL AND call_status IS NOT NULL "
+        "AND call_created_at IS NOT NULL AND status_updated_at IS NOT NULL "
+        "AND processed_status_event_ids IS NOT NULL AND uncertainty_reason IS NULL "
+        "AND uncertainty_occurred_at IS NULL AND failure_category IS NULL "
+        "AND failure_status_code IS NULL AND failure_occurred_at IS NULL) OR "
+        "(state = 'UNCERTAIN' AND call_session_id IS NULL AND provider_call_id IS NULL "
+        "AND call_status IS NULL AND call_created_at IS NULL AND status_updated_at IS NULL "
+        "AND last_status_event_id IS NULL AND last_status_sequence_number IS NULL "
+        "AND processed_status_event_ids IS NULL AND uncertainty_reason IS NOT NULL "
+        "AND uncertainty_occurred_at IS NOT NULL AND failure_category IS NULL "
+        "AND failure_status_code IS NULL AND failure_occurred_at IS NULL) OR "
+        "(state = 'FAILED' AND call_session_id IS NULL AND provider_call_id IS NULL "
+        "AND call_status IS NULL AND call_created_at IS NULL AND status_updated_at IS NULL "
+        "AND last_status_event_id IS NULL AND last_status_sequence_number IS NULL "
+        "AND processed_status_event_ids IS NULL AND uncertainty_reason IS NULL "
+        "AND uncertainty_occurred_at IS NULL AND failure_category IS NOT NULL "
+        "AND failure_occurred_at IS NOT NULL)",
+        name="ck_volta_outbound_call_attempts_payload",
+    ),
+    CheckConstraint(
+        "call_status IS NULL OR call_status IN ('QUEUED', 'INITIATED', 'RINGING', "
+        "'IN_PROGRESS', 'COMPLETED', 'BUSY', 'FAILED', 'NO_ANSWER', 'CANCELED')",
+        name="ck_volta_outbound_call_attempts_call_status",
+    ),
+    CheckConstraint(
+        "provider_call_id IS NULL OR provider_call_id ~ "
+        "'^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$'",
+        name="ck_volta_outbound_call_attempts_provider_call",
+    ),
+    CheckConstraint(
+        "(last_status_event_id IS NULL AND last_status_sequence_number IS NULL) OR "
+        "(last_status_event_id ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$' "
+        "AND last_status_sequence_number >= 0)",
+        name="ck_volta_outbound_call_attempts_cursor",
+    ),
+    CheckConstraint(
+        "processed_status_event_ids IS NULL OR "
+        "(cardinality(processed_status_event_ids) <= 128 AND "
+        "array_to_string(processed_status_event_ids, ',') ~ "
+        "'^$|^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}(,[A-Za-z0-9][A-Za-z0-9._:/-]{0,127})*$' "
+        "AND (last_status_event_id IS NULL OR "
+        "last_status_event_id = ANY(processed_status_event_ids)))",
+        name="ck_volta_outbound_call_attempts_processed_events",
+    ),
+    CheckConstraint(
+        "uncertainty_reason IS NULL OR uncertainty_reason IN "
+        "('TIMEOUT', 'CONNECTION_LOST', 'INVALID_RESPONSE', 'PROVIDER_FAILURE')",
+        name="ck_volta_outbound_call_attempts_uncertainty",
+    ),
+    CheckConstraint(
+        "failure_category IS NULL OR failure_category IN ('AUTHENTICATION', "
+        "'PERMISSION', 'RATE_LIMIT', 'TIMEOUT', 'CONNECTION', 'INVALID_REQUEST', "
+        "'PROVIDER_REJECTED', 'INVALID_RESPONSE')",
+        name="ck_volta_outbound_call_attempts_failure",
+    ),
+    CheckConstraint(
+        "failure_status_code IS NULL OR failure_status_code BETWEEN 100 AND 599",
+        name="ck_volta_outbound_call_attempts_failure_status",
+    ),
+    CheckConstraint(
+        "(call_created_at IS NULL AND status_updated_at IS NULL) OR "
+        "status_updated_at >= call_created_at",
+        name="ck_volta_outbound_call_attempts_call_timestamps",
+    ),
+    CheckConstraint(
+        "updated_at >= created_at",
+        name="ck_volta_outbound_call_attempts_timestamps",
+    ),
+)
+
+Index("ix_volta_outbound_call_attempts_operation", _outbound_call_attempts.c.operation_id)
 
 Index("ix_volta_sessions_negotiation", _carrier_sessions.c.negotiation_id)
 Index("ix_volta_pre_contact_escalations_negotiation", _pre_contact_escalations.c.negotiation_id)

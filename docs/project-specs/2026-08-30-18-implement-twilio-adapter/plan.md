@@ -8,7 +8,8 @@
 2. **Implement authorization, allowlist, and durable idempotency guards**
    - Validate bounded operation/call identifiers, idempotency key, human actor/timestamp, disclosure readiness, recording mode, and consent policy before network I/O.
    - Resolve only a synthetic destination label through an injected server-side allowlist whose private number never appears in representations or diagnostics.
-   - Lock and fingerprint each logical attempt. Replay the stored same-request result, reject a different-request conflict, coalesce concurrent duplicates, and record uncertain dispatch outcomes.
+   - Atomically reserve and fingerprint each logical attempt in a short transaction. Replay the stored same-request result, reject a different-request conflict, block an existing in-flight reservation from dispatching, and record known failures or uncertain outcomes in a separate short transaction after network I/O.
+   - Never hold a database transaction, row lock, or unit of work open while waiting for Twilio.
    - Reuse the existing persistence boundary where it safely fits; otherwise add the smallest reversible migration and repository implementation, with rollback and round-trip tests.
 
 3. **Implement the bounded Twilio outbound mapping**
@@ -32,9 +33,14 @@
 
 ## Ownership and sequencing
 
-- One backend writer, `rmcosta-lab`, owns the telephony contracts, Twilio integration, tests, optional persistence extension, and paired manifest/lockfile changes.
+- The coordinator is `rmcosta-lab`. For the explicitly requested parallel implementation, ownership is split into non-overlapping backend paths:
+  - core worker: `backend/src/yuno_backend/volta/telephony/**` and `backend/tests/volta/telephony/**`;
+  - Twilio worker: `backend/src/yuno_backend/integrations/twilio/**` and `backend/tests/volta/integrations/twilio/**`;
+  - persistence worker: the Phase 18 changes in `backend/src/yuno_backend/volta/persistence/**`, `backend/migrations/**`, and matching persistence tests;
+  - coordinator: this phase directory, integration-only fixes, and final validation evidence.
+- No worker owns `backend/pyproject.toml` or `uv.lock`; HTTPX is already a direct dependency, and any discovered dependency change returns to the coordinator before either file is edited.
 - The phase coordinator owns only this specification directory during planning and its validation evidence during implementation.
-- Contracts land before mapping; guard and idempotency behavior land before provider dispatch; failure/lifecycle mapping lands before integration handoff.
+- The core contract worker lands first. The Twilio and persistence workers then run in parallel against those frozen symbols; guard and idempotency behavior land before provider dispatch, and failure/lifecycle mapping lands before integration handoff.
 - There is no frontend or API workstream, OpenAPI/Orval generation, browser validation, public deployment, or parallel writer inside this phase.
 - Before editing persistence, exports, the manifest, or lockfile, refresh open phase/specification pull requests and coordinate any overlapping writer.
 - No shared spec change is planned. The early-start exception is documented here and does not remove or weaken the Phase 17 dependency.

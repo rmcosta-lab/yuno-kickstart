@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -10,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from yuno_backend.volta.audit.models import AuditEvent
 from yuno_backend.volta.evidence.models import AgreementEvidence, CallBrief, Recap
@@ -44,6 +45,8 @@ from yuno_backend.volta.persistence.mappers import (
     _notification_to_values,
     _operation_from_rows,
     _operation_to_values,
+    _outbound_call_attempt_from_row,
+    _outbound_call_attempt_to_values,
     _post_contact_escalation_from_row,
     _post_contact_escalation_to_values,
     _quote_from_row,
@@ -71,6 +74,7 @@ from yuno_backend.volta.persistence.tables import (
     _notifications,
     _operation_status_history,
     _operations,
+    _outbound_call_attempts,
     _post_contact_escalations,
     _pre_contact_escalations,
     _quotes,
@@ -79,6 +83,16 @@ from yuno_backend.volta.persistence.tables import (
     _text_mutation_idempotency,
 )
 from yuno_backend.volta.recovery.models import Notification, PostContactEscalation, RecoveryAttempt
+from yuno_backend.volta.telephony.errors import OutboundCallIdempotencyConflict
+from yuno_backend.volta.telephony.models import (
+    OutboundCall,
+    OutboundCallAttempt,
+    OutboundCallAttemptReservation,
+    OutboundCallAttemptState,
+    OutboundCallFailure,
+    OutboundCallUncertainState,
+)
+from yuno_backend.volta.telephony.services import transition_status
 from yuno_backend.volta.text_slice.models import EvidenceReservation
 
 __all__ = [
@@ -92,6 +106,7 @@ __all__ = [
     "SqlAlchemyNegotiationRepository",
     "SqlAlchemyNotificationRepository",
     "SqlAlchemyOperationRepository",
+    "SqlAlchemyOutboundCallAttemptStore",
     "SqlAlchemyPostContactEscalationRepository",
     "SqlAlchemyQuoteRepository",
     "SqlAlchemyRecapRepository",
@@ -1085,3 +1100,216 @@ class SqlAlchemyTextMutationIdempotencyRepository:
             raise PersistenceUnavailable(
                 "write_failed", "text_idempotency", record.result_id
             ) from None
+
+
+class SqlAlchemyOutboundCallAttemptStore:
+    """Atomic, short-transaction storage for one outbound provider mutation."""
+
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._session_factory = session_factory
+
+    async def reserve(
+        self, attempt: OutboundCallAttempt
+    ) -> OutboundCallAttemptReservation:
+        if attempt.state is not OutboundCallAttemptState.PENDING:
+            raise ValueError("outbound call reservation must be pending")
+        try:
+            async with self._session_factory.begin() as session:
+                await self._lock(session, attempt.idempotency_key)
+                stored = await self._get(session, attempt.idempotency_key)
+                if stored is not None:
+                    self._require_fingerprint(stored, attempt.request_fingerprint)
+                    return OutboundCallAttemptReservation(stored, False)
+                await session.execute(
+                    insert(_outbound_call_attempts).values(
+                        _outbound_call_attempt_to_values(attempt)
+                    )
+                )
+                return OutboundCallAttemptReservation(attempt, True)
+        except OutboundCallIdempotencyConflict:
+            raise
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "outbound_call_attempt", attempt.operation_id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "outbound_call_attempt", attempt.operation_id
+            ) from None
+
+    async def complete(
+        self,
+        idempotency_key: str,
+        request_fingerprint: str,
+        result: OutboundCall,
+        completed_at: datetime,
+    ) -> OutboundCallAttempt:
+        return await self._finish(
+            idempotency_key,
+            request_fingerprint,
+            state=OutboundCallAttemptState.SUCCEEDED,
+            updated_at=completed_at,
+            result=result,
+        )
+
+    async def mark_uncertain(
+        self,
+        idempotency_key: str,
+        request_fingerprint: str,
+        uncertainty: OutboundCallUncertainState,
+    ) -> OutboundCallAttempt:
+        return await self._finish(
+            idempotency_key,
+            request_fingerprint,
+            state=OutboundCallAttemptState.UNCERTAIN,
+            updated_at=uncertainty.occurred_at,
+            uncertainty=uncertainty,
+        )
+
+    async def fail(
+        self,
+        idempotency_key: str,
+        request_fingerprint: str,
+        failure: OutboundCallFailure,
+    ) -> OutboundCallAttempt:
+        return await self._finish(
+            idempotency_key,
+            request_fingerprint,
+            state=OutboundCallAttemptState.FAILED,
+            updated_at=failure.occurred_at,
+            failure=failure,
+        )
+
+    async def _finish(
+        self,
+        idempotency_key: str,
+        request_fingerprint: str,
+        *,
+        state: OutboundCallAttemptState,
+        updated_at: datetime,
+        result: OutboundCall | None = None,
+        uncertainty: OutboundCallUncertainState | None = None,
+        failure: OutboundCallFailure | None = None,
+    ) -> OutboundCallAttempt:
+        try:
+            async with self._session_factory.begin() as session:
+                await self._lock(session, idempotency_key)
+                stored = await self._get(session, idempotency_key)
+                if stored is None:
+                    raise PersistenceConflict("missing_state", "outbound_call_attempt")
+                self._require_fingerprint(stored, request_fingerprint)
+                if stored.state is not OutboundCallAttemptState.PENDING:
+                    if not (
+                        stored.state is OutboundCallAttemptState.SUCCEEDED
+                        and state is OutboundCallAttemptState.SUCCEEDED
+                    ):
+                        return stored
+                    if (
+                        stored.result is None
+                        or result is None
+                        or stored.result.call_session_id != result.call_session_id
+                        or stored.result.provider_call_id != result.provider_call_id
+                        or stored.result.created_at != result.created_at
+                    ):
+                        raise PersistenceConflict(
+                            "terminal_state_conflict",
+                            "outbound_call_attempt",
+                            stored.operation_id,
+                        )
+                    if result == stored.result or not _is_monotonic_call_update(
+                        stored, result, updated_at
+                    ):
+                        return stored
+                finished = replace(
+                    stored,
+                    state=state,
+                    result=result,
+                    uncertainty=uncertainty,
+                    failure=failure,
+                    updated_at=updated_at,
+                )
+                await session.execute(
+                    update(_outbound_call_attempts)
+                    .where(
+                        _outbound_call_attempts.c.idempotency_key == idempotency_key
+                    )
+                    .values(_outbound_call_attempt_to_values(finished))
+                )
+                return finished
+        except (OutboundCallIdempotencyConflict, PersistenceConflict):
+            raise
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "outbound_call_attempt"
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "outbound_call_attempt"
+            ) from None
+
+    @staticmethod
+    async def _lock(session: AsyncSession, idempotency_key: str) -> None:
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": f"outbound_call:{idempotency_key}"},
+        )
+
+    @staticmethod
+    async def _get(
+        session: AsyncSession, idempotency_key: str
+    ) -> OutboundCallAttempt | None:
+        try:
+            row = (
+                await session.execute(
+                    select(_outbound_call_attempts).where(
+                        _outbound_call_attempts.c.idempotency_key == idempotency_key
+                    )
+                )
+            ).first()
+            return (
+                None if row is None else _outbound_call_attempt_from_row(_mapping(row))
+            )
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable(
+                "invalid_stored_state", "outbound_call_attempt"
+            ) from None
+
+    @staticmethod
+    def _require_fingerprint(
+        stored: OutboundCallAttempt, request_fingerprint: str
+    ) -> None:
+        if stored.request_fingerprint != request_fingerprint:
+            raise OutboundCallIdempotencyConflict()
+
+
+def _is_monotonic_call_update(
+    stored_attempt: OutboundCallAttempt,
+    incoming: OutboundCall,
+    updated_at: datetime,
+) -> bool:
+    """Accept only a strictly newer, non-regressive lifecycle snapshot."""
+
+    stored = stored_attempt.result
+    if stored is None or stored.status_updated_at is None or incoming.status_updated_at is None:
+        return False
+    if updated_at < stored_attempt.updated_at:
+        return False
+    if incoming.status_updated_at < stored.status_updated_at:
+        return False
+    if not set(stored.processed_status_event_ids).issubset(
+        incoming.processed_status_event_ids
+    ):
+        return False
+    if stored.status.is_terminal:
+        if incoming.status is not stored.status:
+            return False
+    elif transition_status(stored.status, incoming.status) is not incoming.status:
+        return False
+
+    stored_sequence = stored.last_status_sequence_number
+    incoming_sequence = incoming.last_status_sequence_number
+    if incoming_sequence is None:
+        return False
+    if stored_sequence is not None and incoming_sequence <= stored_sequence:
+        return False
+    return True
