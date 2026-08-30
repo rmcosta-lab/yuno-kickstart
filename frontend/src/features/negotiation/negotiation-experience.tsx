@@ -64,6 +64,7 @@ import {
   RealtimeDiagnosticPreview,
   type AuthoritativeVoiceState,
 } from "../realtime";
+import { OutboundCallControl } from "../telephony";
 import type {
   DemoScenarioId,
   NegotiationExperienceSnapshot,
@@ -1245,6 +1246,8 @@ function LiveOperation({
 
   return (
     <div className="space-y-6">
+      <OutboundCallControl operation={operation} />
+
       <BrowserVoiceExperience
         operation={operation}
         audit={audit}
