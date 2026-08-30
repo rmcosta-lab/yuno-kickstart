@@ -35,16 +35,17 @@ from yuno_backend.volta.realtime import (
     RealtimeToolCallRequested,
 )
 from yuno_backend.volta.telephony import (
+    AcceptInboundCallInput,
     AIAuthorityFence,
+    CompleteInboundRecoveryInput,
+    FailInboundCallInput,
     HumanHandoff,
     HumanHandoffAudit,
+    HumanHandoffAuthorityError,
     HumanHandoffCommand,
     HumanHandoffReadiness,
     HumanHandoffService,
     HumanHandoffStatusEvent,
-    AcceptInboundCallInput,
-    CompleteInboundRecoveryInput,
-    FailInboundCallInput,
     InboundCallApplication,
     InboundCallError,
     OutboundCall,
@@ -318,8 +319,55 @@ class _LiveHandoffAudit(HumanHandoffAudit):
         )
 
 
+@dataclass(slots=True)
+class _OutboundRuntimeEntry:
+    call: OutboundCall
+    binding: MediaBinding
+    idempotency_key: str
+    request_fingerprint: str
+    stream_claimed: bool = False
+    stream_consumed: bool = False
+    status_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingOutboundCall:
+    request_fingerprint: str
+    result: asyncio.Task[OutboundCall] = field(repr=False)
+
+
+@dataclass(slots=True)
+class _InboundRuntimeEntry:
+    binding: MediaBinding
+    stream_claimed: bool = False
+    stream_consumed: bool = False
+
+
+class _OutboundCallCapacityError(Exception):
+    """The bounded demo runtime already owns three active outbound calls."""
+
+
+def _consume_task_exception(task: asyncio.Task[OutboundCall]) -> None:
+    if not task.cancelled():
+        task.exception()
+
+
+def _same_inbound_binding_identity(left: MediaBinding, right: MediaBinding) -> bool:
+    return (
+        left.operation_id == right.operation_id
+        and left.call_session_id == right.call_session_id
+        and left.provider_call_id == right.provider_call_id
+        and secrets.compare_digest(left.stream_token, right.stream_token)
+        and left.account_sid == right.account_sid
+        and left.inbound
+        and right.inbound
+    )
+
+
 class LiveTelephonyApplication:
-    """One-call runtime composed from existing provider-neutral adapters."""
+    """Bounded multi-call runtime composed from provider-neutral adapters."""
+
+    _MAX_ACTIVE_OUTBOUND_CALLS = 3
 
     def __init__(
         self,
@@ -340,14 +388,13 @@ class LiveTelephonyApplication:
         self._inbound_application = inbound_application
         self.twilio_account_sid = settings.twilio_account_sid.get_secret_value()
         self._engine = engine
-        self._binding: MediaBinding | None = None
-        self._call: OutboundCall | None = None
-        self._stream_claimed = False
-        self._stream_consumed = False
-        self._idempotency_key: str | None = None
-        self._request_fingerprint: str | None = None
+        self._outbound_by_provider_call_id: dict[str, _OutboundRuntimeEntry] = {}
+        self._outbound_by_idempotency_key: dict[str, _OutboundRuntimeEntry] = {}
+        self._outbound_by_call_session_id: dict[UUID, _OutboundRuntimeEntry] = {}
+        self._pending_outbound: dict[str, _PendingOutboundCall] = {}
+        self._pending_call_session_ids: set[UUID] = set()
         self._lock = asyncio.Lock()
-        self._inbound_bindings: dict[str, MediaBinding] = {}
+        self._inbound_bindings: dict[str, _InboundRuntimeEntry] = {}
         self._tools = VoltaToolDelegator(contracts)
         self._handoff_service: HumanHandoffService | None = None
         self._handoff_status_mapper: _HandoffStatusMapper | None = None
@@ -390,7 +437,13 @@ class LiveTelephonyApplication:
             raise RuntimeError("human handoff callback mapping is not configured")
         return await self._handoff_status_mapper.map_status_callback(callback)
 
+    def _ensure_local_ai_authority(self, call_id: UUID) -> None:
+        event = self._authority_events.get(call_id)
+        if event is not None and event.is_set():
+            raise HumanHandoffAuthorityError(call_id=call_id)
+
     async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
+        self._ensure_local_ai_authority(call_id)
         if self._authority_fence is not None:
             await self._authority_fence.ensure_speech_allowed(call_id)
 
@@ -411,39 +464,91 @@ class LiveTelephonyApplication:
         ):
             raise OutboundCallAuthorizationError(call_session_id=request.call_session_id)
         request_fingerprint = outbound_call_request_fingerprint(request)
+        pending_result: asyncio.Task[OutboundCall] | None = None
         async with self._lock:
-            active_call_exists = (
-                self._binding is not None
-                and self._call is not None
-                and not self._call.status.is_terminal
-            )
-            if active_call_exists:
-                if request.idempotency_key == self._idempotency_key:
-                    if request_fingerprint == self._request_fingerprint:
-                        assert self._call is not None
-                        return self._call
-                    raise OutboundCallIdempotencyConflict(call_session_id=request.call_session_id)
+            existing = self._outbound_by_idempotency_key.get(request.idempotency_key)
+            if existing is not None:
+                if request_fingerprint == existing.request_fingerprint:
+                    return existing.call
+                raise OutboundCallIdempotencyConflict(call_session_id=request.call_session_id)
+            pending = self._pending_outbound.get(request.idempotency_key)
+            if pending is not None:
+                if request_fingerprint != pending.request_fingerprint:
+                    raise OutboundCallIdempotencyConflict(
+                        call_session_id=request.call_session_id
+                    )
+                pending_result = pending.result
+            existing_session = self._outbound_by_call_session_id.get(request.call_session_id)
+            if existing_session is not None:
                 raise OutboundCallAuthorizationError(call_session_id=request.call_session_id)
-            call = await self._gateway.create_call(request)
-            self._call = call
-            self._idempotency_key = request.idempotency_key
-            self._request_fingerprint = request_fingerprint
-            self._binding = MediaBinding(
-                operation_id=request.operation_id,
-                call_session_id=request.call_session_id,
-                provider_call_id=call.provider_call_id,
-                stream_token=secrets.token_urlsafe(32),
-                account_sid=self.twilio_account_sid,
+            if (
+                pending_result is None
+                and request.call_session_id in self._pending_call_session_ids
+            ):
+                raise OutboundCallAuthorizationError(call_session_id=request.call_session_id)
+            active_count = sum(
+                not entry.call.status.is_terminal
+                for entry in self._outbound_by_provider_call_id.values()
             )
-            self._stream_claimed = False
-            self._stream_consumed = False
+            if (
+                pending_result is None
+                and active_count + len(self._pending_outbound)
+                >= self._MAX_ACTIVE_OUTBOUND_CALLS
+            ):
+                raise _OutboundCallCapacityError
+            if pending_result is None:
+                pending_result = asyncio.create_task(
+                    self._complete_outbound_call(request, request_fingerprint)
+                )
+                pending_result.add_done_callback(_consume_task_exception)
+                self._pending_outbound[request.idempotency_key] = _PendingOutboundCall(
+                    request_fingerprint=request_fingerprint,
+                    result=pending_result,
+                )
+                self._pending_call_session_ids.add(request.call_session_id)
+        return await asyncio.shield(pending_result)
+
+    async def _complete_outbound_call(
+        self,
+        request: OutboundCallRequest,
+        request_fingerprint: str,
+    ) -> OutboundCall:
+        try:
+            call = await self._gateway.create_call(request)
+            async with self._lock:
+                if call.provider_call_id in self._outbound_by_provider_call_id:
+                    raise RuntimeError("provider call identifier is already active")
+                binding = MediaBinding(
+                    operation_id=request.operation_id,
+                    call_session_id=request.call_session_id,
+                    provider_call_id=call.provider_call_id,
+                    stream_token=secrets.token_urlsafe(32),
+                    account_sid=self.twilio_account_sid,
+                )
+                entry = _OutboundRuntimeEntry(
+                    call=call,
+                    binding=binding,
+                    idempotency_key=request.idempotency_key,
+                    request_fingerprint=request_fingerprint,
+                )
+                self._outbound_by_provider_call_id[call.provider_call_id] = entry
+                self._outbound_by_idempotency_key[request.idempotency_key] = entry
+                self._outbound_by_call_session_id[request.call_session_id] = entry
+                self._pending_outbound.pop(request.idempotency_key, None)
+                self._pending_call_session_ids.discard(request.call_session_id)
             return call
+        except BaseException:
+            async with self._lock:
+                self._pending_outbound.pop(request.idempotency_key, None)
+                self._pending_call_session_ids.discard(request.call_session_id)
+            raise
 
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None:
         async with self._lock:
-            if self._binding is None or self._binding.provider_call_id != provider_call_id:
+            entry = self._outbound_by_provider_call_id.get(provider_call_id)
+            if entry is None or entry.call.status.is_terminal:
                 return None
-            return self._binding
+            return entry.binding
 
     async def accept_inbound_call(
         self, caller_label: str, provider_call_id: str, correlation_id: UUID
@@ -451,7 +556,8 @@ class LiveTelephonyApplication:
         if self._inbound_application is None:
             raise RuntimeError("inbound telephony is not configured")
         async with self._lock:
-            existing = self._inbound_bindings.get(provider_call_id)
+            existing_entry = self._inbound_bindings.get(provider_call_id)
+            existing = None if existing_entry is None else existing_entry.binding
         accepted = await self._inbound_application.accept_inbound_call(
             AcceptInboundCallInput(
                 caller_label=caller_label,
@@ -474,8 +580,15 @@ class LiveTelephonyApplication:
             correlation_id=binding_correlation_id,
         )
         async with self._lock:
-            self._inbound_bindings[provider_call_id] = binding
-        return binding
+            current = self._inbound_bindings.get(provider_call_id)
+            if current is None:
+                self._inbound_bindings[provider_call_id] = _InboundRuntimeEntry(binding)
+                canonical_binding = binding
+            elif _same_inbound_binding_identity(current.binding, binding):
+                canonical_binding = current.binding
+            else:
+                raise ValueError("inbound binding identity changed")
+        return canonical_binding
 
     async def record_inbound_consent(
         self, caller_label: str, provider_call_id: str, correlation_id: UUID
@@ -483,7 +596,8 @@ class LiveTelephonyApplication:
         if self._inbound_application is None:
             raise RuntimeError("inbound telephony is not configured")
         async with self._lock:
-            existing = self._inbound_bindings.get(provider_call_id)
+            existing_entry = self._inbound_bindings.get(provider_call_id)
+            existing = None if existing_entry is None else existing_entry.binding
         accepted = await self._inbound_application.accept_inbound_call(
             AcceptInboundCallInput(
                 caller_label=caller_label,
@@ -511,66 +625,95 @@ class LiveTelephonyApplication:
             )
         )
         async with self._lock:
-            self._inbound_bindings[provider_call_id] = binding
-        return binding
+            current = self._inbound_bindings.get(provider_call_id)
+            if current is None:
+                self._inbound_bindings[provider_call_id] = _InboundRuntimeEntry(binding)
+                canonical_binding = binding
+            elif _same_inbound_binding_identity(current.binding, binding):
+                canonical_binding = current.binding
+            else:
+                raise ValueError("inbound binding identity changed")
+        return canonical_binding
 
     async def binding_for_stream(
         self, stream_token: str, provider_call_id: str, provider_stream_id: str
     ) -> MediaBinding | None:
         async with self._lock:
-            if self._inbound_application is not None:
-                try:
-                    attempt = await self._inbound_application.start_inbound_stream(
-                        StartInboundStreamInput(
-                            provider_call_id=provider_call_id,
-                            stream_binding=stream_token,
-                            provider_stream_id=provider_stream_id,
-                        )
-                    )
-                except InboundCallError:
-                    pass
-                else:
-                    binding = MediaBinding(
-                        operation_id=attempt.operation_id,
-                        call_session_id=attempt.call_id,
-                        provider_call_id=attempt.provider_call_id,
-                        stream_token=stream_token,
-                        account_sid=self.twilio_account_sid,
-                        inbound=True,
-                        correlation_id=attempt.correlation_id,
-                    )
-                    self._inbound_bindings[provider_call_id] = binding
-                    return binding
-            if (
-                self._binding is None
-                or not secrets.compare_digest(self._binding.stream_token, stream_token)
-                or self._binding.provider_call_id != provider_call_id
-                or self._stream_claimed
-                or self._stream_consumed
-            ):
-                return None
-            self._stream_claimed = True
-            self._stream_consumed = True
-            return self._binding
+            entry = self._outbound_by_provider_call_id.get(provider_call_id)
+            if entry is not None:
+                if not secrets.compare_digest(entry.binding.stream_token, stream_token):
+                    return None
+                if entry.call.status.is_terminal:
+                    return None
+                if entry.stream_claimed or entry.stream_consumed:
+                    return None
+                entry.stream_claimed = True
+                entry.stream_consumed = True
+                return entry.binding
+        if self._inbound_application is None:
+            return None
+        try:
+            attempt = await self._inbound_application.start_inbound_stream(
+                StartInboundStreamInput(
+                    provider_call_id=provider_call_id,
+                    stream_binding=stream_token,
+                    provider_stream_id=provider_stream_id,
+                )
+            )
+        except InboundCallError:
+            return None
+        binding = MediaBinding(
+            operation_id=attempt.operation_id,
+            call_session_id=attempt.call_id,
+            provider_call_id=attempt.provider_call_id,
+            stream_token=stream_token,
+            account_sid=self.twilio_account_sid,
+            inbound=True,
+            correlation_id=attempt.correlation_id,
+        )
+        async with self._lock:
+            existing = self._inbound_bindings.get(provider_call_id)
+            if existing is not None:
+                if not _same_inbound_binding_identity(existing.binding, binding):
+                    return None
+                if existing.stream_claimed or existing.stream_consumed:
+                    return None
+                existing.stream_claimed = True
+                existing.stream_consumed = True
+                binding = existing.binding
+            else:
+                self._inbound_bindings[provider_call_id] = _InboundRuntimeEntry(
+                    binding,
+                    stream_claimed=True,
+                    stream_consumed=True,
+                )
+        return binding
 
     async def observe_status(self, event: OutboundCallStatusEvent) -> None:
         async with self._lock:
-            if self._call is None or self._call.provider_call_id != event.provider_call_id:
-                raise ValueError("status callback does not match the active call")
-            updated = apply_status_event(self._call, event)
-            if self._idempotency_key is None or self._request_fingerprint is None:
-                raise RuntimeError("outbound attempt persistence cursor is missing")
+            entry = self._outbound_by_provider_call_id.get(event.provider_call_id)
+        if entry is None:
+            raise ValueError("status callback does not match the active call")
+        async with entry.status_lock:
+            updated = apply_status_event(entry.call, event)
             await self._attempt_store.complete(
-                self._idempotency_key,
-                self._request_fingerprint,
+                entry.idempotency_key,
+                entry.request_fingerprint,
                 updated,
                 event.observed_at,
             )
-            self._call = updated
+            entry.call = updated
+
+    def _entry_for_binding(self, binding: MediaBinding) -> _OutboundRuntimeEntry | None:
+        entry = self._outbound_by_provider_call_id.get(binding.provider_call_id)
+        if entry is None or entry.binding != binding:
+            return None
+        return entry
 
     def realtime_session(self, binding: MediaBinding) -> RealtimeSessionRequest:
         if binding.inbound:
-            if self._inbound_bindings.get(binding.provider_call_id) != binding:
+            entry = self._inbound_bindings.get(binding.provider_call_id)
+            if entry is None or entry.binding != binding:
                 raise ValueError("media binding is not active")
             return replace(
                 build_telephony_realtime_session(self._settings),
@@ -581,7 +724,8 @@ class LiveTelephonyApplication:
                 ),
                 tools=(),
             )
-        if binding != self._binding:
+        entry = self._entry_for_binding(binding)
+        if entry is None or entry.call.status.is_terminal:
             raise ValueError("media binding is not active")
         return build_telephony_realtime_session(self._settings)
 
@@ -593,8 +737,13 @@ class LiveTelephonyApplication:
     ) -> Mapping[str, object]:
         if binding.inbound:
             raise ValueError("inbound Realtime tools are not authorized")
-        if binding != self._binding:
+        entry = self._entry_for_binding(binding)
+        if entry is None or entry.call.status.is_terminal:
             raise ValueError("media binding is not active")
+        event_call_id = event.arguments.get("call_id")
+        if event_call_id != str(binding.call_session_id):
+            raise ValueError("tool call_id does not match the media binding")
+        self._ensure_local_ai_authority(binding.call_session_id)
         if self._authority_fence is not None:
             await self._authority_fence.ensure_commitment_allowed(binding.call_session_id)
         return await self._tools.execute(event, idempotency_key)
@@ -605,30 +754,35 @@ class LiveTelephonyApplication:
         outcome: str,
         evidence: StreamEvidence | None = None,
     ) -> None:
-        if binding.inbound and self._inbound_application is not None:
-            if outcome == "COMPLETED" and evidence is not None:
-                await self._inbound_application.complete_inbound_recovery(
-                    CompleteInboundRecoveryInput(
-                        provider_call_id=binding.provider_call_id,
-                        post_consent_audio=evidence.audio,
-                        audio_start_ms=evidence.audio_start_ms,
-                        item_id=evidence.item_id,
-                        event_id=evidence.event_id,
-                        correlation_id=evidence.correlation_id,
+        try:
+            if binding.inbound and self._inbound_application is not None:
+                if outcome == "COMPLETED" and evidence is not None:
+                    await self._inbound_application.complete_inbound_recovery(
+                        CompleteInboundRecoveryInput(
+                            provider_call_id=binding.provider_call_id,
+                            post_consent_audio=evidence.audio,
+                            audio_start_ms=evidence.audio_start_ms,
+                            item_id=evidence.item_id,
+                            event_id=evidence.event_id,
+                            correlation_id=evidence.correlation_id,
+                        )
                     )
-                )
-            else:
-                await self._inbound_application.fail_inbound_call(
-                    FailInboundCallInput(
-                        provider_call_id=binding.provider_call_id,
-                        reason_code=outcome,
+                else:
+                    await self._inbound_application.fail_inbound_call(
+                        FailInboundCallInput(
+                            provider_call_id=binding.provider_call_id,
+                            reason_code=outcome,
+                        )
                     )
-                )
-        async with self._lock:
-            if binding == self._binding:
-                self._stream_claimed = False
-            if binding.inbound:
-                self._inbound_bindings.pop(binding.provider_call_id, None)
+        finally:
+            async with self._lock:
+                entry = self._entry_for_binding(binding)
+                if entry is not None:
+                    entry.stream_claimed = False
+                if binding.inbound:
+                    inbound_entry = self._inbound_bindings.get(binding.provider_call_id)
+                    if inbound_entry is not None and inbound_entry.binding == binding:
+                        inbound_entry.stream_claimed = False
 
     async def aclose(self) -> None:
         dispose = getattr(self._engine, "dispose", None)

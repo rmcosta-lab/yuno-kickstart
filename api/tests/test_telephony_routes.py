@@ -25,6 +25,7 @@ from app.telephony.service import (
     MediaBinding,
     StreamEvidence,
     VoltaToolDelegator,
+    _OutboundCallCapacityError,
     create_live_telephony_application,
 )
 from app.telephony.signatures import twilio_signature
@@ -40,6 +41,7 @@ from yuno_backend.volta.realtime import (
 )
 from yuno_backend.volta.telephony import (
     HumanHandoff,
+    HumanHandoffAuthorityError,
     HumanHandoffCommand,
     HumanHandoffContext,
     HumanHandoffIdempotencyConflict,
@@ -478,6 +480,25 @@ def test_outbound_same_request_replay_is_201_without_marker() -> None:
     assert created.json() == replayed.json()
     assert "replayed" not in replayed.json()
     assert "idempotency-replayed" not in replayed.headers
+
+
+def test_outbound_capacity_maps_to_existing_state_conflict() -> None:
+    class CapacityApplication(FakeTelephonyApplication):
+        async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
+            del request
+            raise _OutboundCallCapacityError
+
+    path = f"/v1/operations/{OPERATION_ID}/outbound-calls"
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+        "Idempotency-Key": "outbound-capacity-001",
+    }
+    with build_client(CapacityApplication()) as client:
+        response = client.post(path, headers=headers, json=outbound_body())
+
+    assert response.status_code == 409
+    assert response.json()["code"] == ApiErrorCode.STATE_CONFLICT
 
 
 def test_outbound_origin_rejection_consumes_no_quota_or_gateway_io() -> None:
@@ -1325,6 +1346,22 @@ def test_media_websocket_rejects_invalid_signature_before_acceptance() -> None:
     assert error.value.code == 1008
 
 
+def test_media_websocket_rejects_fourth_reservation_before_realtime_io() -> None:
+    application = FakeTelephonyApplication()
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    with build_client(application) as client:
+        client.app.state.twilio_media_active.update({object(), object(), object()})
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(
+                "/v1/telephony/twilio/media",
+                headers={"X-Twilio-Signature": signature},
+            ):
+                pass
+
+    assert error.value.code == 1013
+    assert application.realtime_gateway.requests == []
+
+
 def test_media_websocket_rejects_invalid_binding_and_releases_capacity() -> None:
     application = FakeTelephonyApplication()
     signature = twilio_signature(MEDIA_URL, {}, TOKEN)
@@ -1336,7 +1373,7 @@ def test_media_websocket_rejects_invalid_binding_and_releases_capacity() -> None
             ) as websocket:
                 send_media_preamble(websocket, binding="invalid-binding")
                 receive_until_close(websocket)
-        assert client.app.state.twilio_media_active is False
+        assert client.app.state.twilio_media_active == set()
     assert error.value.code == 1008
     assert application.finished == []
 
@@ -1367,7 +1404,7 @@ def test_media_websocket_rejects_malformed_or_mismatched_frames_and_releases(
                 send_media_preamble(websocket)
                 websocket.send_text(bad_frame)
                 receive_until_close(websocket)
-        assert client.app.state.twilio_media_active is False
+        assert client.app.state.twilio_media_active == set()
     assert error.value.code == 1008
     assert application.finished == [(BINDING, "DISCONNECTED")]
 
@@ -1405,35 +1442,57 @@ class AuthorityFenceWebSocket:
             json.dumps(media_start()),
         ]
         self.sent: list[dict[str, object]] = []
+        self.clear_sent = asyncio.Event()
+        self.stop_requested = asyncio.Event()
 
     async def receive_text(self) -> str:
         if self._messages:
             return self._messages.pop(0)
-        await asyncio.Event().wait()
-        raise AssertionError("unreachable")
+        await self.stop_requested.wait()
+        return json.dumps(
+            {
+                "event": "stop",
+                "sequenceNumber": "2",
+                "streamSid": "MZ33333333333333333333333333333333",
+                "stop": {"accountSid": ACCOUNT_SID},
+            }
+        )
 
     async def send_json(self, value: dict[str, object]) -> None:
         self.sent.append(value)
+        if value.get("event") == "clear":
+            self.clear_sent.set()
 
 
-async def test_authority_fence_clears_and_stops_realtime_output() -> None:
+async def test_authority_fence_clears_but_waits_for_explicit_stream_stop() -> None:
     application = FakeTelephonyApplication()
     application.ai_authority_fenced = True
     application.authority_revoked.set()
     websocket = AuthorityFenceWebSocket()
 
-    await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+    bridge = asyncio.create_task(
+        bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+    )
+    await websocket.clear_sent.wait()
+    assert bridge.done() is False
+    websocket.stop_requested.set()
+    await bridge
 
     assert {message["event"] for message in websocket.sent} == {"clear"}
     assert all(message.get("event") != "media" for message in websocket.sent)
-    assert application.finished == [(BINDING, "DISCONNECTED")]
+    assert application.finished == [(BINDING, "COMPLETED")]
 
 
 class FenceBetweenConversionAndSendApplication(FakeTelephonyApplication):
+    def __init__(self) -> None:
+        super().__init__()
+        self.second_speech_check = asyncio.Event()
+
     async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
         assert call_id == CALL_SESSION_ID
         self.speech_checks += 1
         if self.speech_checks == 2:
+            self.second_speech_check.set()
             from yuno_backend.volta.telephony import HumanHandoffAuthorityError
 
             self.ai_authority_fenced = True
@@ -1445,12 +1504,54 @@ async def test_authority_recheck_blocks_media_when_fence_flips_before_send() -> 
     application = FenceBetweenConversionAndSendApplication()
     websocket = AuthorityFenceWebSocket()
 
-    await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+    bridge = asyncio.create_task(
+        bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+    )
+    await application.second_speech_check.wait()
+    assert bridge.done() is False
+    websocket.stop_requested.set()
+    await bridge
 
     assert application.speech_checks == 2
     assert all(message.get("event") != "media" for message in websocket.sent)
     assert any(message.get("event") == "clear" for message in websocket.sent)
-    assert application.finished == [(BINDING, "DISCONNECTED")]
+    assert application.finished == [(BINDING, "COMPLETED")]
+
+
+class ToolFenceApplication(FakeTelephonyApplication):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tool_fenced = asyncio.Event()
+
+    async def delegate_tool(
+        self,
+        binding: MediaBinding,
+        event: RealtimeToolCallRequested,
+        idempotency_key: str,
+    ) -> Mapping[str, object]:
+        del binding, event, idempotency_key
+        self.ai_authority_fenced = True
+        self.authority_revoked.set()
+        self.tool_fenced.set()
+        raise HumanHandoffAuthorityError(call_id=CALL_SESSION_ID)
+
+
+async def test_tool_authority_denial_clears_without_ending_media_bridge() -> None:
+    application = ToolFenceApplication()
+    websocket = AuthorityFenceWebSocket()
+    bridge = asyncio.create_task(
+        bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+    )
+
+    await application.tool_fenced.wait()
+    await websocket.clear_sent.wait()
+    assert bridge.done() is False
+    assert application.realtime_gateway.connection.tool_outputs == []
+    websocket.stop_requested.set()
+    await bridge
+
+    assert any(message.get("event") == "clear" for message in websocket.sent)
+    assert application.finished == [(BINDING, "COMPLETED")]
 
 
 def test_mulaw_conversion_is_bounded_and_preserves_silence_shape() -> None:
@@ -1586,14 +1687,14 @@ def test_duplicate_tool_event_uses_same_bounded_idempotency_key() -> None:
 
 
 class RuntimeContracts(FakeContracts):
-    def __init__(self, call_id: UUID | None) -> None:
+    def __init__(self, call_id: UUID | None, *additional_call_ids: UUID) -> None:
         super().__init__()
-        self.call_id = call_id
+        self.call_ids = (() if call_id is None else (call_id, *additional_call_ids))
 
     async def execute(self, operation_id, payload, idempotency_key):  # type: ignore[no-untyped-def]
         self.calls.append((operation_id, payload, idempotency_key))
         if operation_id == "get_operation":
-            sessions = [] if self.call_id is None else [{"call_id": str(self.call_id)}]
+            sessions = [{"call_id": str(call_id)} for call_id in self.call_ids]
             return ContractResult({"operation_id": str(OPERATION_ID), "sessions": sessions})
         return ContractResult({"quote_id": "synthetic-quote"})
 
@@ -1601,15 +1702,24 @@ class RuntimeContracts(FakeContracts):
 class RuntimeGateway:
     def __init__(self) -> None:
         self.requests: list[OutboundCallRequest] = []
+        self.in_flight = 0
+        self.max_in_flight = 0
 
     async def create_call(self, request: OutboundCallRequest) -> OutboundCall:
         self.requests.append(request)
-        return OutboundCall(
-            call_session_id=request.call_session_id,
-            provider_call_id=BINDING.provider_call_id,
-            status=OutboundCallStatus.QUEUED,
-            created_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
-        )
+        provider_call_id = f"CA{len(self.requests):032d}"
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(0)
+            return OutboundCall(
+                call_session_id=request.call_session_id,
+                provider_call_id=provider_call_id,
+                status=OutboundCallStatus.QUEUED,
+                created_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
+            )
+        finally:
+            self.in_flight -= 1
 
 
 class RuntimeAttemptStore:
@@ -1668,13 +1778,18 @@ class RuntimeInboundApplication:
         return object()
 
 
-def runtime_request() -> OutboundCallRequest:
+def runtime_request(
+    *,
+    call_session_id: UUID = CALL_SESSION_ID,
+    idempotency_key: str = "runtime-outbound-001",
+    destination_label: str = "synthetic-carrier-one",
+) -> OutboundCallRequest:
     return OutboundCallRequest(
         operation_id=OPERATION_ID,
-        call_session_id=CALL_SESSION_ID,
+        call_session_id=call_session_id,
         correlation_id=UUID("00000000-0000-4000-8000-000000000015"),
-        idempotency_key="runtime-outbound-001",
-        destination_label="synthetic-carrier-one",
+        idempotency_key=idempotency_key,
+        destination_label=destination_label,
         authorization=OutboundCallAuthorization(
             actor_id="coordinator-demo",
             authorized_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
@@ -1720,7 +1835,7 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     with pytest.raises(OutboundCallIdempotencyConflict):
         await runtime.create_outbound_call(conflicting)
     assert len(gateway.requests) == 1
-    binding = await runtime.binding_for_voice(BINDING.provider_call_id)
+    binding = await runtime.binding_for_voice(first.provider_call_id)
     assert binding is not None
     assert (
         await runtime.binding_for_stream(
@@ -1750,7 +1865,7 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
 
     event = OutboundCallStatusEvent(
         provider_event_id="status-event-1",
-        provider_call_id=BINDING.provider_call_id,
+        provider_call_id=first.provider_call_id,
         status=OutboundCallStatus.COMPLETED,
         sequence_number=1,
         observed_at=datetime(2026, 8, 30, 12, 5, tzinfo=UTC),
@@ -1760,7 +1875,7 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     await runtime.observe_status(
         OutboundCallStatusEvent(
             provider_event_id="status-event-2",
-            provider_call_id=BINDING.provider_call_id,
+            provider_call_id=first.provider_call_id,
             status=OutboundCallStatus.RINGING,
             sequence_number=2,
             observed_at=datetime(2026, 8, 30, 12, 6, tzinfo=UTC),
@@ -1770,6 +1885,251 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     assert all(
         completion[2].status is OutboundCallStatus.COMPLETED for completion in store.completions
     )
+    with pytest.raises(ValueError, match="not active"):
+        runtime.realtime_session(binding)
+    matching_tool = RealtimeToolCallRequested(
+        event_id="event-after-terminal",
+        item_id="item-after-terminal",
+        call_id="provider-tool-after-terminal",
+        name="record_quote",
+        arguments={"call_id": str(CALL_SESSION_ID), "amount_minor": 880000},
+    )
+    with pytest.raises(ValueError, match="not active"):
+        await runtime.delegate_tool(binding, matching_tool, "twilio-tool-after-terminal")
+
+
+async def test_live_runtime_local_handoff_event_fails_closed_before_durable_fence() -> None:
+    class PermissiveAuthorityFence:
+        def __init__(self) -> None:
+            self.speech_checks = 0
+            self.commitment_checks = 0
+
+        async def ensure_speech_allowed(self, call_id: UUID) -> None:
+            del call_id
+            self.speech_checks += 1
+
+        async def ensure_commitment_allowed(self, call_id: UUID) -> None:
+            del call_id
+            self.commitment_checks += 1
+
+    contracts = RuntimeContracts(call_id=CALL_SESSION_ID)
+    fence = PermissiveAuthorityFence()
+    authority_event = asyncio.Event()
+    authority_event.set()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=contracts,  # type: ignore[arg-type]
+        gateway=RuntimeGateway(),
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    runtime.configure_handoff(
+        object(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        fence,  # type: ignore[arg-type]
+        {CALL_SESSION_ID: authority_event},
+    )
+    call = await runtime.create_outbound_call(runtime_request())
+    binding = await runtime.binding_for_voice(call.provider_call_id)
+    assert binding is not None
+    tool = RealtimeToolCallRequested(
+        event_id="event-local-fence",
+        item_id="item-local-fence",
+        call_id="provider-tool-local-fence",
+        name="record_quote",
+        arguments={"call_id": str(CALL_SESSION_ID), "amount_minor": 880000},
+    )
+    contract_calls_before_tool = len(contracts.calls)
+
+    with pytest.raises(HumanHandoffAuthorityError):
+        await runtime.ensure_ai_speech_allowed(CALL_SESSION_ID)
+    with pytest.raises(HumanHandoffAuthorityError):
+        await runtime.delegate_tool(binding, tool, "twilio-tool-local-fence")
+
+    assert fence.speech_checks == 0
+    assert fence.commitment_checks == 0
+    assert len(contracts.calls) == contract_calls_before_tool
+
+
+async def test_live_runtime_coalesces_concurrent_exact_replay() -> None:
+    gateway = RuntimeGateway()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+
+    first, replay = await asyncio.gather(
+        runtime.create_outbound_call(runtime_request()),
+        runtime.create_outbound_call(runtime_request()),
+    )
+
+    assert first == replay
+    assert len(gateway.requests) == 1
+
+
+async def test_live_runtime_shields_pending_provider_mutation_from_client_cancellation() -> None:
+    class BlockingGateway(RuntimeGateway):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def create_call(self, request: OutboundCallRequest) -> OutboundCall:
+            self.started.set()
+            await self.release.wait()
+            return await super().create_call(request)
+
+    gateway = BlockingGateway()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    request = runtime_request()
+    abandoned = asyncio.create_task(runtime.create_outbound_call(request))
+    await gateway.started.wait()
+    abandoned.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await abandoned
+
+    replay = asyncio.create_task(runtime.create_outbound_call(request))
+    gateway.release.set()
+    call = await replay
+
+    assert call.call_session_id == CALL_SESSION_ID
+    assert len(gateway.requests) == 1
+
+
+async def test_live_runtime_reserves_capacity_across_four_concurrent_requests() -> None:
+    call_ids = tuple(
+        UUID(f"00000000-0000-4000-8000-{index:012d}") for index in range(71, 75)
+    )
+    gateway = RuntimeGateway()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=RuntimeContracts(call_ids[0], *call_ids[1:]),  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    requests = [
+        runtime_request(
+            call_session_id=call_id,
+            idempotency_key=f"runtime-capacity-{index}",
+            destination_label=f"synthetic-carrier-{index}",
+        )
+        for index, call_id in enumerate(call_ids, start=1)
+    ]
+
+    outcomes = await asyncio.gather(
+        *(runtime.create_outbound_call(item) for item in requests),
+        return_exceptions=True,
+    )
+
+    assert sum(isinstance(item, OutboundCall) for item in outcomes) == 3
+    assert sum(isinstance(item, _OutboundCallCapacityError) for item in outcomes) == 1
+    assert len(gateway.requests) == 3
+    assert gateway.max_in_flight == 3
+
+
+async def test_live_runtime_isolates_three_calls_and_releases_terminal_capacity() -> None:
+    call_ids = (
+        CALL_SESSION_ID,
+        UUID("00000000-0000-4000-8000-000000000006"),
+        UUID("00000000-0000-4000-8000-000000000007"),
+        UUID("00000000-0000-4000-8000-000000000008"),
+    )
+    contracts = RuntimeContracts(call_ids[0], *call_ids[1:])
+    gateway = RuntimeGateway()
+    store = RuntimeAttemptStore()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=contracts,  # type: ignore[arg-type]
+        gateway=gateway,
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=store,  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    requests = [
+        runtime_request(
+            call_session_id=call_id,
+            idempotency_key=f"runtime-outbound-00{index}",
+            destination_label=f"synthetic-carrier-{index}",
+        )
+        for index, call_id in enumerate(call_ids, start=1)
+    ]
+
+    calls = await asyncio.gather(*(runtime.create_outbound_call(item) for item in requests[:3]))
+    assert len(gateway.requests) == 3
+    assert gateway.max_in_flight == 3
+    with pytest.raises(_OutboundCallCapacityError):
+        await runtime.create_outbound_call(requests[3])
+    assert len(gateway.requests) == 3
+
+    bindings = [await runtime.binding_for_voice(call.provider_call_id) for call in calls]
+    assert all(binding is not None for binding in bindings)
+    claimed = await asyncio.gather(
+        *(
+            runtime.binding_for_stream(
+                binding.stream_token,
+                binding.provider_call_id,
+                f"MZ{index:032d}",
+            )
+            for index, binding in enumerate(bindings, start=1)
+            if binding is not None
+        )
+    )
+    assert claimed == bindings
+    assert (
+        await runtime.binding_for_stream(
+            bindings[0].stream_token,  # type: ignore[union-attr]
+            calls[1].provider_call_id,
+            "MZ00000000000000000000000000000002",
+        )
+        is None
+    )
+    cross_call_tool = RealtimeToolCallRequested(
+        event_id="event-cross-call",
+        item_id="item-cross-call",
+        call_id="provider-tool-call-cross-call",
+        name="record_quote",
+        arguments={"call_id": str(call_ids[1]), "amount_minor": 880000},
+    )
+    contract_call_count = len(contracts.calls)
+    with pytest.raises(ValueError, match="does not match"):
+        await runtime.delegate_tool(
+            bindings[0],  # type: ignore[arg-type]
+            cross_call_tool,
+            "twilio-tool-cross-call",
+        )
+    assert len(contracts.calls) == contract_call_count
+
+    terminal = OutboundCallStatusEvent(
+        provider_event_id="status-terminal-first",
+        provider_call_id=calls[0].provider_call_id,
+        status=OutboundCallStatus.COMPLETED,
+        sequence_number=1,
+        observed_at=datetime(2026, 8, 30, 12, 5, tzinfo=UTC),
+    )
+    await runtime.observe_status(terminal)
+    fourth = await runtime.create_outbound_call(requests[3])
+    assert fourth.call_session_id == call_ids[3]
+    assert len(gateway.requests) == 4
+
+    replay = await runtime.create_outbound_call(requests[0])
+    assert replay.provider_call_id == calls[0].provider_call_id
+    assert replay.status is OutboundCallStatus.COMPLETED
+    assert len(gateway.requests) == 4
+    assert store.completions[0][0] == requests[0].idempotency_key
 
 
 async def test_live_runtime_maps_inbound_lifecycle_to_provider_neutral_backend() -> None:
@@ -1807,6 +2167,15 @@ async def test_live_runtime_maps_inbound_lifecycle_to_provider_neutral_backend()
     assert started is not None
     assert runtime.realtime_session(started).tools == ()
     await runtime.stream_finished(started, "COMPLETED", evidence)
+    replayed_consent = await runtime.record_inbound_consent(
+        "synthetic-driver", INBOUND_CALL_SID, correlation_id
+    )
+    assert (
+        await runtime.binding_for_stream(
+            replayed_consent.stream_token, INBOUND_CALL_SID, INBOUND_STREAM_SID
+        )
+        is None
+    )
 
     assert inbound.accepted[0].caller_label == "synthetic-driver"  # type: ignore[attr-defined]
     assert inbound.accepted[0].provider_call_id == INBOUND_CALL_SID  # type: ignore[attr-defined]
@@ -1815,6 +2184,61 @@ async def test_live_runtime_maps_inbound_lifecycle_to_provider_neutral_backend()
     assert inbound.completed[0].post_consent_audio == b"RIFF\x04\x00\x00\x00WAVE"  # type: ignore[attr-defined]
     assert inbound.completed[0].correlation_id == correlation_id  # type: ignore[attr-defined]
     assert inbound.failed == []
+
+
+async def test_late_inbound_accept_preserves_claimed_canonical_binding() -> None:
+    class RacingInboundApplication(RuntimeInboundApplication):
+        def __init__(self) -> None:
+            super().__init__()
+            self.first_accept_started = asyncio.Event()
+            self.release_first_accept = asyncio.Event()
+            self.accept_count = 0
+
+        async def accept_inbound_call(self, command):  # type: ignore[no-untyped-def]
+            self.accept_count += 1
+            if self.accept_count == 1:
+                self.first_accept_started.set()
+                await self.release_first_accept.wait()
+            self.accepted.append(command)
+            return self.binding
+
+    inbound = RacingInboundApplication()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+        gateway=RuntimeGateway(),
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        inbound_application=inbound,  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    old_correlation = UUID("00000000-0000-4000-8000-000000000081")
+    canonical_correlation = UUID("00000000-0000-4000-8000-000000000082")
+    late_accept = asyncio.create_task(
+        runtime.accept_inbound_call(
+            "synthetic-driver", INBOUND_CALL_SID, old_correlation
+        )
+    )
+    await inbound.first_accept_started.wait()
+    consented = await runtime.record_inbound_consent(
+        "synthetic-driver", INBOUND_CALL_SID, canonical_correlation
+    )
+    claimed = await runtime.binding_for_stream(
+        consented.stream_token, INBOUND_CALL_SID, INBOUND_STREAM_SID
+    )
+    assert claimed == consented
+
+    inbound.release_first_accept.set()
+    late_binding = await late_accept
+
+    assert late_binding == consented
+    assert late_binding.correlation_id == canonical_correlation
+    assert (
+        await runtime.binding_for_stream(
+            consented.stream_token, INBOUND_CALL_SID, INBOUND_STREAM_SID
+        )
+        is None
+    )
 
 
 async def test_live_runtime_reconstructs_consented_binding_after_process_restart() -> None:
