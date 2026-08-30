@@ -271,13 +271,13 @@ This documentation and demo-assets phase can run in parallel with P0.1 implement
 
 Slug: pass-final-telephony-trial
 
-Depends on: 20, 21, 26, 27, 28
+Depends on: 20, 21, 26, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call, delivers the final active winner's recap through Twilio WhatsApp, and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The delivered recap promotes the winner to `VERIFIED` only when playable timestamp evidence exists. Browser voice, text, simulated recap, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains a recap explicitly labeled `SIMULATED`, playable timestamp evidence, and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
 
-The cross-layer trial reports account and Sandbox restrictions, call and WhatsApp delivery outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It never presents API submission, simulated delivery, or workflow-only concurrency as challenge-verified evidence.
+The cross-layer trial reports account restrictions, call outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It explicitly reports that WhatsApp delivery remains for Fase 27 and never presents simulated delivery or workflow-only concurrency as challenge-verified evidence.
 
 ### Fase 23 — Implement the OpenAI Realtime adapter
 
@@ -331,7 +331,7 @@ This cross-layer telephony phase replaces the simulated inbound transport withou
 
 Slug: send-verified-whatsapp-recaps
 
-Depends on: 19, 25
+Depends on: 22
 
 Conflicts with: none
 
