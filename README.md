@@ -24,9 +24,26 @@ The public story uses four evidence states. A test-validated implementation is n
 | Demonstrated | Deterministic browser and text journey | Intake, approval, three synthetic sessions, quote comparison, one active `CANDIDATE`, private timestamp evidence, `SIMULATED` recap, brief, recovery, escalation, and audit passed the [Phase 17 trial](docs/project-specs/2026-08-30-17-pass-browser-trial/validation.md) |
 | Accepted with waiver | Browser voice over OpenAI Realtime | Credential, stop, disconnect, and reconnect behavior ran. The complete two-tool provider roundtrip and qualitative voice checks did not pass, so browser voice is not a fully verified result |
 | Implemented, not live-proven | Consent-gated outbound control and Twilio Media Streams bridge | The control’s generated request, idempotent retry, `starting`/`live`/`ended`/`failed` states, and fallbacks passed credential-free browser checks in [Phase 20](docs/project-specs/2026-08-30-20-add-outbound-call-controls/validation.md). Deterministic route, signature, media, tool, and disconnect tests passed in [Phase 19](docs/project-specs/2026-08-30-19-bridge-twilio-media/validation.md). No authorized sandbox call proved the complete live path |
-| Final-trial only | Three overlapping public switched telephone network (PSTN) calls, inbound recovery, and live coordinator takeover | These remain required trial outcomes. This repository does not claim that they succeeded |
+| Sandbox-proven independently | Inbound PSTN recovery and live coordinator takeover | One authorized sandbox inbound call completed mandate-safe recovery in [Phase 26](docs/project-specs/2026-08-30-26-accept-inbound-twilio-calls/validation.md), and one authorized sandbox handoff joined the coordinator without dropping the remote participant in [Phase 28](docs/project-specs/2026-08-30-28-transfer-live-call-to-human/validation.md). These were separate proofs, not the complete final trial |
+| Deterministically preflighted, final trial incomplete | Three overlapping PSTN calls and the combined P0.1 journey | The bounded three-call runtime and isolated Media Streams passed deterministic checks, but no authorized three-call overlap or combined live rehearsal ran. [Phase 22](docs/project-specs/2026-08-30-22-pass-final-telephony-trial/validation.md) remains explicitly incomplete and not challenge-verified |
 
 `CANDIDATE` and `SIMULATED` describe evidence lifecycle. `ACTIVE` and `SUPERSEDED` describe commitment disposition. `VERIFIED` remains unavailable because the prototype does not deliver an external written recap.
+
+## Track merged roadmap phases
+
+As of 2026-08-30, `main` contains 26 merged phase pull requests: Phases 01–17, 19–26, and 28. The table maps the stable phase identifiers to their merged pull requests; merge status alone does not override the evidence qualification above.
+
+| Phases | Merged pull requests |
+| --- | --- |
+| 01–05 | [#1](https://github.com/rmcosta-lab/yuno-kickstart/pull/1), [#3](https://github.com/rmcosta-lab/yuno-kickstart/pull/3), [#4](https://github.com/rmcosta-lab/yuno-kickstart/pull/4), [#5](https://github.com/rmcosta-lab/yuno-kickstart/pull/5), [#6](https://github.com/rmcosta-lab/yuno-kickstart/pull/6) |
+| 06–10 | [#9](https://github.com/rmcosta-lab/yuno-kickstart/pull/9), [#8](https://github.com/rmcosta-lab/yuno-kickstart/pull/8), [#12](https://github.com/rmcosta-lab/yuno-kickstart/pull/12), [#7](https://github.com/rmcosta-lab/yuno-kickstart/pull/7), [#15](https://github.com/rmcosta-lab/yuno-kickstart/pull/15) |
+| 11–15 | [#11](https://github.com/rmcosta-lab/yuno-kickstart/pull/11), [#16](https://github.com/rmcosta-lab/yuno-kickstart/pull/16), [#20](https://github.com/rmcosta-lab/yuno-kickstart/pull/20), [#14](https://github.com/rmcosta-lab/yuno-kickstart/pull/14), [#22](https://github.com/rmcosta-lab/yuno-kickstart/pull/22) |
+| 16–17 | [#23](https://github.com/rmcosta-lab/yuno-kickstart/pull/23), [#25](https://github.com/rmcosta-lab/yuno-kickstart/pull/25) |
+| 19–22 | [#28](https://github.com/rmcosta-lab/yuno-kickstart/pull/28), [#34](https://github.com/rmcosta-lab/yuno-kickstart/pull/34), [#36](https://github.com/rmcosta-lab/yuno-kickstart/pull/36), [#43](https://github.com/rmcosta-lab/yuno-kickstart/pull/43) |
+| 23–26 | [#13](https://github.com/rmcosta-lab/yuno-kickstart/pull/13), [#18](https://github.com/rmcosta-lab/yuno-kickstart/pull/18), [#21](https://github.com/rmcosta-lab/yuno-kickstart/pull/21), [#37](https://github.com/rmcosta-lab/yuno-kickstart/pull/37) |
+| 28 | [#39](https://github.com/rmcosta-lab/yuno-kickstart/pull/39) |
+
+Phase 18 implementation commits reached `main` through later integration history, but no standalone Phase 18 pull request was merged. Phase 27 does not yet have a merged phase pull request. See the [roadmap](docs/project-specs/roadmap.md) for every gate and dependency.
 
 ## Run the provider-free demo
 
@@ -173,8 +190,8 @@ This hackathon prototype has explicit limits:
 
 - It proves synthetic coordination, not a real booking, live rate, or production operation
 - Browser Realtime retains the Phase 17 waiver described in the status table
-- The Twilio bridge lacks a complete authorized live sandbox result
-- Three-call concurrency, inbound PSTN recovery, and takeover await the final trial
+- The outbound three-carrier Twilio journey lacks a complete authorized live sandbox result
+- Inbound PSTN recovery and coordinator takeover passed separate authorized sandbox proofs, while three-call overlap and the combined Phase 22 trial remain incomplete
 - Written recap delivery remains `SIMULATED`; `VERIFIED` is unreachable
 - Full accessibility sign-off remains incomplete
 - Local filesystem evidence and the single-instance deployment topology are for the synthetic demo, not production scale
