@@ -1,3 +1,4 @@
+import stat
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
@@ -51,6 +52,25 @@ async def test_default_safe_fixture_is_retrievable_from_demo_storage(tmp_path) -
         evidence.recording_reference
     )
     assert payload == b"synthetic deterministic recovery evidence"
+
+
+@pytest.mark.parametrize("residual_payload", [b"", b"corrupt fixture"])
+async def test_demo_storage_restores_empty_or_corrupt_recovery_fixture(
+    tmp_path, residual_payload: bytes
+) -> None:
+    fixture = tmp_path / "fixture-recovery-mandate-safe.webm"
+    fixture.write_bytes(residual_payload)
+    fixture.chmod(0o644)
+
+    catalog = DeterministicRecoveryFixtureCatalog()
+    evidence = catalog.get(RecoveryScenario.MANDATE_SAFE).evidence
+    assert evidence is not None
+    payload = await create_demo_evidence_storage(tmp_path).retrieve(
+        evidence.recording_reference
+    )
+
+    assert payload == b"synthetic deterministic recovery evidence"
+    assert stat.S_IMODE(fixture.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize(

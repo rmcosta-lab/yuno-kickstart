@@ -715,6 +715,7 @@ async def test_audit_keyset_pages_101_equal_timestamps_without_gaps(
             )
         )
         inserted_ids = tuple(UUID(int=base + 100 + index) for index in range(101))
+        notification_ids = tuple(UUID(int=base + 1_000 + index) for index in range(101))
         async with factory.begin() as session:
             await session.execute(
                 insert(_audit_events),
@@ -732,18 +733,59 @@ async def test_audit_keyset_pages_101_equal_timestamps_without_gaps(
                     for index, event_id in enumerate(inserted_ids)
                 ],
             )
+            await session.execute(
+                insert(_notifications),
+                [
+                    {
+                        "id": notification_id,
+                        "operation_id": operation_id,
+                        "commitment_id": commitment.id,
+                        "reason_code": "MANDATE_SAFE_REPLACEMENT",
+                        "created_at": FixedClock().now(),
+                        "operation_version": 4,
+                        "recovery_before": {
+                            "operation_version": 4,
+                            "operation_status": "COMMITTED",
+                            "active_commitment_id": None,
+                            "carrier_id": None,
+                            "agreed_terms": None,
+                        },
+                        "recovery_after": {
+                            "operation_version": 4,
+                            "operation_status": "COMMITTED",
+                            "active_commitment_id": None,
+                            "carrier_id": None,
+                            "agreed_terms": None,
+                        },
+                        "decision_reason": "Pagination test.",
+                        "message": "Pagination test notification.",
+                        "correlation_id": UUID(int=base + 2_000 + index),
+                        "acknowledged_by": None,
+                        "acknowledged_at": None,
+                    }
+                    for index, notification_id in enumerate(notification_ids)
+                ],
+            )
 
         app = application(factory)
         cursor = None
         seen: list[UUID] = []
+        seen_notifications: list[UUID] = []
         while True:
             page = await app.get_operation_audit(AuditQuery(operation_id, cursor, 100))
             seen.extend(event.event_id for event in page.events if event.event_id in inserted_ids)
+            seen_notifications.extend(
+                notification.id
+                for notification in page.notifications
+                if notification.id in notification_ids
+            )
             if page.next_cursor is None:
                 break
             cursor = page.next_cursor
         assert len(seen) == len(set(seen)) == 101
         assert set(seen) == set(inserted_ids)
+        assert len(seen_notifications) == len(set(seen_notifications)) == 101
+        assert set(seen_notifications) == set(notification_ids)
 
         missing_boundary = base64.urlsafe_b64encode(
             json.dumps(

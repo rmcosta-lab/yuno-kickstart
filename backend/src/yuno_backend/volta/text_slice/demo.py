@@ -1,10 +1,11 @@
 """Canonical deterministic P0 text fixtures owned by the backend boundary."""
 
+import os
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from tempfile import gettempdir
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from yuno_backend.volta.evidence.storage.filesystem import FilesystemEvidenceStorage
 from yuno_backend.volta.intake.extraction import (
@@ -34,6 +35,8 @@ _CANONICAL_ROUTE = Route(
     "Zona industrial, Guadalajara, Jalisco",
 )
 _NO_ELIGIBLE_ROUTE = Route("Puerto de Veracruz, Veracruz", "Puebla, Puebla")
+_RECOVERY_FIXTURE_NAME = "fixture-recovery-mandate-safe.webm"
+_RECOVERY_FIXTURE_PAYLOAD = b"synthetic deterministic recovery evidence"
 
 
 def canonical_text_extraction_mapping(request: ExtractionRequest) -> OperationProposal:
@@ -103,11 +106,33 @@ def create_demo_evidence_storage(base_dir: Path | None = None) -> FilesystemEvid
     """Build the local text harness storage outside the source checkout."""
     root = Path(gettempdir()) / "yuno-volta-text-evidence" if base_dir is None else base_dir
     storage = FilesystemEvidenceStorage(root)
-    fixture = root / "fixture-recovery-mandate-safe.webm"
-    try:
-        with fixture.open("xb") as artifact:
-            artifact.write(b"synthetic deterministic recovery evidence")
-        fixture.chmod(0o600)
-    except FileExistsError:
-        pass
+    _materialize_recovery_fixture(root)
     return storage
+
+
+def _materialize_recovery_fixture(root: Path) -> None:
+    """Atomically restore the known recovery fixture when a prior run left it invalid."""
+    fixture = root / _RECOVERY_FIXTURE_NAME
+    try:
+        valid_fixture = fixture.read_bytes() == _RECOVERY_FIXTURE_PAYLOAD
+    except OSError:
+        valid_fixture = False
+
+    if valid_fixture:
+        fixture.chmod(0o600)
+        return
+
+    temporary_fixture = root / f".{_RECOVERY_FIXTURE_NAME}.{uuid4().hex}.tmp"
+    descriptor = os.open(
+        temporary_fixture,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "wb") as artifact:
+            artifact.write(_RECOVERY_FIXTURE_PAYLOAD)
+        temporary_fixture.chmod(0o600)
+        os.replace(temporary_fixture, fixture)
+    except BaseException:
+        temporary_fixture.unlink(missing_ok=True)
+        raise

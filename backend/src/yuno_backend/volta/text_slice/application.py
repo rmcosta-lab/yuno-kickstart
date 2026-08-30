@@ -746,23 +746,26 @@ class TextNegotiationApplication:
         uow = self._uow_factory()
         async with uow:
             await uow.stabilize_read_snapshot()
-            projection = await self._get_operation_from_uow(
-                uow,
-                operation_id,
-                include_audit_events=False,
+            # The audit is a paginated timeline, not an operation-detail
+            # projection.  In particular, do not pre-load the detail
+            # projection here: it deliberately rejects histories over
+            # ``_MAX_PROJECTION_ROWS`` while this method must page them.
+            operation = await self._required_operation(uow, operation_id)
+            negotiation = await uow.negotiations.get_by_operation(operation_id)
+            negotiation_projection = (
+                None
+                if negotiation is None
+                else self._project_negotiation(negotiation)
             )
             sessions = (
-                () if projection.negotiation is None else projection.negotiation.sessions
+                ()
+                if negotiation_projection is None
+                else negotiation_projection.sessions
             )
             labels = {
                 projected.session.call_id: projected.session.carrier_display_label
                 for projected in sessions
             }
-            selected_id = (
-                None
-                if projection.quote_comparison is None
-                else projection.quote_comparison.selected_quote_id
-            )
             quotes = await uow.quotes.list_by_operation(
                 operation_id,
                 after=after,
@@ -807,7 +810,10 @@ class TextNegotiationApplication:
                 recoveries.append(await self._project_recovery(uow, attempt))
 
         page_comparison = self._comparison(
-            operation_id, projection.operation.mandate.version, quotes
+            operation_id, operation.mandate.version, quotes
+        )
+        selected_id = (
+            None if page_comparison is None else page_comparison.selected_quote_id
         )
         page_ranked = () if page_comparison is None else page_comparison.ranked_quotes
         page_ranked_ids = {quote.id for quote in page_ranked}
@@ -879,7 +885,7 @@ class TextNegotiationApplication:
         return AuditProjection(
             operation_id,
             selected_kind("event", AuditEvent),
-            projection.negotiation,
+            negotiation_projection,
             selected_quotes,
             selected_kind("commitment", CommitmentProjection),
             selected_kind("recap", Recap),
