@@ -1,8 +1,9 @@
 # Deploy do Volta para o hackathon
 
 O frontend Next.js roda na Vercel. O `render.yaml` provisiona o FastAPI e o
-backend/core no mesmo Web Service, um PostgreSQL privado e um disco privado para
-as evidências sintéticas da demonstração.
+backend/core no mesmo Web Service e um PostgreSQL privado. O Blueprint usa os
+planos Free do Render, portanto as evidências sintéticas ficam em armazenamento
+efêmero e não sobrevivem a reinícios ou redeploys.
 
 ## 1. Publicar a API e o PostgreSQL no Render
 
@@ -22,7 +23,8 @@ as evidências sintéticas da demonstração.
 O serviço e o banco ficam em Virginia e se comunicam pela rede privada do
 Render. O banco bloqueia conexões públicas. O Web Service usa uma única
 instância porque o rate limit e as sessões de tempo real ainda possuem estado
-local. O plano gratuito não deve ser usado para a apresentação.
+local. No plano Free, o serviço pode hibernar após inatividade e o PostgreSQL
+expira após 30 dias; use-o somente para a demonstração do hackathon.
 
 ## 2. Publicar o frontend na Vercel
 
@@ -53,16 +55,16 @@ local. O plano gratuito não deve ser usado para a apresentação.
    execute Intake -> Mandate -> Sessions -> Comparison -> Evidence.
 3. No navegador, confirme que as chamadas vão somente para o hostname Render,
    sem erros de CORS, HTTP 401 inesperado ou HTTP 5xx.
-4. Teste criação e reprodução de evidência sintética e confirme que ela
-   continua disponível depois de reiniciar a API.
+4. Teste criação e reprodução de evidência sintética durante a mesma execução
+   do serviço. No plano Free, ela é apagada em um reinício ou redeploy.
 5. Teste a credencial efêmera do OpenAI Realtime sem expor `OPENAI_API_KEY` ao
    navegador.
 
 ## Limite atual
 
-O disco do Render é apropriado para a demonstração sintética, com uma única
-instância. Antes de gravações reais ou escala horizontal, substitua o adaptador
-de filesystem por object storage privado com política explícita de expiração e
-exclusão. O produto ainda precisa das rotas finais de Twilio Media Streams para
-afirmar que a telefonia P0.1 está publicada; o deploy atual cobre a jornada web,
-texto e browser Realtime implementada no repositório.
+O plano Free não oferece disco persistente. Antes de gravações reais, retenção
+de evidências ou escala horizontal, substitua o adaptador de filesystem por
+object storage privado com política explícita de expiração e exclusão e mova o
+serviço para um plano pago. O produto ainda precisa das rotas finais de Twilio
+Media Streams para afirmar que a telefonia P0.1 está publicada; o deploy atual
+cobre a jornada web, texto e browser Realtime implementada no repositório.
