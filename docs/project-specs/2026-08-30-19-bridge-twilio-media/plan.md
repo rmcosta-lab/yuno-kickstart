@@ -5,25 +5,25 @@
 1. **Refresh the stacked base and freeze contracts**
    - Confirm Phase 18 remains at or ahead of recorded base `5600aa9470db4da1c5885fc48eb38a43996f00e1`, inspect any new Phase 18 changes, and freeze the provider-neutral outbound-call imports consumed by this phase.
    - Re-read Phase 03 PASS evidence and current official Twilio signature, Voice/TwiML, status callback, bidirectional Media Streams, framing/limits, and disconnect documentation plus official OpenAI Realtime server-WebSocket documentation.
-   - Turn each roadmap-gate clause into focused API/WebSocket tests before implementation fixes provider-specific fields or lifecycle behavior.
+   - Freeze the smallest provider-specific fields and lifecycle needed for one call; explicitly leave complete status, reconnect, multi-call, and exhaustive signature/retry coverage to later phases.
 
 2. **Define public and provider ingress contracts first**
    - Add Pydantic outbound-call request/response/error models and thin `/v1/operations/{operation_id}/outbound-calls` routing using the repository's existing demo authorization, request correlation, idempotency header, rate limiting, and safe error envelope.
-   - Define the minimal verified Twilio voice/consent and status routes plus the non-OpenAPI media-WebSocket protocol, exact external-origin reconstruction, frame/queue/time limits, and close codes.
-   - Add contract and negative security tests before wiring any real adapter. Use injected fakes and representative synthetic signed forms/frames only.
+   - Define the minimal verified Twilio voice/consent and terminal-status routes plus the non-OpenAPI media-WebSocket protocol, external-origin reconstruction, single-stream limits, and safe close behavior.
+   - Add focused contract tests and representative missing/tampered/unauthorized cases before wiring any real adapter. Use injected fakes and synthetic forms/frames only.
 
-3. **Wire Phase 18 outbound calling and durable statuses**
+3. **Wire Phase 18 outbound calling and the minimum terminal status**
    - Map the application request exactly to `OutboundCallRequest` and inject the Phase 18 gateway/store without exposing Twilio configuration or provider payloads through Pydantic models.
    - Map same-request replay, idempotency conflict, authorization/allowlist, provider, rate-limit, timeout, invalid-response, and uncertain-outcome semantics into the frozen HTTP envelope.
-   - Verify status signatures against raw form plus exact external URL, normalize once, and apply monotonic duplicate-safe status updates through the backend boundary before returning success.
+   - Verify the provider request, normalize the terminal observation needed by the demo, and apply it duplicate-safely through the backend boundary before returning success. Defer the complete status matrix and retry policy.
 
 4. **Implement consent-gated TwiML and stream authorization**
    - Generate only the minimal disclosure/consent flow established by current official behavior. Recording stays disabled unless the separately authorized request explicitly selects after-consent recording.
-   - Mint a bounded one-call stream binding with no phone number or standard credential, validate the signed WebSocket upgrade and expected provider call/stream IDs, and reject replay, mismatch, over-capacity, or unsafe proxy input.
+   - Mint a bounded one-call stream binding with no phone number or standard credential, validate the expected provider call/stream IDs, and reject representative replay, mismatch, or over-capacity input.
    - Keep all Twilio form, XML, and frame mapping inside `api/app/telephony/**`; application services receive only normalized typed commands.
 
 5. **Build the bounded bidirectional bridge**
-   - Create one Realtime connection per accepted stream using the existing `RealtimeGateway`; forward accepted inbound audio/events and map output audio/control frames with bounded queues, timeouts, backpressure, and mark/clear handling.
+   - Create one Realtime connection for the accepted stream using the existing `RealtimeGateway`; forward inbound audio and map output audio with bounded queues, timeouts, and backpressure sufficient for the reproducible call.
    - Route every Realtime tool request through the same Volta application facade used by browser voice, preserve the original `call_id`, and return a typed `RealtimeToolOutput` only after deterministic completion.
    - Use one structured-concurrency lifetime for both transport directions. On Twilio, OpenAI, tool, timeout, or shutdown failure, cancel peers, close once, persist a safe monotonic outcome, and never synthesize a commitment or successful call.
 
@@ -33,7 +33,7 @@
 
 7. **Validate deterministic and credentialed gates separately**
    - Run focused Ruff/pytest while iterating, then `make python-check`, `make generate`, the applicable frontend check/build, `git diff --check`, and complete secret/privacy/generated-artifact review.
-   - Exercise signed callbacks, media flow, bidirectional audio, tool correlation, duplicate frames/events, disconnects, and cleanup with fakes.
+   - Exercise the minimum callback/stream flow, bidirectional audio, one tool correlation, duplicate delivery, one forced disconnect, and cleanup with fakes.
    - Run a sandbox call only after a separate authorization names the participant label, country, origin class, public endpoint, disclosure/consent/recording behavior, expected cost, duration, retention, and cleanup. Without that authorization, leave the sandbox criterion unchecked and do not deploy or dial.
 
 8. **Reconcile the stacked branch before review**
@@ -53,7 +53,7 @@
 ## Contract and integration checkpoints
 
 - **Phase 18 checkpoint:** freeze and test consumed telephony symbols before Pydantic mapping or dependency wiring.
-- **Security checkpoint:** signature/origin reconstruction, stream binding, limits, and negative tests pass before bridge acceptance can reach OpenAI.
+- **Security checkpoint:** request verification, stream binding, single-stream limits, and focused negative tests pass before bridge acceptance can reach OpenAI.
 - **Application checkpoint:** fake transport tool calls reach the existing Volta facade and replay safely before audio plumbing is considered complete.
 - **Generation checkpoint:** Pydantic models and API tests pass before `make generate`; generated artifacts are reviewed before frontend verification.
 - **Stack reconciliation checkpoint:** Phase 18 lands or is explicitly reconciled before Phase 19 review. The phase-local early-start decision does not change the roadmap dependency graph.
@@ -63,5 +63,6 @@
 
 - No deployment, production access, account/number/permission mutation, live call, participant contact, recording, Yuno operation, payment, financial mutation, or unrelated remote change is authorized by this plan.
 - Do not log or persist raw audio, transcript, telephone number, signature, authorization header, raw form/frame, provider payload, standard OpenAI credential, or private participant data.
-- Do not return success before verified durable status processing, allow a model/provider event to bypass deterministic services, or retry an ambiguous provider mutation.
+- Do not return success before the minimum verified terminal processing, allow a model/provider event to bypass deterministic services, or retry an ambiguous provider mutation.
+- Do not absorb later-phase complete status, reconnect, multi-call, exhaustive signature/retry, or detailed diagnostic scope into this hackathon slice.
 - Represent Phase 17 as DONE only through merged PR #25, keep Phase 18 ACTIVE until its own gate and merge complete, and do not weaken either gate or rewrite their history. Phase 19 is deliberately stacked on Phase 18 and must be reported that way until reconciled.

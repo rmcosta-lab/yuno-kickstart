@@ -2,24 +2,25 @@
 
 ## Objective and user-visible outcome
 
-- Give the operations coordinator one explicit, authorized action that starts a PSTN negotiation for an allowlisted synthetic carrier and exposes a safe normalized call state for the later control-tower work.
-- Accept verified Twilio voice and status callbacks plus one secure bidirectional Media Stream, bridge that stream to the existing OpenAI Realtime boundary, and route tool actions through the same typed backend application services used by browser voice.
-- Finish with a durable terminal call state and auditable correlation across the operation, call session, provider call, stream, Realtime session, tool calls, and safe disconnect outcome. The API never treats a provider callback or model event as authority to create a commitment.
+- Give the operations coordinator one explicit, authorized action that starts one PSTN demo negotiation for one allowlisted synthetic destination and exposes a minimal safe call result for the later control-tower work.
+- Accept one secure Twilio bidirectional Media Stream, bridge it to the existing OpenAI Realtime boundary, and route at least one tool action through the same typed backend application services used by browser voice.
+- Finish the single call cleanly with correlation across the operation, call session, provider call, stream, Realtime session, and tool call. The API never treats a provider callback or model event as authority to create a commitment.
 - Priority: P0.1 telephony integration. Browser voice, deterministic text, and the recorded browser trial remain the fallback.
 
 ## Included scope
 
-- Pydantic request/response and safe-error contracts for `POST /v1/operations/{operation_id}/outbound-calls`, backed by the Phase 18 `OutboundCallGateway` and durable idempotency store.
-- Verified Twilio voice-flow and call-status ingress under `/v1/telephony/twilio/**`, including disclosure and recording-consent gating before a Media Stream may start.
+- The minimum Pydantic request/response and safe-error contract for `POST /v1/operations/{operation_id}/outbound-calls`, backed by the Phase 18 `OutboundCallGateway` and durable idempotency store.
+- The minimum verified Twilio voice-flow and terminal-status ingress needed for one reproducible call, including disclosure and consent gating before a Media Stream may start.
 - An authenticated WebSocket at `/v1/telephony/twilio/media` that accepts only the expected allowlisted provider call/stream binding, enforces size and lifecycle limits, and translates Twilio audio/control frames without logging raw media.
 - A bounded bridge between Twilio bidirectional Media Streams and the existing provider-neutral `RealtimeGateway`; audio format conversion is added only when current official contracts prove it necessary.
 - Tool-call correlation and delegation to the existing Volta application facade used by the browser path, including safe output return to Realtime with the original call identifier.
-- Monotonic, duplicate-safe call status and disconnect handling using Phase 18 provider-neutral values and persistence.
-- API tests, WebSocket tests, signature tests, OpenAPI export, Orval regeneration, generated-client verification, frontend typecheck/build, and a separately authorized Twilio sandbox test.
+- Duplicate-safe terminal handling for the single stream using Phase 18 provider-neutral values and persistence.
+- Focused API/WebSocket/security tests, OpenAPI export, Orval regeneration, generated-client verification, frontend typecheck/build, and one separately authorized reproducible Twilio sandbox call.
 
 ## Excluded scope
 
 - Phase 20 control-tower buttons, live-call UI, frontend state design, browser voice changes, or handwritten TypeScript contracts.
+- Complete status handling, reconnect/resume behavior, multiple or concurrent calls, exhaustive retry/signature matrices, advanced diagnostics, and a detailed call timeline; later telephony integration and final-trial work own them.
 - New mandate, quote, commitment, winner, recovery, or persistence rules inside FastAPI; provider events delegate to typed backend services and cannot bypass deterministic authority.
 - Changes to Phase 18 Twilio call-creation URLs, authentication, payload mapping, or provider-neutral rules except a separately coordinated integration correction returned to the Phase 18 owner.
 - Real carrier contact, inbound PSTN, direct SIP, SMS, email, production identity, production deployment, number purchase, account or permission changes, recording, or a live call without separate explicit authorization.
@@ -37,7 +38,7 @@
 - Owner decision on 2026-08-30: start and implement Phase 19 from Phase 18 without waiting for Phase 17 to become DONE. This explicit decision overrode the ordinary `AGENTS.md`/`start-phase` readiness ordering for this stacked claim and was exercised before PR #25 merged. It did not mark either dependency DONE, edit the roadmap, weaken any gate, or authorize merge, deployment, provider mutation, or participant contact.
 - Stacking consequence: Phase 19 consumes unmerged Phase 18 contracts and must preserve their history. Phase 18 must be integrated or otherwise explicitly reconciled before Phase 19 can be independently reviewed and merged; Phase 19 has no separate wait on Phase 17.
 - Conflicts: none declared. Refresh remote Phase 18 and overlapping API/specification pull requests before implementation and publication.
-- Roadmap gate, unchanged: FastAPI defines and regenerates the telephony contracts, verifies Twilio call-status requests, accepts an allowlisted secure Media Stream, bridges bidirectional audio and events to OpenAI Realtime, delegates tool actions to the same backend services used by the browser, handles disconnects without duplicate commitments, and passes API, WebSocket, signature, redaction, and authorized sandbox tests.
+- Roadmap gate, unchanged: FastAPI defines and regenerates the minimum telephony contract for one explicitly authorized call to one allowlisted test destination. The call establishes one secure Twilio Media Stream, exchanges bidirectional audio with OpenAI Realtime, delegates at least one tool action to the existing backend services, and terminates without exposing credentials or creating duplicate commitments. Focused API and WebSocket tests and one reproducible authorized sandbox call pass.
 
 ## Assumptions, risks, and fallback
 
@@ -45,23 +46,22 @@
 - The external HTTPS/WSS origin used for signature verification is configured server-side and reconstructed exactly across trusted proxy headers; arbitrary forwarded hosts, schemes, paths, or query strings are rejected.
 - Each stream is bound to one already authorized call session through bounded server-issued correlation data. Twilio identifiers are normalized and never used as authorization by themselves.
 - Risk: starting from an active Phase 18 causes drift. Mitigation: freeze imports at the recorded base, keep Phase 19 out of Phase 18-owned backend mappings, and reconcile the stack before review.
-- Risk: two asynchronous transports race and duplicate tools or commitments. Mitigation: one consumer per stream, bounded queues, original tool-call IDs, durable operation idempotency, terminal monotonic state, and deterministic disconnect cleanup.
-- Risk: backpressure, malformed frames, or disconnects leak memory or continue a provider session. Mitigation: strict message and duration limits, bounded queues/timeouts, task-group cancellation, explicit close semantics, and tests for every half-open direction.
+- Risk: two asynchronous transports race and duplicate a tool or commitment. Mitigation: one consumer per stream, bounded queues, original tool-call IDs, durable operation idempotency, and one deterministic cleanup path.
+- Risk: backpressure, a malformed frame, or disconnect leaks resources. Mitigation: bounded messages/queues/timeouts, task-group cancellation, explicit close semantics, and focused happy-path plus forced-disconnect tests.
 - Risk: signature or proxy mistakes admit forged callbacks. Mitigation: exact public URL reconstruction, raw-form verification before parsing, fail-closed configuration, replay-safe event handling, and negative tests for tampering.
 - Fallback: keep the Phase 18 fake gateway plus browser voice, text mode, and recorded fallback. If current provider contracts, secure public ingress, or authorized sandbox access cannot satisfy the gate, report the credentialed portion BLOCKED and do not place a call.
 
 ## Acceptance criteria
 
-1. `POST /v1/operations/{operation_id}/outbound-calls` requires demo authorization, `Idempotency-Key`, a known call-session identifier, allowlisted destination label, explicit human actor/time evidence, AI-disclosure readiness, and a recording/consent policy; malformed or unauthorized input causes zero provider I/O.
+1. `POST /v1/operations/{operation_id}/outbound-calls` requires demo authorization, `Idempotency-Key`, a known call-session identifier, the single configured allowlisted destination label, explicit human actor/time evidence, AI-disclosure readiness, and the accepted consent/recording mode; malformed or unauthorized input causes zero provider I/O.
 2. The outbound route constructs the exact Phase 18 `OutboundCallRequest`, invokes an injected `OutboundCallGateway`, returns only provider-neutral identifiers/status, replays the same logical request safely, and maps typed authorization, allowlist, conflict, rate-limit, provider, timeout, and uncertain outcomes without leaking provider material.
-3. Twilio voice and status HTTP ingress verifies the signature against the exact configured external URL and raw form before typed parsing. Missing, stale, oversized, malformed, or tampered input is rejected; duplicate or out-of-order status events cannot regress a terminal call.
+3. The minimum Twilio voice and terminal-status ingress verifies the provider request against the configured external URL before typed parsing and rejects a representative missing or tampered signature case. Complete status ordering and exhaustive signature cases remain follow-up work.
 4. Disclosure and applicable explicit recording consent occur before `<Connect><Stream>` is issued. The media URL and custom parameters contain no standard credential, phone number, raw authorization token, or unnecessary participant data.
-5. The media WebSocket verifies the upgrade and one expected call/stream binding before accepting media, validates `connected`, `start`, `media`, `mark`, `clear`, and `stop` ordering and bounds, and closes safely on unknown, duplicate, malformed, oversized, timed-out, or unauthorized frames.
-6. One bounded bridge forwards accepted Twilio input audio to the existing provider-neutral Realtime connection and maps Realtime output audio back to Twilio with correct ordering, mark/clear behavior, barge-in handling, and backpressure.
+5. The media WebSocket accepts only the expected authorized call/stream binding, handles the minimum `connected`, `start`, `media`, and `stop` lifecycle required by the sandbox call, bounds messages and queues, and rejects representative unauthorized or malformed input.
+6. One bounded bridge forwards accepted Twilio input audio to the existing provider-neutral Realtime connection and maps Realtime output audio back to Twilio for the reproducible call. Advanced mark/clear, reconnect, and multi-call hardening remain follow-up work unless required for the one call to function.
 7. Realtime tool requests use the same application facade and deterministic services as browser voice. The original `call_id` and one idempotency key survive the roundtrip, and a replay or disconnect cannot create a duplicate quote, commitment, recap, brief, recovery, or escalation.
-8. Disconnect from Twilio, OpenAI, application delegation, or server shutdown cancels both directions, closes resources once, records a safe monotonic call-session outcome, and never invents success or erases earlier evidence.
-9. Logs and errors contain correlation IDs and allowlisted lifecycle metadata only. Tests and diff review prove that secrets, signatures, authorization headers, phone numbers, raw forms, media, transcripts, and provider payloads are redacted or absent.
-10. API and WebSocket tests, `make python-check`, `make generate`, frontend typecheck/build, `git diff --check`, and generated-artifact review pass. A separately authorized sandbox test proves signed status ingress plus bidirectional media and tool delegation; without it the credentialed gate remains explicitly unmet.
+8. Normal completion and one forced disconnect cancel both directions, close resources once, record a safe terminal outcome, and never invent success or duplicate a commitment.
+9. Focused API/WebSocket tests, `make python-check`, `make generate`, frontend typecheck/build, `git diff --check`, and secret/generated-artifact review pass. One separately authorized sandbox call proves bidirectional media, at least one tool delegation, and clean termination; without it the phase gate remains unmet.
 
 ## HTTP and WebSocket contract gate
 
@@ -71,13 +71,13 @@
   - Headers: demo bearer authorization and required `Idempotency-Key`.
   - Request: `call_session_id`, `destination_label`, `authorized_by`, `authorized_at`, `ai_disclosure_required=true`, `recording_mode`, and matching `recording_consent_required`. The operation ID comes only from the path; correlation ID comes from trusted request context.
   - Success: `201` for a newly accepted call and `200` for a durable same-request replay, returning `call_session_id`, safe `provider_call_id`, normalized `status`, `created_at`, `status_updated_at`, and `replayed`.
-  - Errors: `400` invalid authorization/consent combination, `401` missing demo identity, `403` unknown destination or disallowed origin, `404` operation/call session not found, `409` idempotency or state conflict, `422` schema error, `429` bounded rate limit with safe retry metadata, `502` known provider failure/invalid response, `503` uncertain outcome, and `504` known timeout. Responses use the existing safe error envelope.
+  - Errors: preserve the existing safe envelope for validation/authentication, unknown destination, missing operation/session, idempotency/state conflict, rate limit, provider failure, uncertain outcome, and timeout. The focused contract tests freeze only cases exercised by the minimum journey.
 
 ### Provider ingress contracts
 
-- `POST /v1/telephony/twilio/voice` and the smallest consent continuation required by current Twilio Voice behavior return minimal TwiML only after signature verification and expected-call lookup. These provider routes are not frontend contracts.
-- `POST /v1/telephony/twilio/status` verifies raw form input before parsing, delegates a normalized `OutboundCallStatusEvent`, returns `204` only after accepted durable processing, and returns a bounded non-2xx response for invalid signatures or unsafe input according to current provider retry semantics.
-- `WS /v1/telephony/twilio/media` is documented outside OpenAPI. It accepts only the verified expected stream, closes with a bounded application code/reason, never exposes internal exceptions, and has explicit limits for frame size, queue depth, idle duration, total duration, and concurrent streams.
+- `POST /v1/telephony/twilio/voice` and the smallest consent continuation required by current Twilio Voice behavior return minimal TwiML only after request verification and expected-call lookup. These provider routes are not frontend contracts.
+- `POST /v1/telephony/twilio/status` handles only the minimum safe terminal observation required by the single-call journey; complete status lifecycle and retry behavior remain follow-up work.
+- `WS /v1/telephony/twilio/media` is documented outside OpenAPI. It accepts only the expected stream, never exposes internal exceptions, and has bounded frame, queue, duration, and single-stream limits.
 - OpenAPI and Orval include only the browser-consumed outbound-call application contract; generated files are never edited manually.
 
 ## Application contract gate

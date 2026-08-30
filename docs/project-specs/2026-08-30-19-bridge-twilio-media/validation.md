@@ -2,7 +2,7 @@
 
 ## Planning and coordination
 
-- [ ] Requirements, contracts, ownership, risks, fallback, and exclusions match the unchanged Phase 19 roadmap gate.
+- [ ] Requirements, contracts, ownership, risks, fallback, and exclusions match the reduced hackathon Phase 19 roadmap gate now present on `origin/main`.
 - [ ] Phase 12 remains DONE; the consumed Phase 18 base and all remote Phase 17/18/19 branches and pull requests are refreshed before implementation and publication.
 - [ ] The 2026-08-30 owner decision and its timing remain explicit: Phase 19 was claimed while Phase 17 was ACTIVE, PR #25 merged immediately afterward, Phase 18 remains ACTIVE, and the roadmap is unchanged.
 - [ ] Before Phase 19 review/merge, Phase 18 is integrated or explicitly reconciled, the stacked base is refreshed without rewriting Phase 18 history, and the complete deterministic gate is repeated.
@@ -12,25 +12,25 @@
 
 - [ ] Demo authorization, allowed origin, rate limit, request correlation, and required `Idempotency-Key` are enforced before outbound provider I/O.
 - [ ] Pydantic request/response models expose only the accepted provider-neutral call facts and reject malformed authorization, destination, consent, and recording combinations.
-- [ ] Same-request replay and typed authorization, allowlist, state, idempotency, provider, timeout, rate-limit, invalid-response, and uncertain-outcome errors match `requirements.md`.
-- [ ] API tests prove `201` new acceptance, `200` replay, safe non-2xx semantics, zero-I/O guards, and no raw provider or participant data.
+- [ ] Same-request replay and the safe errors exercised by the minimum call journey match `requirements.md` without expanding into exhaustive provider handling.
+- [ ] Focused API tests prove new acceptance, replay, representative safe failures, zero-I/O guards, and no raw provider or participant data.
 
 ## Twilio ingress and signature security
 
-- [ ] Current official Twilio documentation is recorded for exact signature verification, external URL reconstruction, Voice/TwiML, status fields/retries, Media Stream upgrade/frames/limits, and disconnect behavior.
-- [ ] Correctly signed synthetic voice, consent, status, and WebSocket requests pass; missing, stale, replayed, malformed, oversized, wrong-origin, wrong-path/query, wrong-call, and tampered cases fail closed.
+- [ ] Current official Twilio documentation is recorded for the minimum request verification, Voice/TwiML, terminal callback, Media Stream framing, and disconnect behavior used by the single call.
+- [ ] Valid synthetic voice/status/stream input passes; representative missing/tampered verification, unauthorized call binding, malformed media, and over-limit cases fail closed.
 - [ ] Disclosure and applicable explicit consent occur before the stream starts; recording remains disabled unless separately authorized after consent.
-- [ ] Duplicate or out-of-order status events apply once, cannot regress a terminal state, and return success only after verified durable processing.
+- [ ] Duplicate terminal delivery applies once and returns success only after safe processing; exhaustive status ordering/retry cases are explicitly deferred.
 - [ ] Provider routes, logs, errors, fixtures, and evidence contain no full number, signature, credential, authorization header, raw form, raw payload, audio, transcript, or participant detail.
 
 ## Media WebSocket and Realtime bridge
 
 - [ ] One expected call/stream binding is required before media acceptance, is bounded and replay-safe, and exposes no standard credential or private destination.
-- [ ] `connected`, `start`, `media`, `mark`, `clear`, and `stop` ordering, frame sizes, encodings, queue depth, idle/total timeout, concurrency, and close codes have positive and negative tests.
+- [ ] The minimum `connected`, `start`, `media`, and `stop` lifecycle, frame bounds, queue depth, timeout, single-stream capacity, and safe close behavior have focused tests.
 - [ ] Accepted Twilio input audio reaches the existing provider-neutral Realtime gateway and accepted Realtime output audio/control reaches Twilio with correct backpressure and barge-in behavior.
 - [ ] Every Realtime tool request delegates to the same Volta facade used by browser voice, preserves its original `call_id`, and returns a typed output only after deterministic execution.
-- [ ] Duplicate tool/frame/event delivery and every Twilio/OpenAI/application/server disconnect path close resources once and cannot duplicate a quote, commitment, recap, brief, recovery, escalation, or terminal state.
-- [ ] Bounded queues, timeouts, task cancellation, client/server half-close, provider errors, malformed events, and shutdown pass without leaked tasks, sockets, secrets, or raw media.
+- [ ] Duplicate tool delivery plus normal completion and one forced disconnect close resources once and cannot duplicate a commitment or terminal result.
+- [ ] Bounded queues, timeouts, cancellation, representative malformed input, and shutdown pass without leaked tasks, sockets, secrets, or raw media.
 
 ## Architecture, contracts, and generation
 
@@ -41,7 +41,7 @@
 
 ## Deterministic checks
 
-- [ ] Focused API, signature, WebSocket, bridge, disconnect, idempotency, and redaction pytest suites pass.
+- [ ] Focused API, request-verification, WebSocket, bridge, single-disconnect, idempotency, and redaction pytest suites pass.
 - [ ] `uv run ruff check .` passes for affected Python paths.
 - [ ] `uv run pytest` passes for the affected API/backend environment.
 - [ ] `make python-check` passes from the repository root.
@@ -53,7 +53,7 @@
 ## Authorized sandbox evidence
 
 - [ ] A separate explicit authorization records the synthetic participant label, destination country, origin class, public HTTPS/WSS endpoint, disclosure, consent/recording behavior, expected cost/duration, evidence limits, retention, and cleanup before any call or deployment.
-- [ ] One authorized sandbox run proves signed status ingress, accepted secure Media Stream, inbound and outbound audio/events, one correlated tool roundtrip through deterministic services, terminal/disconnect cleanup, and no duplicate commitment.
+- [ ] One authorized sandbox call proves an accepted secure Media Stream, inbound and outbound audio, at least one correlated tool roundtrip through deterministic services, clean termination, and no duplicate commitment.
 - [ ] Account restrictions, call result, latency, disconnects, redacted evidence, endpoint cleanup, and any unmet provider gate are reported separately from deterministic repository checks.
 
 ## Explicitly not authorized by phase start
