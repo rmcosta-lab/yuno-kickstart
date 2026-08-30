@@ -67,6 +67,8 @@ from yuno_backend.volta.persistence.tables import (
     _carrier_sessions,
     _commitments,
     _evidence_reservations,
+    _inbound_call_attempts,
+    _inbound_caller_correlations,
     _intake_drafts,
     _mandates,
     _mutation_idempotency,
@@ -83,7 +85,15 @@ from yuno_backend.volta.persistence.tables import (
     _text_mutation_idempotency,
 )
 from yuno_backend.volta.recovery.models import Notification, PostContactEscalation, RecoveryAttempt
-from yuno_backend.volta.telephony.errors import OutboundCallIdempotencyConflict
+from yuno_backend.volta.telephony.errors import (
+    InboundCallReplayConflict,
+    OutboundCallIdempotencyConflict,
+)
+from yuno_backend.volta.telephony.inbound import (
+    InboundCallAttempt,
+    InboundCallerBinding,
+    InboundCallStatus,
+)
 from yuno_backend.volta.telephony.models import (
     OutboundCall,
     OutboundCallAttempt,
@@ -103,6 +113,8 @@ __all__ = [
     "SqlAlchemyEvidenceReservationRepository",
     "SqlAlchemyIdempotencyRepository",
     "SqlAlchemyIntakeDraftRepository",
+    "SqlAlchemyInboundCallAttemptRepository",
+    "SqlAlchemyInboundCallerCorrelationRepository",
     "SqlAlchemyNegotiationRepository",
     "SqlAlchemyNotificationRepository",
     "SqlAlchemyOperationRepository",
@@ -113,6 +125,174 @@ __all__ = [
     "SqlAlchemyRecoveryAttemptRepository",
     "SqlAlchemyTextMutationIdempotencyRepository",
 ]
+
+
+def _inbound_attempt_values(value: InboundCallAttempt) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "commitment_id": value.commitment_id,
+        "call_id": value.call_id,
+        "caller_label": value.caller_label,
+        "provider_call_id": value.provider_call_id,
+        "stream_binding_hash": value.stream_binding_hash,
+        "status": value.status.value,
+        "created_at": value.created_at,
+        "expires_at": value.expires_at,
+        "consented_at": value.consented_at,
+        "stream_started_at": value.stream_started_at,
+        "provider_stream_id": value.provider_stream_id,
+        "completed_at": value.completed_at,
+        "failure_reason": value.failure_reason,
+        "completion_fingerprint": value.completion_fingerprint,
+        "resulting_commitment_id": value.resulting_commitment_id,
+        "resulting_evidence_id": value.resulting_evidence_id,
+        "resulting_brief_id": value.resulting_brief_id,
+        "recovery_attempt_id": value.recovery_attempt_id,
+        "correlation_id": value.correlation_id,
+    }
+
+
+def _inbound_attempt_from_row(row: Mapping[str, Any]) -> InboundCallAttempt:
+    return InboundCallAttempt(
+        id=row["id"],
+        operation_id=row["operation_id"],
+        commitment_id=row["commitment_id"],
+        call_id=row["call_id"],
+        caller_label=row["caller_label"],
+        provider_call_id=row["provider_call_id"],
+        stream_binding_hash=row["stream_binding_hash"],
+        status=InboundCallStatus(row["status"]),
+        created_at=row["created_at"],
+        expires_at=row["expires_at"],
+        consented_at=row["consented_at"],
+        stream_started_at=row["stream_started_at"],
+        provider_stream_id=row["provider_stream_id"],
+        completed_at=row["completed_at"],
+        failure_reason=row["failure_reason"],
+        completion_fingerprint=row["completion_fingerprint"],
+        resulting_commitment_id=row["resulting_commitment_id"],
+        resulting_evidence_id=row["resulting_evidence_id"],
+        resulting_brief_id=row["resulting_brief_id"],
+        recovery_attempt_id=row["recovery_attempt_id"],
+        correlation_id=row["correlation_id"],
+    )
+
+
+class SqlAlchemyInboundCallerCorrelationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_active_by_caller(
+        self, caller_label: str, *, for_update: bool = False
+    ) -> tuple[InboundCallerBinding, ...]:
+        try:
+            statement = select(_inbound_caller_correlations).where(
+                _inbound_caller_correlations.c.caller_label == caller_label,
+                _inbound_caller_correlations.c.active.is_(True),
+            )
+            if for_update:
+                statement = statement.with_for_update()
+            rows = (await self._session.execute(statement)).all()
+            return tuple(
+                InboundCallerBinding(
+                    row._mapping["id"],
+                    row._mapping["caller_label"],
+                    row._mapping["operation_id"],
+                    row._mapping["active"],
+                    row._mapping["created_at"],
+                )
+                for row in rows
+            )
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "inbound_caller_correlation") from None
+
+    async def add(self, binding: InboundCallerBinding) -> None:
+        try:
+            await self._session.execute(
+                insert(_inbound_caller_correlations).values(
+                    id=binding.id,
+                    caller_label=binding.caller_label,
+                    operation_id=binding.operation_id,
+                    active=binding.active,
+                    created_at=binding.created_at,
+                )
+            )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "inbound_caller_correlation", binding.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "inbound_caller_correlation", binding.id
+            ) from None
+
+
+class SqlAlchemyInboundCallAttemptRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_provider_call(
+        self, provider_call_id: str, *, for_update: bool = False
+    ) -> InboundCallAttempt | None:
+        statement = select(_inbound_call_attempts).where(
+            _inbound_call_attempts.c.provider_call_id == provider_call_id
+        )
+        return await self._one(statement, for_update=for_update)
+
+    async def get_active_by_operation(
+        self, operation_id: UUID, *, for_update: bool = False
+    ) -> InboundCallAttempt | None:
+        statement = select(_inbound_call_attempts).where(
+            _inbound_call_attempts.c.operation_id == operation_id,
+            _inbound_call_attempts.c.status.in_(
+                tuple(status.value for status in InboundCallStatus if status.active)
+            ),
+        )
+        return await self._one(statement, for_update=for_update)
+
+    async def _one(self, statement: Any, *, for_update: bool) -> InboundCallAttempt | None:
+        try:
+            if for_update:
+                statement = statement.with_for_update()
+            row = (await self._session.execute(statement)).first()
+            return None if row is None else _inbound_attempt_from_row(_mapping(row))
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "inbound_call_attempt") from None
+        except (InvalidDomainValue, KeyError, TypeError, ValueError):
+            raise PersistenceUnavailable("invalid_stored_state", "inbound_call_attempt") from None
+
+    async def add(self, attempt: InboundCallAttempt) -> None:
+        try:
+            await self._session.execute(
+                insert(_inbound_call_attempts).values(_inbound_attempt_values(attempt))
+            )
+        except IntegrityError:
+            raise InboundCallReplayConflict() from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "inbound_call_attempt", attempt.id
+            ) from None
+
+    async def update(self, attempt: InboundCallAttempt) -> None:
+        try:
+            result = await self._session.execute(
+                update(_inbound_call_attempts)
+                .where(_inbound_call_attempts.c.id == attempt.id)
+                .values(_inbound_attempt_values(attempt))
+            )
+            if result.rowcount != 1:
+                raise PersistenceConflict("missing_state", "inbound_call_attempt", attempt.id)
+        except PersistenceConflict:
+            raise
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "inbound_call_attempt", attempt.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "write_failed", "inbound_call_attempt", attempt.id
+            ) from None
 
 
 def _mapping(row: Any) -> Mapping[str, Any]:

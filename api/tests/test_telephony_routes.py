@@ -7,7 +7,8 @@ import struct
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from app.telephony.media import pcm24_to_twilio_payload, twilio_payload_to_pcm24
 from app.telephony.service import (
     LiveTelephonyApplication,
     MediaBinding,
+    StreamEvidence,
     VoltaToolDelegator,
     create_live_telephony_application,
 )
@@ -36,6 +38,8 @@ from yuno_backend.volta.realtime import (
     RealtimeToolOutput,
 )
 from yuno_backend.volta.telephony import (
+    InboundCallBinding,
+    InboundCorrelationAmbiguous,
     OutboundCall,
     OutboundCallAuthorization,
     OutboundCallAuthorizationError,
@@ -59,6 +63,19 @@ BINDING = MediaBinding(
     stream_token="binding-synthetic-001",
     account_sid=ACCOUNT_SID,
 )
+INBOUND_CALL_SID = "CA66666666666666666666666666666666"
+INBOUND_STREAM_SID = "MZ77777777777777777777777777777777"
+INBOUND_CALLER = "+15550003333"
+INBOUND_DESTINATION = "+15550004444"
+INBOUND_BINDING = MediaBinding(
+    operation_id=OPERATION_ID,
+    call_session_id=CALL_SESSION_ID,
+    provider_call_id=INBOUND_CALL_SID,
+    stream_token="binding-inbound-synthetic-001",
+    account_sid=ACCOUNT_SID,
+    inbound=True,
+    correlation_id=UUID("00000000-0000-4000-8000-000000000026"),
+)
 
 
 class FakeRealtimeConnection:
@@ -80,9 +97,7 @@ class FakeRealtimeConnection:
         self.closed = True
 
     async def _events(self) -> AsyncIterator[object]:
-        yield RealtimeSpeechStarted(
-            event_id="evt-speech", item_id="item-speech", audio_start_ms=20
-        )
+        yield RealtimeSpeechStarted(event_id="evt-speech", item_id="item-speech", audio_start_ms=20)
         yield RealtimeAudioDelta(
             event_id="evt-audio",
             response_id="response-audio",
@@ -125,6 +140,10 @@ class FakeTelephonyApplication:
         self.status_events: list[OutboundCallStatusEvent] = []
         self.tool_calls: list[tuple[RealtimeToolCallRequested, str]] = []
         self.finished: list[tuple[MediaBinding, str]] = []
+        self.finished_evidence: list[StreamEvidence | None] = []
+        self.inbound_accepts: list[tuple[str, str, UUID]] = []
+        self.inbound_consents: list[str] = []
+        self.inbound_consented = False
 
     async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
         self.outbound_requests.append(request)
@@ -138,14 +157,51 @@ class FakeTelephonyApplication:
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None:
         return BINDING if provider_call_id == BINDING.provider_call_id else None
 
-    async def binding_for_stream(self, stream_token: str) -> MediaBinding | None:
+    async def accept_inbound_call(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        self.inbound_accepts.append((caller_label, provider_call_id, correlation_id))
+        return replace(INBOUND_BINDING, correlation_id=correlation_id)
+
+    async def record_inbound_consent(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        assert caller_label == "synthetic-driver"
+        assert provider_call_id == INBOUND_CALL_SID
+        if not self.inbound_accepts:
+            self.inbound_accepts.append((caller_label, provider_call_id, correlation_id))
+        self.inbound_consents.append(provider_call_id)
+        self.inbound_consented = True
+        correlation_id = (
+            self.inbound_accepts[-1][2] if self.inbound_accepts else INBOUND_BINDING.correlation_id
+        )
+        return replace(INBOUND_BINDING, correlation_id=correlation_id)
+
+    async def binding_for_stream(
+        self, stream_token: str, provider_call_id: str, provider_stream_id: str
+    ) -> MediaBinding | None:
+        if stream_token == INBOUND_BINDING.stream_token:
+            if (
+                not self.inbound_consented
+                or provider_call_id != INBOUND_CALL_SID
+                or provider_stream_id != INBOUND_STREAM_SID
+            ):
+                return None
+            correlation_id = (
+                self.inbound_accepts[-1][2]
+                if self.inbound_accepts
+                else INBOUND_BINDING.correlation_id
+            )
+            return replace(INBOUND_BINDING, correlation_id=correlation_id)
+        assert provider_call_id == BINDING.provider_call_id
+        assert provider_stream_id == "MZ33333333333333333333333333333333"
         return BINDING if stream_token == BINDING.stream_token else None
 
     async def observe_status(self, event: OutboundCallStatusEvent) -> None:
         self.status_events.append(event)
 
     def realtime_session(self, binding: MediaBinding) -> RealtimeSessionRequest:
-        assert binding == BINDING
+        assert binding == BINDING or binding.inbound
         return RealtimeSessionRequest(
             instructions="Negotiate only within the approved mandate.",
             safety_identifier="a" * 64,
@@ -157,12 +213,18 @@ class FakeTelephonyApplication:
         event: RealtimeToolCallRequested,
         idempotency_key: str,
     ) -> Mapping[str, object]:
-        assert binding == BINDING
+        assert binding == BINDING or binding.inbound
         self.tool_calls.append((event, idempotency_key))
         return {"accepted": True}
 
-    async def stream_finished(self, binding: MediaBinding, outcome: str) -> None:
+    async def stream_finished(
+        self,
+        binding: MediaBinding,
+        outcome: str,
+        evidence: StreamEvidence | None = None,
+    ) -> None:
         self.finished.append((binding, outcome))
+        self.finished_evidence.append(evidence)
 
     async def aclose(self) -> None:
         return None
@@ -175,8 +237,11 @@ def build_client(application: FakeTelephonyApplication | None = None) -> TestCli
             volta_demo_bearer_token="synthetic-test-token",
             cors_origins=["http://localhost:3000"],
             twilio_auth_token=TOKEN,
+            twilio_account_sid=ACCOUNT_SID,
             twilio_public_base_url=BASE_URL,
             twilio_media_ws_url=MEDIA_URL,
+            twilio_inbound_caller_allowlist={"synthetic-driver": INBOUND_CALLER},
+            twilio_inbound_destination_e164=INBOUND_DESTINATION,
         )
     )
     if application is not None:
@@ -186,7 +251,10 @@ def build_client(application: FakeTelephonyApplication | None = None) -> TestCli
 
 def signed_form(path: str, fields: dict[str, str]) -> tuple[dict[str, str], str]:
     return (
-        {"X-Twilio-Signature": twilio_signature(f"{BASE_URL}{path}", fields, TOKEN)},
+        {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Twilio-Signature": twilio_signature(f"{BASE_URL}{path}", fields, TOKEN),
+        },
         urlencode(fields),
     )
 
@@ -203,15 +271,20 @@ def outbound_body() -> dict[str, object]:
     }
 
 
-def media_start(*, binding: str = BINDING.stream_token) -> dict[str, object]:
+def media_start(
+    *,
+    binding: str = BINDING.stream_token,
+    call_sid: str = BINDING.provider_call_id,
+    stream_sid: str = "MZ33333333333333333333333333333333",
+) -> dict[str, object]:
     return {
         "event": "start",
         "sequenceNumber": "1",
-        "streamSid": "MZ33333333333333333333333333333333",
+        "streamSid": stream_sid,
         "start": {
             "accountSid": ACCOUNT_SID,
-            "streamSid": "MZ33333333333333333333333333333333",
-            "callSid": BINDING.provider_call_id,
+            "streamSid": stream_sid,
+            "callSid": call_sid,
             "tracks": ["inbound"],
             "mediaFormat": {
                 "encoding": "audio/x-mulaw",
@@ -302,9 +375,9 @@ def test_outbound_origin_rejection_consumes_no_quota_or_gateway_io() -> None:
 
 def test_outbound_openapi_422_uses_safe_error_envelope() -> None:
     with build_client() as client:
-        operation = client.app.openapi()["paths"][
-            "/v1/operations/{operation_id}/outbound-calls"
-        ]["post"]
+        operation = client.app.openapi()["paths"]["/v1/operations/{operation_id}/outbound-calls"][
+            "post"
+        ]
     assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ApiErrorResponse"
     }
@@ -344,9 +417,7 @@ def test_disclosure_and_consent_precede_media_stream() -> None:
     voice_fields["AccountSid"] = ACCOUNT_SID
     voice_headers, voice_body = signed_form("/v1/telephony/twilio/voice", voice_fields)
     consent_fields = {**voice_fields, "Digits": "1"}
-    consent_headers, consent_body = signed_form(
-        "/v1/telephony/twilio/consent", consent_fields
-    )
+    consent_headers, consent_body = signed_form("/v1/telephony/twilio/consent", consent_fields)
     with build_client(application) as client:
         disclosure = client.post(
             "/v1/telephony/twilio/voice",
@@ -393,6 +464,170 @@ def test_twilio_http_ingress_rejects_oversized_form_before_parsing() -> None:
     assert response.status_code == 403
 
 
+def inbound_fields(**overrides: str) -> dict[str, str]:
+    fields = {
+        "AccountSid": ACCOUNT_SID,
+        "CallSid": INBOUND_CALL_SID,
+        "From": INBOUND_CALLER,
+        "To": INBOUND_DESTINATION,
+    }
+    fields.update(overrides)
+    return fields
+
+
+def test_inbound_voice_validates_all_fields_then_returns_disclosure_gather() -> None:
+    application = FakeTelephonyApplication()
+    path = "/v1/telephony/twilio/inbound/voice"
+    fields = inbound_fields(FutureParameter="future-value")
+    headers, body = signed_form(path, fields)
+    with build_client(application) as client:
+        response = client.post(path, headers=headers, content=body)
+
+    assert response.status_code == 200
+    assert "artificial intelligence" in response.text
+    assert "recorded for private demo evidence" in response.text
+    assert "/v1/telephony/twilio/inbound/consent" in response.text
+    assert "<Gather" in response.text
+    assert "<Stream" not in response.text
+    assert application.inbound_accepts[0][:2] == (
+        "synthetic-driver",
+        INBOUND_CALL_SID,
+    )
+
+
+def test_inbound_voice_fails_closed_for_signature_origin_and_identity_mismatch() -> None:
+    application = FakeTelephonyApplication()
+    path = "/v1/telephony/twilio/inbound/voice"
+    fields = inbound_fields()
+    headers, body = signed_form(path, fields)
+    wrong_path_headers, _ = signed_form("/v1/telephony/twilio/voice", fields)
+    wrong_destination = inbound_fields(To="+15550005555")
+    wrong_destination_headers, wrong_destination_body = signed_form(path, wrong_destination)
+    with build_client(application) as client:
+        missing = client.post(path, content=body)
+        wrong_origin = client.post(path, headers=wrong_path_headers, content=body)
+        proxy_spoof = client.post(
+            path,
+            headers={
+                **wrong_path_headers,
+                "Forwarded": "proto=https;host=telephony.example.test",
+                "X-Forwarded-Host": "telephony.example.test",
+            },
+            content=body,
+        )
+        identity_mismatch = client.post(
+            path,
+            headers=wrong_destination_headers,
+            content=wrong_destination_body,
+        )
+
+    assert {
+        missing.status_code,
+        wrong_origin.status_code,
+        proxy_spoof.status_code,
+        identity_mismatch.status_code,
+    } == {403}
+    assert application.inbound_accepts == []
+
+
+def test_inbound_rejection_precedes_live_application_and_storage_construction() -> None:
+    path = "/v1/telephony/twilio/inbound/voice"
+    with build_client() as client:
+        response = client.post(
+            path,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            content=urlencode(inbound_fields()),
+        )
+        constructed = hasattr(client.app.state, "telephony_application")
+
+    assert response.status_code == 403
+    assert constructed is False
+
+
+def test_inbound_voice_rejects_duplicate_fields_after_full_signature_validation() -> None:
+    application = FakeTelephonyApplication()
+    path = "/v1/telephony/twilio/inbound/voice"
+    pairs = list(inbound_fields().items()) + [("CallSid", INBOUND_CALL_SID)]
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Twilio-Signature": twilio_signature(f"{BASE_URL}{path}", pairs, TOKEN),
+    }
+    with build_client(application) as client:
+        response = client.post(path, headers=headers, content=urlencode(pairs))
+
+    assert response.status_code == 403
+    assert application.inbound_accepts == []
+
+
+def test_inbound_unallowlisted_caller_returns_safe_hangup_without_delegation() -> None:
+    application = FakeTelephonyApplication()
+    path = "/v1/telephony/twilio/inbound/voice"
+    fields = inbound_fields(From="+15550006666")
+    headers, body = signed_form(path, fields)
+    with build_client(application) as client:
+        response = client.post(path, headers=headers, content=body)
+
+    assert response.status_code == 200
+    assert "<Hangup" in response.text and "<Stream" not in response.text
+    assert INBOUND_CALLER not in response.text
+    assert application.inbound_accepts == []
+
+
+class AmbiguousInboundApplication(FakeTelephonyApplication):
+    async def accept_inbound_call(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        del caller_label, provider_call_id, correlation_id
+        raise InboundCorrelationAmbiguous()
+
+
+def test_inbound_correlation_failure_returns_only_safe_hangup_twiml() -> None:
+    path = "/v1/telephony/twilio/inbound/voice"
+    headers, body = signed_form(path, inbound_fields())
+    with build_client(AmbiguousInboundApplication()) as client:
+        response = client.post(path, headers=headers, content=body)
+
+    assert response.status_code == 200
+    assert response.text == "<Response><Hangup /></Response>"
+    assert OPERATION_ID.hex not in response.text
+
+
+def test_inbound_consent_is_durable_before_opaque_stream_instruction() -> None:
+    application = FakeTelephonyApplication()
+    voice_path = "/v1/telephony/twilio/inbound/voice"
+    consent_path = "/v1/telephony/twilio/inbound/consent"
+    voice_headers, voice_body = signed_form(voice_path, inbound_fields())
+    consent_headers, consent_body = signed_form(consent_path, inbound_fields(Digits="1"))
+    with build_client(application) as client:
+        voice = client.post(voice_path, headers=voice_headers, content=voice_body)
+        consent = client.post(consent_path, headers=consent_headers, content=consent_body)
+
+    assert voice.status_code == consent.status_code == 200
+    assert application.inbound_consents == [INBOUND_CALL_SID]
+    assert MEDIA_URL in consent.text
+    assert INBOUND_BINDING.stream_token in consent.text
+    assert "<Connect" in consent.text and "<Stream" in consent.text
+
+
+def test_inbound_refusal_emits_no_stream_and_does_not_record_consent() -> None:
+    application = FakeTelephonyApplication()
+    path = "/v1/telephony/twilio/inbound/consent"
+    headers, body = signed_form(path, inbound_fields(Digits="2"))
+    with build_client(application) as client:
+        response = client.post(path, headers=headers, content=body)
+
+    assert response.status_code == 200
+    assert "<Hangup" in response.text and "<Stream" not in response.text
+    assert application.inbound_consents == []
+
+
+def test_inbound_provider_routes_remain_outside_openapi() -> None:
+    with build_client() as client:
+        paths = client.app.openapi()["paths"]
+    assert "/v1/telephony/twilio/inbound/voice" not in paths
+    assert "/v1/telephony/twilio/inbound/consent" not in paths
+
+
 def test_terminal_status_is_verified_and_normalized() -> None:
     application = FakeTelephonyApplication()
     fields = {
@@ -404,9 +639,7 @@ def test_terminal_status_is_verified_and_normalized() -> None:
     }
     headers, body = signed_form("/v1/telephony/twilio/status", fields)
     with build_client(application) as client:
-        response = client.post(
-            "/v1/telephony/twilio/status", headers=headers, content=body
-        )
+        response = client.post("/v1/telephony/twilio/status", headers=headers, content=body)
 
     assert response.status_code == 204
     assert len(application.status_events) == 1
@@ -422,9 +655,7 @@ def test_media_bridge_converts_audio_delegates_tool_and_terminates() -> None:
             "/v1/telephony/twilio/media",
             headers={"X-Twilio-Signature": signature},
         ) as websocket:
-            websocket.send_json(
-                {"event": "connected", "protocol": "Call", "version": "1.0.0"}
-            )
+            websocket.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
             websocket.send_json(
                 {
                     "event": "start",
@@ -477,6 +708,81 @@ def test_media_bridge_converts_audio_delegates_tool_and_terminates() -> None:
     assert application.realtime_gateway.connection.tool_outputs[0].call_id == "call-tool-001"
     assert application.finished == [(BINDING, "COMPLETED")]
     assert application.realtime_gateway.connection.closed is True
+
+
+def test_consented_inbound_media_captures_bounded_playable_evidence_on_stop() -> None:
+    application = FakeTelephonyApplication()
+    application.inbound_consented = True
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    inbound_payload = base64.b64encode(b"\xff" * 160).decode()
+    with build_client(application) as client:
+        with client.websocket_connect(
+            "/v1/telephony/twilio/media",
+            headers={"X-Twilio-Signature": signature},
+        ) as websocket:
+            websocket.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
+            websocket.send_json(
+                media_start(
+                    binding=INBOUND_BINDING.stream_token,
+                    call_sid=INBOUND_CALL_SID,
+                    stream_sid=INBOUND_STREAM_SID,
+                )
+            )
+            websocket.send_json(
+                {
+                    "event": "media",
+                    "sequenceNumber": "2",
+                    "streamSid": INBOUND_STREAM_SID,
+                    "media": {
+                        "track": "inbound",
+                        "chunk": "1",
+                        "payload": inbound_payload,
+                    },
+                }
+            )
+            websocket.receive_json()
+            websocket.receive_json()
+            websocket.send_json(
+                {
+                    "event": "stop",
+                    "sequenceNumber": "3",
+                    "streamSid": INBOUND_STREAM_SID,
+                    "stop": {"accountSid": ACCOUNT_SID},
+                }
+            )
+
+    assert application.finished[0][1] == "COMPLETED"
+    evidence = application.finished_evidence[0]
+    assert evidence is not None
+    assert evidence.audio.startswith(b"RIFF")
+    assert len(evidence.audio) < 2_000_000
+    assert evidence.audio_start_ms == 20
+    assert evidence.item_id == "item-speech"
+    assert evidence.event_id == "evt-speech"
+
+
+def test_inbound_media_rejects_preconsent_binding_before_realtime_io() -> None:
+    application = FakeTelephonyApplication()
+    signature = twilio_signature(MEDIA_URL, {}, TOKEN)
+    with build_client(application) as client:
+        with pytest.raises(WebSocketDisconnect) as error:
+            with client.websocket_connect(
+                "/v1/telephony/twilio/media",
+                headers={"X-Twilio-Signature": signature},
+            ) as websocket:
+                websocket.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
+                websocket.send_json(
+                    media_start(
+                        binding=INBOUND_BINDING.stream_token,
+                        call_sid=INBOUND_CALL_SID,
+                        stream_sid=INBOUND_STREAM_SID,
+                    )
+                )
+                receive_until_close(websocket)
+
+    assert error.value.code == 1008
+    assert application.realtime_gateway.requests == []
+    assert application.finished == []
 
 
 def test_media_websocket_rejects_invalid_signature_before_acceptance() -> None:
@@ -736,6 +1042,49 @@ class RuntimeEngine:
         return None
 
 
+class RuntimeInboundApplication:
+    def __init__(self) -> None:
+        self.accepted: list[object] = []
+        self.consented: list[object] = []
+        self.started: list[object] = []
+        self.completed: list[object] = []
+        self.failed: list[object] = []
+        self.binding = InboundCallBinding(
+            attempt_id=UUID("00000000-0000-4000-8000-000000000061"),
+            operation_id=OPERATION_ID,
+            commitment_id=UUID("00000000-0000-4000-8000-000000000062"),
+            call_id=CALL_SESSION_ID,
+            provider_call_id=INBOUND_CALL_SID,
+            stream_binding=INBOUND_BINDING.stream_token,
+            expires_at=datetime(2026, 8, 30, 12, tzinfo=UTC) + timedelta(minutes=5),
+        )
+
+    async def accept_inbound_call(self, command):  # type: ignore[no-untyped-def]
+        self.accepted.append(command)
+        return self.binding
+
+    async def record_inbound_consent(self, command):  # type: ignore[no-untyped-def]
+        self.consented.append(command)
+        return self.binding
+
+    async def start_inbound_stream(self, command):  # type: ignore[no-untyped-def]
+        self.started.append(command)
+        return SimpleNamespace(
+            operation_id=OPERATION_ID,
+            call_id=CALL_SESSION_ID,
+            provider_call_id=INBOUND_CALL_SID,
+            correlation_id=UUID("00000000-0000-4000-8000-000000000026"),
+        )
+
+    async def complete_inbound_recovery(self, command):  # type: ignore[no-untyped-def]
+        self.completed.append(command)
+        return object()
+
+    async def fail_inbound_call(self, command):  # type: ignore[no-untyped-def]
+        self.failed.append(command)
+        return object()
+
+
 def runtime_request() -> OutboundCallRequest:
     return OutboundCallRequest(
         operation_id=OPERATION_ID,
@@ -790,10 +1139,31 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     assert len(gateway.requests) == 1
     binding = await runtime.binding_for_voice(BINDING.provider_call_id)
     assert binding is not None
-    assert await runtime.binding_for_stream(binding.stream_token) == binding
-    assert await runtime.binding_for_stream(binding.stream_token) is None
+    assert (
+        await runtime.binding_for_stream(
+            binding.stream_token,
+            binding.provider_call_id,
+            "MZ33333333333333333333333333333333",
+        )
+        == binding
+    )
+    assert (
+        await runtime.binding_for_stream(
+            binding.stream_token,
+            binding.provider_call_id,
+            "MZ33333333333333333333333333333333",
+        )
+        is None
+    )
     await runtime.stream_finished(binding, "COMPLETED")
-    assert await runtime.binding_for_stream(binding.stream_token) is None
+    assert (
+        await runtime.binding_for_stream(
+            binding.stream_token,
+            binding.provider_call_id,
+            "MZ33333333333333333333333333333333",
+        )
+        is None
+    )
 
     event = OutboundCallStatusEvent(
         provider_event_id="status-event-1",
@@ -815,6 +1185,77 @@ async def test_live_runtime_claims_stream_once_and_persists_terminal_status() ->
     )
     assert len(store.completions) == 3
     assert all(
-        completion[2].status is OutboundCallStatus.COMPLETED
-        for completion in store.completions
+        completion[2].status is OutboundCallStatus.COMPLETED for completion in store.completions
     )
+
+
+async def test_live_runtime_maps_inbound_lifecycle_to_provider_neutral_backend() -> None:
+    inbound = RuntimeInboundApplication()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(
+            twilio_account_sid=ACCOUNT_SID,
+            openai_realtime_safety_identifier_key="synthetic-safety-key",
+        ),
+        contracts=RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+        gateway=RuntimeGateway(),
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        inbound_application=inbound,  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+    correlation_id = UUID("00000000-0000-4000-8000-000000000026")
+    accepted = await runtime.accept_inbound_call(
+        "synthetic-driver", INBOUND_CALL_SID, correlation_id
+    )
+    consented = await runtime.record_inbound_consent(
+        "synthetic-driver", INBOUND_CALL_SID, correlation_id
+    )
+    started = await runtime.binding_for_stream(
+        consented.stream_token, INBOUND_CALL_SID, INBOUND_STREAM_SID
+    )
+    evidence = StreamEvidence(
+        audio=b"RIFF\x04\x00\x00\x00WAVE",
+        audio_start_ms=20,
+        item_id="item-evidence",
+        event_id="event-evidence",
+        correlation_id=correlation_id,
+    )
+    assert started == accepted
+    assert started is not None
+    assert runtime.realtime_session(started).tools == ()
+    await runtime.stream_finished(started, "COMPLETED", evidence)
+
+    assert inbound.accepted[0].caller_label == "synthetic-driver"  # type: ignore[attr-defined]
+    assert inbound.accepted[0].provider_call_id == INBOUND_CALL_SID  # type: ignore[attr-defined]
+    assert inbound.consented[0].stream_binding == INBOUND_BINDING.stream_token  # type: ignore[attr-defined]
+    assert inbound.started[0].provider_stream_id == INBOUND_STREAM_SID  # type: ignore[attr-defined]
+    assert inbound.completed[0].post_consent_audio == b"RIFF\x04\x00\x00\x00WAVE"  # type: ignore[attr-defined]
+    assert inbound.completed[0].correlation_id == correlation_id  # type: ignore[attr-defined]
+    assert inbound.failed == []
+
+
+async def test_live_runtime_reconstructs_consented_binding_after_process_restart() -> None:
+    inbound = RuntimeInboundApplication()
+    runtime = LiveTelephonyApplication(
+        settings=Settings(twilio_account_sid=ACCOUNT_SID),
+        contracts=RuntimeContracts(call_id=CALL_SESSION_ID),  # type: ignore[arg-type]
+        gateway=RuntimeGateway(),
+        realtime_gateway=FakeRealtimeGateway(),
+        attempt_store=RuntimeAttemptStore(),  # type: ignore[arg-type]
+        inbound_application=inbound,  # type: ignore[arg-type]
+        engine=RuntimeEngine(),
+    )
+
+    reconstructed = await runtime.binding_for_stream(
+        INBOUND_BINDING.stream_token, INBOUND_CALL_SID, INBOUND_STREAM_SID
+    )
+
+    assert reconstructed is not None
+    assert reconstructed.inbound is True
+    assert reconstructed.operation_id == OPERATION_ID
+    assert reconstructed.call_session_id == CALL_SESSION_ID
+    assert reconstructed.provider_call_id == INBOUND_CALL_SID
+    assert reconstructed.correlation_id == UUID(
+        "00000000-0000-4000-8000-000000000026"
+    )
+    assert inbound.started[0].stream_binding == INBOUND_BINDING.stream_token  # type: ignore[attr-defined]

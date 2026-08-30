@@ -1,6 +1,13 @@
-"""Provider-neutral outbound telephony application contract."""
+"""Provider-neutral telephony application contracts."""
 
 from yuno_backend.volta.telephony.errors import (
+    InboundCallerNotAllowed,
+    InboundCallError,
+    InboundCallReplayConflict,
+    InboundCallStateConflict,
+    InboundConsentRequired,
+    InboundCorrelationAmbiguous,
+    InboundCorrelationNotFound,
     InvalidOutboundCallResponseError,
     OutboundCallAllowlistError,
     OutboundCallAuthenticationError,
@@ -13,6 +20,23 @@ from yuno_backend.volta.telephony.errors import (
     OutboundCallTimeoutError,
 )
 from yuno_backend.volta.telephony.gateway import OutboundCallGateway
+from yuno_backend.volta.telephony.inbound import (
+    AcceptInboundCallInput,
+    CompleteInboundRecoveryInput,
+    FailInboundCallInput,
+    InboundCallApplication,
+    InboundCallAttempt,
+    InboundCallAttemptRepository,
+    InboundCallBinding,
+    InboundCallerBinding,
+    InboundCallerCorrelationRepository,
+    InboundCallLimits,
+    InboundCallStatus,
+    InboundOperationUnitOfWork,
+    InboundOperationUnitOfWorkFactory,
+    RecordInboundConsentInput,
+    StartInboundStreamInput,
+)
 from yuno_backend.volta.telephony.models import (
     OutboundCall,
     OutboundCallAttempt,
@@ -36,6 +60,26 @@ from yuno_backend.volta.telephony.services import (
 )
 
 __all__ = [
+    "AcceptInboundCallInput",
+    "CompleteInboundRecoveryInput",
+    "FailInboundCallInput",
+    "InboundCallApplication",
+    "InboundCallAttempt",
+    "InboundCallAttemptRepository",
+    "InboundCallBinding",
+    "InboundCallError",
+    "InboundCallLimits",
+    "InboundCallReplayConflict",
+    "InboundCallStateConflict",
+    "InboundCallStatus",
+    "InboundCallerBinding",
+    "InboundCallerCorrelationRepository",
+    "InboundCallerNotAllowed",
+    "InboundConsentRequired",
+    "InboundCorrelationAmbiguous",
+    "InboundCorrelationNotFound",
+    "InboundOperationUnitOfWork",
+    "InboundOperationUnitOfWorkFactory",
     "InvalidOutboundCallResponseError",
     "OutboundCall",
     "OutboundCallAllowlistError",
@@ -61,6 +105,8 @@ __all__ = [
     "OutboundCallUncertainReason",
     "OutboundCallUncertainState",
     "RecordingMode",
+    "RecordInboundConsentInput",
+    "StartInboundStreamInput",
     "apply_status_event",
     "outbound_call_request_fingerprint",
     "transition_status",

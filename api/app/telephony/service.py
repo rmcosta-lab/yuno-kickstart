@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import secrets
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
-from fastapi import Request
+from fastapi import FastAPI, Request, WebSocket
 from yuno_backend.database import DatabaseConfig, create_database_engine, create_session_factory
 from yuno_backend.integrations.openai import OpenAIRealtimeConfig, OpenAIRealtimeGateway
 from yuno_backend.integrations.twilio import (
@@ -19,22 +19,33 @@ from yuno_backend.integrations.twilio import (
     TwilioOutboundCallConfig,
     TwilioOutboundCallGateway,
 )
-from yuno_backend.volta.persistence import SqlAlchemyOutboundCallAttemptStore
+from yuno_backend.volta.persistence import (
+    SqlAlchemyOperationUnitOfWork,
+    SqlAlchemyOutboundCallAttemptStore,
+)
 from yuno_backend.volta.realtime import (
     RealtimeGateway,
     RealtimeSessionRequest,
     RealtimeToolCallRequested,
 )
 from yuno_backend.volta.telephony import (
+    AcceptInboundCallInput,
+    CompleteInboundRecoveryInput,
+    FailInboundCallInput,
+    InboundCallApplication,
+    InboundCallError,
     OutboundCall,
     OutboundCallAuthorizationError,
     OutboundCallGateway,
     OutboundCallIdempotencyConflict,
     OutboundCallRequest,
     OutboundCallStatusEvent,
+    RecordInboundConsentInput,
+    StartInboundStreamInput,
     apply_status_event,
     outbound_call_request_fingerprint,
 )
+from yuno_backend.volta.text_slice.demo import create_demo_evidence_storage
 
 from app.config import Settings
 from app.contract_service import ContractService, JsonValue
@@ -48,6 +59,17 @@ class MediaBinding:
     provider_call_id: str
     stream_token: str = field(repr=False)
     account_sid: str
+    inbound: bool = False
+    correlation_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamEvidence:
+    audio: bytes = field(repr=False)
+    audio_start_ms: int
+    item_id: str
+    event_id: str
+    correlation_id: UUID
 
 
 class TelephonyApplication(Protocol):
@@ -58,7 +80,17 @@ class TelephonyApplication(Protocol):
 
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None: ...
 
-    async def binding_for_stream(self, stream_token: str) -> MediaBinding | None: ...
+    async def accept_inbound_call(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding: ...
+
+    async def record_inbound_consent(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding: ...
+
+    async def binding_for_stream(
+        self, stream_token: str, provider_call_id: str, provider_stream_id: str
+    ) -> MediaBinding | None: ...
 
     async def observe_status(self, event: OutboundCallStatusEvent) -> None: ...
 
@@ -71,7 +103,12 @@ class TelephonyApplication(Protocol):
         idempotency_key: str,
     ) -> Mapping[str, object]: ...
 
-    async def stream_finished(self, binding: MediaBinding, outcome: str) -> None: ...
+    async def stream_finished(
+        self,
+        binding: MediaBinding,
+        outcome: str,
+        evidence: StreamEvidence | None = None,
+    ) -> None: ...
 
     async def aclose(self) -> None: ...
 
@@ -90,8 +127,22 @@ class UnimplementedTelephonyApplication:
         del provider_call_id
         return None
 
-    async def binding_for_stream(self, stream_token: str) -> MediaBinding | None:
-        del stream_token
+    async def accept_inbound_call(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        del caller_label, provider_call_id, correlation_id
+        raise RuntimeError("telephony application is not configured")
+
+    async def record_inbound_consent(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        del caller_label, provider_call_id, correlation_id
+        raise RuntimeError("telephony application is not configured")
+
+    async def binding_for_stream(
+        self, stream_token: str, provider_call_id: str, provider_stream_id: str
+    ) -> MediaBinding | None:
+        del stream_token, provider_call_id, provider_stream_id
         return None
 
     async def observe_status(self, event: OutboundCallStatusEvent) -> None:
@@ -102,29 +153,37 @@ class UnimplementedTelephonyApplication:
         return None
 
 
-def get_telephony_application(request: Request) -> TelephonyApplication:
-    service = getattr(request.app.state, "telephony_application", None)
+def _get_telephony_application(application: FastAPI) -> TelephonyApplication:
+    service = getattr(application.state, "telephony_application", None)
     if service is None:
         from app.openai_client import get_openai_http_client
         from app.volta_text_service import create_volta_text_contract_service
 
-        contracts = getattr(request.app.state, "contract_service", None)
+        contracts = getattr(application.state, "contract_service", None)
         if contracts is None:
             contracts = create_volta_text_contract_service(
-                request.app.state.settings,
-                http_client=get_openai_http_client(request.app),
+                application.state.settings,
+                http_client=get_openai_http_client(application),
             )
-            request.app.state.contract_service = contracts
+            application.state.contract_service = contracts
         try:
             service = create_live_telephony_application(
-                request.app.state.settings,
+                application.state.settings,
                 contracts,
-                get_openai_http_client(request.app),
+                get_openai_http_client(application),
             )
         except (RuntimeError, ValueError):
             service = UnimplementedTelephonyApplication()
-        request.app.state.telephony_application = service
+        application.state.telephony_application = service
     return service
+
+
+def get_telephony_application(request: Request) -> TelephonyApplication:
+    return _get_telephony_application(request.app)
+
+
+def get_websocket_telephony_application(websocket: WebSocket) -> TelephonyApplication:
+    return _get_telephony_application(websocket.app)
 
 
 class GatewayOutboundCallApplication:
@@ -185,6 +244,7 @@ class LiveTelephonyApplication:
         gateway: OutboundCallGateway,
         realtime_gateway: RealtimeGateway,
         attempt_store: SqlAlchemyOutboundCallAttemptStore,
+        inbound_application: InboundCallApplication | None = None,
         engine: object,
     ) -> None:
         self._settings = settings
@@ -192,6 +252,7 @@ class LiveTelephonyApplication:
         self._gateway = gateway
         self.realtime_gateway = realtime_gateway
         self._attempt_store = attempt_store
+        self._inbound_application = inbound_application
         self.twilio_account_sid = settings.twilio_account_sid.get_secret_value()
         self._engine = engine
         self._binding: MediaBinding | None = None
@@ -201,6 +262,7 @@ class LiveTelephonyApplication:
         self._idempotency_key: str | None = None
         self._request_fingerprint: str | None = None
         self._lock = asyncio.Lock()
+        self._inbound_bindings: dict[str, MediaBinding] = {}
         self._tools = VoltaToolDelegator(contracts)
 
     async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
@@ -227,9 +289,7 @@ class LiveTelephonyApplication:
                     if request_fingerprint == self._request_fingerprint:
                         assert self._call is not None
                         return self._call
-                    raise OutboundCallIdempotencyConflict(
-                        call_session_id=request.call_session_id
-                    )
+                    raise OutboundCallIdempotencyConflict(call_session_id=request.call_session_id)
                 raise OutboundCallAuthorizationError(call_session_id=request.call_session_id)
             call = await self._gateway.create_call(request)
             self._call = call
@@ -252,11 +312,106 @@ class LiveTelephonyApplication:
                 return None
             return self._binding
 
-    async def binding_for_stream(self, stream_token: str) -> MediaBinding | None:
+    async def accept_inbound_call(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        if self._inbound_application is None:
+            raise RuntimeError("inbound telephony is not configured")
         async with self._lock:
+            existing = self._inbound_bindings.get(provider_call_id)
+        accepted = await self._inbound_application.accept_inbound_call(
+            AcceptInboundCallInput(
+                caller_label=caller_label,
+                provider_call_id=provider_call_id,
+                correlation_id=correlation_id,
+            )
+        )
+        binding_correlation_id = (
+            existing.correlation_id
+            if existing is not None and existing.correlation_id is not None
+            else correlation_id
+        )
+        binding = MediaBinding(
+            operation_id=accepted.operation_id,
+            call_session_id=accepted.call_id,
+            provider_call_id=accepted.provider_call_id,
+            stream_token=accepted.stream_binding,
+            account_sid=self.twilio_account_sid,
+            inbound=True,
+            correlation_id=binding_correlation_id,
+        )
+        async with self._lock:
+            self._inbound_bindings[provider_call_id] = binding
+        return binding
+
+    async def record_inbound_consent(
+        self, caller_label: str, provider_call_id: str, correlation_id: UUID
+    ) -> MediaBinding:
+        if self._inbound_application is None:
+            raise RuntimeError("inbound telephony is not configured")
+        async with self._lock:
+            existing = self._inbound_bindings.get(provider_call_id)
+        accepted = await self._inbound_application.accept_inbound_call(
+            AcceptInboundCallInput(
+                caller_label=caller_label,
+                provider_call_id=provider_call_id,
+                correlation_id=correlation_id,
+            )
+        )
+        binding = MediaBinding(
+            operation_id=accepted.operation_id,
+            call_session_id=accepted.call_id,
+            provider_call_id=accepted.provider_call_id,
+            stream_token=accepted.stream_binding,
+            account_sid=self.twilio_account_sid,
+            inbound=True,
+            correlation_id=(
+                existing.correlation_id
+                if existing is not None and existing.correlation_id is not None
+                else correlation_id
+            ),
+        )
+        await self._inbound_application.record_inbound_consent(
+            RecordInboundConsentInput(
+                provider_call_id=provider_call_id,
+                stream_binding=binding.stream_token,
+            )
+        )
+        async with self._lock:
+            self._inbound_bindings[provider_call_id] = binding
+        return binding
+
+    async def binding_for_stream(
+        self, stream_token: str, provider_call_id: str, provider_stream_id: str
+    ) -> MediaBinding | None:
+        async with self._lock:
+            if self._inbound_application is not None:
+                try:
+                    attempt = await self._inbound_application.start_inbound_stream(
+                        StartInboundStreamInput(
+                            provider_call_id=provider_call_id,
+                            stream_binding=stream_token,
+                            provider_stream_id=provider_stream_id,
+                        )
+                    )
+                except InboundCallError:
+                    pass
+                else:
+                    binding = MediaBinding(
+                        operation_id=attempt.operation_id,
+                        call_session_id=attempt.call_id,
+                        provider_call_id=attempt.provider_call_id,
+                        stream_token=stream_token,
+                        account_sid=self.twilio_account_sid,
+                        inbound=True,
+                        correlation_id=attempt.correlation_id,
+                    )
+                    self._inbound_bindings[provider_call_id] = binding
+                    return binding
             if (
                 self._binding is None
                 or not secrets.compare_digest(self._binding.stream_token, stream_token)
+                or self._binding.provider_call_id != provider_call_id
                 or self._stream_claimed
                 or self._stream_consumed
             ):
@@ -281,6 +436,18 @@ class LiveTelephonyApplication:
             self._call = updated
 
     def realtime_session(self, binding: MediaBinding) -> RealtimeSessionRequest:
+        if binding.inbound:
+            if self._inbound_bindings.get(binding.provider_call_id) != binding:
+                raise ValueError("media binding is not active")
+            return replace(
+                build_telephony_realtime_session(self._settings),
+                instructions=(
+                    "You are Volta handling an authorized synthetic driver-delay call. "
+                    "Listen and acknowledge the update without negotiating, selecting terms, "
+                    "or invoking tools. The server applies the fixed recovery deterministically."
+                ),
+                tools=(),
+            )
         if binding != self._binding:
             raise ValueError("media binding is not active")
         return build_telephony_realtime_session(self._settings)
@@ -291,15 +458,42 @@ class LiveTelephonyApplication:
         event: RealtimeToolCallRequested,
         idempotency_key: str,
     ) -> Mapping[str, object]:
+        if binding.inbound:
+            raise ValueError("inbound Realtime tools are not authorized")
         if binding != self._binding:
             raise ValueError("media binding is not active")
         return await self._tools.execute(event, idempotency_key)
 
-    async def stream_finished(self, binding: MediaBinding, outcome: str) -> None:
-        del outcome
+    async def stream_finished(
+        self,
+        binding: MediaBinding,
+        outcome: str,
+        evidence: StreamEvidence | None = None,
+    ) -> None:
+        if binding.inbound and self._inbound_application is not None:
+            if outcome == "COMPLETED" and evidence is not None:
+                await self._inbound_application.complete_inbound_recovery(
+                    CompleteInboundRecoveryInput(
+                        provider_call_id=binding.provider_call_id,
+                        post_consent_audio=evidence.audio,
+                        audio_start_ms=evidence.audio_start_ms,
+                        item_id=evidence.item_id,
+                        event_id=evidence.event_id,
+                        correlation_id=evidence.correlation_id,
+                    )
+                )
+            else:
+                await self._inbound_application.fail_inbound_call(
+                    FailInboundCallInput(
+                        provider_call_id=binding.provider_call_id,
+                        reason_code=outcome,
+                    )
+                )
         async with self._lock:
             if binding == self._binding:
                 self._stream_claimed = False
+            if binding.inbound:
+                self._inbound_bindings.pop(binding.provider_call_id, None)
 
     async def aclose(self) -> None:
         dispose = getattr(self._engine, "dispose", None)
@@ -310,6 +504,11 @@ class LiveTelephonyApplication:
 class _UtcClock:
     def now(self) -> datetime:
         return datetime.now(UTC)
+
+
+class _UuidGenerator:
+    def new_id(self) -> UUID:
+        return uuid4()
 
 
 def create_live_telephony_application(
@@ -340,6 +539,12 @@ def create_live_telephony_application(
     engine = create_database_engine(DatabaseConfig(url=database_url))
     sessions = create_session_factory(engine)
     attempt_store = SqlAlchemyOutboundCallAttemptStore(sessions)
+    inbound_application = InboundCallApplication(
+        lambda: SqlAlchemyOperationUnitOfWork(sessions),
+        create_demo_evidence_storage(settings.volta_evidence_storage_path),
+        _UtcClock(),
+        _UuidGenerator(),
+    )
     gateway = TwilioOutboundCallGateway(
         client,
         twilio_config,
@@ -353,5 +558,6 @@ def create_live_telephony_application(
         gateway=gateway,
         realtime_gateway=realtime,
         attempt_store=attempt_store,
+        inbound_application=inbound_application,
         engine=engine,
     )

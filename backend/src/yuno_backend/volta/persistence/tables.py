@@ -219,7 +219,9 @@ _audit_events = Table(
         "'COMMITMENT_SUPERSEDED', 'EVIDENCE_RECORDED', 'BRIEF_GENERATED', "
         "'RECAP_GENERATED', 'RECOVERY_REPLACEMENT_APPLIED', 'POST_CONTACT_ESCALATED', "
         "'ESCALATION_RESUMED', 'MANDATE_REPLACED', 'ESCALATION_RESOLVED', "
-        "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED') "
+        "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED', "
+        "'INBOUND_CALL_ACCEPTED', 'INBOUND_CONSENT_RECORDED', "
+        "'INBOUND_RECOVERY_COMPLETED') "
         "AND metadata = '{}'::jsonb)",
         name="ck_volta_audit_events_metadata_schema",
     ),
@@ -704,6 +706,131 @@ _outbound_call_attempts = Table(
 )
 
 Index("ix_volta_outbound_call_attempts_operation", _outbound_call_attempts.c.operation_id)
+
+_inbound_caller_correlations = Table(
+    "volta_inbound_caller_correlations",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("caller_label", Text, nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("active", Boolean, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_inbound_caller_correlations"),
+    ForeignKeyConstraint(
+        ["operation_id"],
+        ["volta_operations.id"],
+        name="fk_volta_inbound_caller_correlations_operation",
+    ),
+    UniqueConstraint(
+        "caller_label",
+        "operation_id",
+        name="uq_volta_inbound_caller_correlations_caller_operation",
+    ),
+    CheckConstraint(
+        "caller_label ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$'",
+        name="ck_volta_inbound_caller_correlations_label",
+    ),
+)
+
+_inbound_call_attempts = Table(
+    "volta_inbound_call_attempts",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("caller_label", Text, nullable=False),
+    Column("provider_call_id", Text, nullable=False),
+    Column("stream_binding_hash", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("consented_at", DateTime(timezone=True), nullable=True),
+    Column("stream_started_at", DateTime(timezone=True), nullable=True),
+    Column("provider_stream_id", Text, nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("failure_reason", Text, nullable=True),
+    Column("completion_fingerprint", Text, nullable=True),
+    Column("resulting_commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("resulting_evidence_id", UUID(as_uuid=True), nullable=True),
+    Column("resulting_brief_id", UUID(as_uuid=True), nullable=True),
+    Column("recovery_attempt_id", UUID(as_uuid=True), nullable=True),
+    Column("correlation_id", UUID(as_uuid=True), nullable=True),
+    PrimaryKeyConstraint("id", name="pk_volta_inbound_call_attempts"),
+    UniqueConstraint("provider_call_id", name="uq_volta_inbound_call_attempts_provider_call"),
+    ForeignKeyConstraint(
+        ["operation_id"], ["volta_operations.id"], name="fk_volta_inbound_attempt_operation"
+    ),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id", "call_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id", "volta_commitments.call_id"],
+        name="fk_volta_inbound_attempt_commitment",
+    ),
+    ForeignKeyConstraint(
+        ["resulting_commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_inbound_attempt_result_commitment",
+    ),
+    ForeignKeyConstraint(
+        ["resulting_evidence_id", "resulting_commitment_id"],
+        ["volta_agreement_evidence.id", "volta_agreement_evidence.commitment_id"],
+        name="fk_volta_inbound_attempt_result_evidence",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    ForeignKeyConstraint(
+        ["resulting_brief_id"],
+        ["volta_call_briefs.id"],
+        name="fk_volta_inbound_attempt_result_brief",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    ForeignKeyConstraint(
+        ["recovery_attempt_id"],
+        ["volta_recovery_attempts.id"],
+        name="fk_volta_inbound_attempt_recovery",
+        deferrable=True,
+        initially="DEFERRED",
+    ),
+    CheckConstraint(
+        "status IN ('AWAITING_CONSENT', 'CONSENTED', 'STREAMING', 'COMPLETED', 'FAILED')",
+        name="ck_volta_inbound_attempt_status",
+    ),
+    CheckConstraint(
+        "caller_label ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$' AND "
+        "provider_call_id ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$' AND "
+        "stream_binding_hash ~ '^[0-9a-f]{64}$' AND expires_at > created_at",
+        name="ck_volta_inbound_attempt_identifiers",
+    ),
+    CheckConstraint(
+        "(status = 'AWAITING_CONSENT' AND consented_at IS NULL AND stream_started_at IS NULL "
+        "AND completed_at IS NULL) OR "
+        "(status = 'CONSENTED' AND consented_at IS NOT NULL AND stream_started_at IS NULL "
+        "AND completed_at IS NULL) OR "
+        "(status = 'STREAMING' AND consented_at IS NOT NULL AND stream_started_at IS NOT NULL "
+        "AND provider_stream_id IS NOT NULL AND completed_at IS NULL) OR "
+        "(status = 'COMPLETED' AND consented_at IS NOT NULL AND completed_at IS NOT NULL "
+        "AND completion_fingerprint IS NOT NULL AND resulting_commitment_id IS NOT NULL "
+        "AND resulting_evidence_id IS NOT NULL AND resulting_brief_id IS NOT NULL "
+        "AND recovery_attempt_id IS NOT NULL AND correlation_id IS NOT NULL) OR "
+        "(status = 'FAILED' AND completed_at IS NOT NULL AND failure_reason IS NOT NULL)",
+        name="ck_volta_inbound_attempt_payload",
+    ),
+)
+
+Index(
+    "ix_volta_inbound_caller_correlations_label",
+    _inbound_caller_correlations.c.caller_label,
+    postgresql_where=_inbound_caller_correlations.c.active.is_(True),
+)
+Index(
+    "uq_volta_inbound_attempt_one_active_operation",
+    _inbound_call_attempts.c.operation_id,
+    unique=True,
+    postgresql_where=_inbound_call_attempts.c.status.in_(
+        ("AWAITING_CONSENT", "CONSENTED", "STREAMING")
+    ),
+)
 
 Index("ix_volta_sessions_negotiation", _carrier_sessions.c.negotiation_id)
 Index("ix_volta_pre_contact_escalations_negotiation", _pre_contact_escalations.c.negotiation_id)

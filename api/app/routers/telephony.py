@@ -1,5 +1,7 @@
 """Outbound-call HTTP contract and verified Twilio transport ingress."""
 
+import re
+import secrets
 from datetime import UTC
 from email.utils import parsedate_to_datetime
 from typing import Annotated
@@ -11,6 +13,7 @@ from fastapi import APIRouter, Depends, Request, Response, WebSocket, status
 from fastapi.responses import JSONResponse
 from yuno_backend.volta.errors import InvalidDomainValue
 from yuno_backend.volta.telephony import (
+    InboundCallError,
     InvalidOutboundCallResponseError,
     OutboundCallAllowlistError,
     OutboundCallAuthenticationError,
@@ -36,7 +39,11 @@ from app.schemas.telephony import CreateOutboundCallRequest, OutboundCallRespons
 from app.security.demo_bearer import require_demo_bearer
 from app.security.realtime_origin import require_realtime_origin
 from app.telephony.bridge import MediaProtocolError, bridge_media_stream
-from app.telephony.service import TelephonyApplication, get_telephony_application
+from app.telephony.service import (
+    TelephonyApplication,
+    get_telephony_application,
+    get_websocket_telephony_application,
+)
 from app.telephony.signatures import verify_twilio_signature
 
 TelephonyService = Annotated[TelephonyApplication, Depends(get_telephony_application)]
@@ -163,6 +170,9 @@ async def create_outbound_call(
 
 
 async def _verified_form(request: Request) -> dict[str, str] | None:
+    content_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if content_type != "application/x-www-form-urlencoded" or request.url.query:
+        return None
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
@@ -184,11 +194,122 @@ async def _verified_form(request: Request) -> dict[str, str] | None:
         return None
     if len({name for name, _ in pairs}) != len(pairs):
         return None
+    if len(pairs) > 64:
+        return None
     return dict(pairs)
 
 
 def _xml_response(root: Element) -> Response:
     return Response(tostring(root, encoding="unicode"), media_type="application/xml")
+
+
+def _hangup_response(message: str | None = None) -> Response:
+    root = Element("Response")
+    if message is not None:
+        SubElement(root, "Say").text = message
+    SubElement(root, "Hangup")
+    return _xml_response(root)
+
+
+_CALL_SID = re.compile(r"^CA[0-9a-fA-F]{32}$")
+_ACCOUNT_SID = re.compile(r"^AC[0-9a-fA-F]{32}$")
+_E164 = re.compile(r"^\+[1-9][0-9]{7,14}$")
+
+
+def _inbound_identity(parameters: dict[str, str], settings: Settings) -> tuple[str, str] | None:
+    account_sid = parameters.get("AccountSid", "")
+    call_sid = parameters.get("CallSid", "")
+    caller = parameters.get("From", "")
+    destination = parameters.get("To", "")
+    expected_account_sid = settings.twilio_account_sid.get_secret_value()
+    expected_destination = settings.twilio_inbound_destination_e164.get_secret_value()
+    if (
+        _ACCOUNT_SID.fullmatch(account_sid) is None
+        or _CALL_SID.fullmatch(call_sid) is None
+        or _E164.fullmatch(caller) is None
+        or _E164.fullmatch(destination) is None
+        or not secrets.compare_digest(account_sid, expected_account_sid)
+        or not expected_destination
+        or not secrets.compare_digest(destination, expected_destination)
+    ):
+        return None
+    for label, configured_caller in settings.twilio_inbound_caller_allowlist.items():
+        if secrets.compare_digest(caller, configured_caller):
+            return label, call_sid
+    return "", call_sid
+
+
+@router.post("/telephony/twilio/inbound/voice", include_in_schema=False)
+async def twilio_inbound_voice(request: Request) -> Response:
+    parameters = await _verified_form(request)
+    if parameters is None:
+        return Response(status_code=403)
+    identity = _inbound_identity(parameters, request.app.state.settings)
+    if identity is None:
+        return Response(status_code=403)
+    caller_label, provider_call_id = identity
+    if not caller_label:
+        return _hangup_response()
+    application = get_telephony_application(request)
+    try:
+        await application.accept_inbound_call(
+            caller_label, provider_call_id, _correlation_id(request)
+        )
+    except (InboundCallError, RuntimeError, ValueError):
+        return _hangup_response()
+
+    root = Element("Response")
+    SubElement(root, "Say").text = (
+        "This is Volta, an artificial intelligence assistant. "
+        "With your consent, this call will be recorded for private demo evidence."
+    )
+    gather = SubElement(
+        root,
+        "Gather",
+        {
+            "action": (
+                f"{request.app.state.settings.twilio_public_base_url}"
+                "/v1/telephony/twilio/inbound/consent"
+            ),
+            "input": "dtmf",
+            "method": "POST",
+            "numDigits": "1",
+            "timeout": "5",
+        },
+    )
+    SubElement(gather, "Say").text = "Press 1 to consent and continue."
+    SubElement(root, "Hangup")
+    return _xml_response(root)
+
+
+@router.post("/telephony/twilio/inbound/consent", include_in_schema=False)
+async def twilio_inbound_consent(request: Request) -> Response:
+    parameters = await _verified_form(request)
+    if parameters is None:
+        return Response(status_code=403)
+    identity = _inbound_identity(parameters, request.app.state.settings)
+    if identity is None:
+        return Response(status_code=403)
+    caller_label, provider_call_id = identity
+    if not caller_label or parameters.get("Digits") != "1":
+        return _hangup_response("Consent was not received. The call will end.")
+    application = get_telephony_application(request)
+    try:
+        binding = await application.record_inbound_consent(
+            caller_label, provider_call_id, _correlation_id(request)
+        )
+    except (InboundCallError, RuntimeError, ValueError):
+        return _hangup_response()
+
+    root = Element("Response")
+    connect = SubElement(root, "Connect")
+    stream = SubElement(
+        connect,
+        "Stream",
+        {"url": request.app.state.settings.twilio_media_ws_url},
+    )
+    SubElement(stream, "Parameter", {"name": "binding", "value": binding.stream_token})
+    return _xml_response(root)
 
 
 @router.post("/telephony/twilio/voice", include_in_schema=False)
@@ -209,8 +330,7 @@ async def twilio_voice(request: Request, application: TelephonyService) -> Respo
         "Gather",
         {
             "action": (
-                f"{request.app.state.settings.twilio_public_base_url}"
-                "/v1/telephony/twilio/consent"
+                f"{request.app.state.settings.twilio_public_base_url}/v1/telephony/twilio/consent"
             ),
             "input": "dtmf",
             "method": "POST",
@@ -295,10 +415,7 @@ async def twilio_media(websocket: WebSocket) -> None:
     ):
         await websocket.close(code=1008)
         return
-    application = getattr(websocket.app.state, "telephony_application", None)
-    if application is None:
-        await websocket.close(code=1011)
-        return
+    application = get_websocket_telephony_application(websocket)
     async with websocket.app.state.twilio_media_lock:
         if websocket.app.state.twilio_media_active:
             await websocket.close(code=1013)

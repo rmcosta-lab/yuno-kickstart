@@ -14,6 +14,8 @@ from yuno_backend.volta.persistence.repositories import (
     SqlAlchemyEvidenceRepository,
     SqlAlchemyEvidenceReservationRepository,
     SqlAlchemyIdempotencyRepository,
+    SqlAlchemyInboundCallAttemptRepository,
+    SqlAlchemyInboundCallerCorrelationRepository,
     SqlAlchemyIntakeDraftRepository,
     SqlAlchemyNegotiationRepository,
     SqlAlchemyNotificationRepository,
@@ -33,6 +35,8 @@ class SqlAlchemyOperationUnitOfWork:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
         self.intake_drafts: SqlAlchemyIntakeDraftRepository
+        self.inbound_call_attempts: SqlAlchemyInboundCallAttemptRepository
+        self.inbound_caller_correlations: SqlAlchemyInboundCallerCorrelationRepository
         self.operations: SqlAlchemyOperationRepository
         self.audit_events: SqlAlchemyAuditEventRepository
         self.negotiations: SqlAlchemyNegotiationRepository
@@ -59,6 +63,10 @@ class SqlAlchemyOperationUnitOfWork:
             self._session = None
             raise PersistenceUnavailable("begin_failed", "unit_of_work") from None
         self.intake_drafts = SqlAlchemyIntakeDraftRepository(self._session)
+        self.inbound_call_attempts = SqlAlchemyInboundCallAttemptRepository(self._session)
+        self.inbound_caller_correlations = SqlAlchemyInboundCallerCorrelationRepository(
+            self._session
+        )
         self.operations = SqlAlchemyOperationRepository(self._session)
         self.audit_events = SqlAlchemyAuditEventRepository(self._session)
         self.negotiations = SqlAlchemyNegotiationRepository(self._session)
@@ -89,6 +97,8 @@ class SqlAlchemyOperationUnitOfWork:
             await session.close()
             self._session = None
             del self.intake_drafts
+            del self.inbound_call_attempts
+            del self.inbound_caller_correlations
             del self.operations
             del self.audit_events
             del self.negotiations
