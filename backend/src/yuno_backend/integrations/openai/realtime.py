@@ -6,6 +6,7 @@ import asyncio
 import base64
 import binascii
 import json
+import math
 import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
@@ -33,6 +34,7 @@ from yuno_backend.volta.realtime.models import (
     MAX_AUDIO_CHUNK_BYTES,
     RealtimeAudioDelta,
     RealtimeEvent,
+    RealtimePlaybackTruncation,
     RealtimeResponseCancelled,
     RealtimeResponseCompleted,
     RealtimeSessionReady,
@@ -48,6 +50,7 @@ __all__ = ["OpenAIRealtimeConfig", "OpenAIRealtimeGateway"]
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 DEFAULT_REALTIME_MODEL = "gpt-realtime-2.1"
 MAX_TRACKED_TOOL_CALLS = 4_096
+MAX_TRACKED_AUDIO_ITEMS = 4_096
 _OFFICIAL_REALTIME_HOST = "api.openai.com"
 _OFFICIAL_REALTIME_PATH = "/v1/realtime"
 _ENGLISH_INSTRUCTION = "Language requirement: respond only in English."
@@ -102,7 +105,13 @@ class OpenAIRealtimeConfig:
             self.event_timeout_seconds,
             self.close_timeout_seconds,
         )
-        if any(not isinstance(value, int | float) or value <= 0 for value in deadlines):
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or value <= 0
+            or (isinstance(value, float) and not math.isfinite(value))
+            for value in deadlines
+        ):
             raise ValueError("Realtime deadlines must be positive")
         if not 1_024 <= self.max_message_size <= 16_777_216:
             raise ValueError("max_message_size is outside the safe supported range")
@@ -180,6 +189,8 @@ class _OpenAIRealtimeConnection:
         self._config = config
         self._request = request
         self._allowed_tools = frozenset(tool.name for tool in request.tools)
+        self._received_audio_items: set[tuple[str, int]] = set()
+        self._truncated_audio_items: set[tuple[str, int]] = set()
         self._received_call_ids: set[str] = set()
         self._sent_call_ids: set[str] = set()
         self._ready: RealtimeSessionReady | None = None
@@ -242,6 +253,24 @@ class _OpenAIRealtimeConnection:
         await self._send_json(item_event)
         await self._send_json(response_event)
 
+    async def truncate_playback(self, truncation: RealtimePlaybackTruncation) -> None:
+        if self._closed:
+            raise RealtimeDisconnectedError(model_id=self._config.model)
+        audio_item = (truncation.item_id, truncation.content_index)
+        if audio_item not in self._received_audio_items:
+            raise ValueError("playback truncation does not match received audio")
+        if audio_item in self._truncated_audio_items:
+            raise ValueError("playback was already truncated for this audio item")
+        self._truncated_audio_items.add(audio_item)
+        await self._send_json(
+            {
+                "type": "conversation.item.truncate",
+                "item_id": truncation.item_id,
+                "content_index": truncation.content_index,
+                "audio_end_ms": truncation.audio_end_ms,
+            }
+        )
+
     async def events(self) -> AsyncIterator[RealtimeEvent]:
         if self._events_started:
             raise RuntimeError("events may only be consumed once")
@@ -254,6 +283,9 @@ class _OpenAIRealtimeConnection:
                 event = self._parse(message)
                 if event is not None:
                     yield event
+        except asyncio.CancelledError:
+            self._closed = True
+            raise
         except RealtimeError:
             self._closed = True
             raise
@@ -326,7 +358,7 @@ class _OpenAIRealtimeConnection:
     def _parse(self, message: str) -> RealtimeEvent | None:
         try:
             payload = json.loads(message)
-        except (json.JSONDecodeError, RecursionError, UnicodeError):
+        except (json.JSONDecodeError, RecursionError, UnicodeError, ValueError):
             raise InvalidRealtimeEvent(model_id=self._config.model) from None
         if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
             raise InvalidRealtimeEvent(model_id=self._config.model) from None
@@ -356,13 +388,25 @@ class _OpenAIRealtimeConnection:
                     audio = base64.b64decode(_string(payload, "delta"), validate=True)
                 except (binascii.Error, ValueError):
                     raise ValueError from None
-                return RealtimeAudioDelta(
+                event = RealtimeAudioDelta(
                     event_id=_string(payload, "event_id"),
                     response_id=_string(payload, "response_id"),
                     item_id=_string(payload, "item_id"),
                     content_index=_integer(payload, "content_index"),
                     audio=audio,
                 )
+                audio_item = (event.item_id, event.content_index)
+                if (
+                    audio_item not in self._received_audio_items
+                    and len(self._received_audio_items) >= MAX_TRACKED_AUDIO_ITEMS
+                ):
+                    raise RealtimeProviderError(
+                        model_id=self._config.model,
+                        event_type=event_type,
+                        event_id=event.event_id,
+                    )
+                self._received_audio_items.add(audio_item)
+                return event
             if event_type == "response.output_item.done":
                 item = _object(payload, "item")
                 if item.get("type") != "function_call":

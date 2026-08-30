@@ -13,6 +13,7 @@ __all__ = [
     "PcmAudioFormat",
     "RealtimeAudioDelta",
     "RealtimeEvent",
+    "RealtimePlaybackTruncation",
     "RealtimeResponseCancelled",
     "RealtimeResponseCompleted",
     "RealtimeSessionReady",
@@ -31,6 +32,7 @@ MAX_AUDIO_CHUNK_BYTES = 1_048_576
 MAX_TOOLS = 32
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _TOOL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
+_SAFETY_IDENTIFIER = re.compile(r"^[a-f0-9]{64}$")
 type JsonScalar = str | int | float | bool | None
 type JsonValue = JsonScalar | tuple[JsonValue, ...] | Mapping[str, JsonValue]
 
@@ -43,6 +45,11 @@ def _identifier(value: object, field_name: str) -> None:
 def _non_negative(value: object, field_name: str) -> None:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValueError(f"{field_name} must be a non-negative integer")
+
+
+def _safety_identifier(value: object) -> None:
+    if not isinstance(value, str) or _SAFETY_IDENTIFIER.fullmatch(value) is None:
+        raise ValueError("safety_identifier must be a lowercase SHA-256 digest")
 
 
 def _freeze_json(value: object, *, field_name: str) -> JsonValue:
@@ -114,7 +121,7 @@ class RealtimeSessionRequest:
             or len(self.instructions.encode()) > MAX_INSTRUCTIONS_BYTES
         ):
             raise ValueError("instructions are required and bounded")
-        _identifier(self.safety_identifier, "safety_identifier")
+        _safety_identifier(self.safety_identifier)
         if self.language != "en" or self.vad != "server_vad":
             raise ValueError("only English with server VAD is supported")
         if not self.voice.strip() or len(self.voice) > 64:
@@ -145,6 +152,18 @@ class RealtimeToolOutput:
         if not isinstance(frozen, Mapping):
             raise ValueError("tool result must be a JSON object")
         object.__setattr__(self, "result", frozen)
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimePlaybackTruncation:
+    item_id: str
+    content_index: int
+    audio_end_ms: int
+
+    def __post_init__(self) -> None:
+        _identifier(self.item_id, "item_id")
+        _non_negative(self.content_index, "content_index")
+        _non_negative(self.audio_end_ms, "audio_end_ms")
 
 
 @dataclass(frozen=True, slots=True)

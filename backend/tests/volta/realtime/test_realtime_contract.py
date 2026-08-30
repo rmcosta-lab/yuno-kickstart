@@ -8,6 +8,7 @@ import yuno_backend.volta.realtime as realtime
 from yuno_backend.volta.realtime import (
     PcmAudioFormat,
     RealtimeError,
+    RealtimePlaybackTruncation,
     RealtimeSessionRequest,
     RealtimeToolCallRequested,
     RealtimeToolDefinition,
@@ -41,6 +42,7 @@ def test_public_surface_matches_frozen_phase_contract() -> None:
         "RealtimeEvent",
         "RealtimeGateway",
         "RealtimeModelUnavailableError",
+        "RealtimePlaybackTruncation",
         "RealtimeProviderError",
         "RealtimeRateLimitError",
         "RealtimeResponseCancelled",
@@ -72,7 +74,7 @@ def test_provider_neutral_package_has_no_transport_or_framework_imports() -> Non
 
 def test_sensitive_values_are_redacted_and_nested_json_is_immutable() -> None:
     secret_instruction = "private instruction marker"
-    safety_identifier = "safe_operator_hash"
+    safety_identifier = "a" * 64
     request = RealtimeSessionRequest(
         instructions=secret_instruction,
         safety_identifier=safety_identifier,
@@ -116,7 +118,7 @@ def test_sensitive_values_are_redacted_and_nested_json_is_immutable() -> None:
         ),
         (
             lambda: RealtimeSessionRequest(
-                instructions="x", safety_identifier="safe", language="pt"  # type: ignore[arg-type]
+                instructions="x", safety_identifier="b" * 64, language="pt"  # type: ignore[arg-type]
             ),
             "English",
         ),
@@ -134,6 +136,14 @@ def test_sensitive_values_are_redacted_and_nested_json_is_immutable() -> None:
 def test_values_reject_unsupported_or_unsafe_data(factory: object, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         factory()  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("safety_identifier", ["alice", "a" * 63, "a" * 65, "A" * 64])
+def test_session_requires_an_opaque_sha256_safety_identifier(
+    safety_identifier: str,
+) -> None:
+    with pytest.raises(ValueError, match="lowercase SHA-256 digest"):
+        RealtimeSessionRequest(instructions="x", safety_identifier=safety_identifier)
 
 
 def test_exceptions_expose_only_allowlisted_safe_metadata() -> None:
@@ -158,3 +168,31 @@ def test_exceptions_expose_only_allowlisted_safe_metadata() -> None:
         "close_code": 1006,
         "duration_ms": 7,
     }
+
+
+@pytest.mark.parametrize(
+    "truncation",
+    [
+        RealtimePlaybackTruncation("item.safe", 0, 0),
+        RealtimePlaybackTruncation("item.safe", 1, 1_500),
+    ],
+)
+def test_playback_truncation_is_immutable_and_bounded(
+    truncation: RealtimePlaybackTruncation,
+) -> None:
+    assert truncation.audio_end_ms >= 0
+    with pytest.raises((AttributeError, TypeError)):
+        truncation.audio_end_ms = 2_000  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"item_id": "unsafe value", "content_index": 0, "audio_end_ms": 0},
+        {"item_id": "item.safe", "content_index": -1, "audio_end_ms": 0},
+        {"item_id": "item.safe", "content_index": 0, "audio_end_ms": -1},
+    ],
+)
+def test_playback_truncation_rejects_invalid_values(values: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        RealtimePlaybackTruncation(**values)  # type: ignore[arg-type]

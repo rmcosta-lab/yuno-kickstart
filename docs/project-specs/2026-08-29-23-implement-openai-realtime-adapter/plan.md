@@ -8,13 +8,14 @@
 2. **Implement the bounded OpenAI WebSocket mapping**
    - Add `websockets` as a direct backend dependency and regenerate `uv.lock` with the manifest/lockfile pair owned by the backend writer.
    - Build immutable redacted provider config and inject the connector for tests; accept only secure provider URLs, positive deadlines, and bounded message sizes.
-   - Map the typed request to the documented authorization/safety headers and one `session.update` for English PCM16/24 kHz audio, server VAD, instructions, voice, and allowlisted tools.
+   - Map the typed request to the documented authorization/safety headers with a privacy-preserving 64-character digest and one `session.update` for English PCM16/24 kHz audio, server VAD, instructions, voice, and allowlisted tools.
    - Wait for `session.updated` before exposing a ready connection and map Base64 audio input/output without retaining chunks.
 
 3. **Map lifecycle, evidence, and tool correlation**
    - Parse allowlisted lifecycle, speech, audio-delta, tool-call, response-complete, response-cancelled, rate/error, and disconnect conditions into the public event/exception vocabulary.
    - Validate JSON type, size, identifiers, non-negative offsets, tool name, and object arguments; ignore only documented non-application/unknown event types.
    - Send a validated `RealtimeToolOutput` as `conversation.item.create` with the original `call_id`, then `response.create`, preserving caller event IDs and ordering.
+   - Expose provider-neutral playback truncation and map only a received assistant audio item/content index plus played offset to `conversation.item.truncate` for later WebSocket interruption handling.
    - Keep tool execution outside the adapter so Phase 08 services remain the only operational authority.
 
 4. **Make lifecycle and failure behavior deterministic**

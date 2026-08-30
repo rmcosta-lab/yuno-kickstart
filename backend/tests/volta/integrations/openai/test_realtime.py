@@ -19,6 +19,7 @@ from yuno_backend.volta.realtime import (
     RealtimeAuthenticationError,
     RealtimeDisconnectedError,
     RealtimeModelUnavailableError,
+    RealtimePlaybackTruncation,
     RealtimeProviderError,
     RealtimeRateLimitError,
     RealtimeResponseCancelled,
@@ -35,7 +36,7 @@ from yuno_backend.volta.realtime import (
 
 API_KEY = "test-api-key-sensitive-marker"
 INSTRUCTIONS = "private-instruction-marker Always speak only English."
-SAFETY_IDENTIFIER = "privacy_safe_hash"
+SAFETY_IDENTIFIER = "a" * 64
 
 
 @dataclass
@@ -449,6 +450,20 @@ async def test_deeply_nested_json_fails_with_a_typed_terminal_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_huge_json_integer_fails_with_a_typed_terminal_error() -> None:
+    huge_integer = '{"type":"future.event","value":' + "9" * 5_000 + "}"
+    socket = FakeSocket([_session_updated(), huge_integer])
+    gateway, _ = _gateway(socket)
+    async with gateway.connect(_request()) as connection:
+        events = connection.events()
+        await anext(events)
+        with pytest.raises(InvalidRealtimeEvent):
+            await anext(events)
+        with pytest.raises(RealtimeDisconnectedError):
+            await connection.send_audio(b"\x00\x00")
+
+
+@pytest.mark.asyncio
 async def test_oversized_message_fails_closed() -> None:
     socket = FakeSocket([_session_updated(), "x" * 1_025])
     gateway, _ = _gateway(socket, max_message_size=1_024)
@@ -526,6 +541,40 @@ async def test_tool_output_requires_a_received_provider_call() -> None:
         with pytest.raises(ValueError, match="does not match a received call"):
             await connection.send_tool_output(output)
     assert len(socket.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_playback_truncation_requires_and_maps_received_audio_identity() -> None:
+    socket = FakeSocket(
+        [
+            _session_updated(),
+            _json(
+                "response.output_audio.delta",
+                event_id="evt.audio",
+                response_id="resp.one",
+                item_id="item.assistant",
+                content_index=0,
+                delta=base64.b64encode(b"\x00\x01").decode(),
+            ),
+        ]
+    )
+    gateway, _ = _gateway(socket)
+    truncation = RealtimePlaybackTruncation("item.assistant", 0, 1_500)
+    async with gateway.connect(_request()) as connection:
+        with pytest.raises(ValueError, match="does not match received audio"):
+            await connection.truncate_playback(truncation)
+        events = connection.events()
+        await anext(events)
+        assert isinstance(await anext(events), RealtimeAudioDelta)
+        await connection.truncate_playback(truncation)
+        with pytest.raises(ValueError, match="already truncated"):
+            await connection.truncate_playback(truncation)
+    assert json.loads(socket.sent[1]) == {
+        "type": "conversation.item.truncate",
+        "item_id": "item.assistant",
+        "content_index": 0,
+        "audio_end_ms": 1_500,
+    }
 
 
 @pytest.mark.asyncio
@@ -663,6 +712,8 @@ async def test_receive_cancellation_propagates_and_context_closes() -> None:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+        with pytest.raises(RealtimeDisconnectedError):
+            await connection.send_audio(b"\x00\x00")
     assert socket.closed == 1
 
 
@@ -692,6 +743,12 @@ def test_config_and_failures_do_not_expose_secret_content() -> None:
 def test_config_rejects_non_official_or_ambiguous_destinations(base_url: str) -> None:
     with pytest.raises(ValueError, match="official secure endpoint"):
         OpenAIRealtimeConfig(api_key=API_KEY, base_url=base_url)
+
+
+@pytest.mark.parametrize("deadline", [True, float("nan"), float("inf"), -float("inf")])
+def test_config_rejects_non_finite_or_boolean_deadlines(deadline: object) -> None:
+    with pytest.raises(ValueError, match="deadlines must be positive"):
+        OpenAIRealtimeConfig(api_key=API_KEY, event_timeout_seconds=deadline)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
