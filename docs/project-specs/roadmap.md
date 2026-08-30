@@ -239,9 +239,9 @@ Depends on: 12, 18
 
 Conflicts with: none
 
-Gate: FastAPI defines and regenerates the telephony contracts, verifies Twilio call-status requests, accepts an allowlisted secure Media Stream, bridges bidirectional audio and events to OpenAI Realtime, delegates tool actions to the same backend services used by the browser, handles disconnects without duplicate commitments, and passes API, WebSocket, signature, redaction, and authorized sandbox tests.
+Gate: FastAPI defines and regenerates the minimum telephony contract for one explicitly authorized call to one allowlisted test destination. The call establishes one secure Twilio Media Stream, exchanges bidirectional audio with OpenAI Realtime, delegates at least one tool action to the existing backend services, and terminates without exposing credentials or creating duplicate commitments. Focused API and WebSocket tests and one reproducible authorized sandbox call pass.
 
-This API phase is the sole writer for the telephony contract and generated client update. Provider mapping and operational rules remain in backend adapters and services.
+This hackathon-scoped API phase owns the minimum telephony contract and generated client update. Backend adapters and services retain provider mapping and operational rules. Later telephony integration and final-trial phases own complete status handling, reconnection, multi-call hardening, and exhaustive retry and signature tests.
 
 ### Fase 20 — Add outbound-call controls and status
 
