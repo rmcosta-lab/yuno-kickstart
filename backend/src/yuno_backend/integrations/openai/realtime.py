@@ -55,6 +55,7 @@ MAX_DEADLINE_SECONDS = 300
 _OFFICIAL_REALTIME_HOST = "api.openai.com"
 _OFFICIAL_REALTIME_PATH = "/v1/realtime"
 _ENGLISH_INSTRUCTION = "Language requirement: respond only in English."
+_SERVER_VAD_THRESHOLD = 0.85
 
 
 class _WebSocket(Protocol):
@@ -482,6 +483,7 @@ def realtime_session_config(
                 "format": {"type": "audio/pcm", "rate": request.audio_format.sample_rate_hz},
                 "turn_detection": {
                     "type": "server_vad",
+                    "threshold": _SERVER_VAD_THRESHOLD,
                     "create_response": True,
                     "interrupt_response": True,
                 },

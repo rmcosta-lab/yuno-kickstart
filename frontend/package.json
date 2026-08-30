@@ -8,6 +8,9 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test --project=chromium",
+    "test:e2e:realtime": "playwright test --project=chromium-realtime",
+    "test:e2e:install": "playwright install chromium",
     "api:generate": "orval --config orval.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -29,6 +32,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
