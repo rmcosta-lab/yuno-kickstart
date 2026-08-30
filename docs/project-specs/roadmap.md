@@ -239,9 +239,9 @@ Depends on: 12, 18
 
 Conflicts with: none
 
-Gate: FastAPI defines and regenerates the telephony contracts, verifies Twilio call-status requests, accepts an allowlisted secure Media Stream, bridges bidirectional audio and events to OpenAI Realtime, delegates tool actions to the same backend services used by the browser, handles disconnects without duplicate commitments, and passes API, WebSocket, signature, redaction, and authorized sandbox tests.
+Gate: FastAPI defines and regenerates the minimum telephony contract for one explicitly authorized call to one allowlisted test destination. The call establishes one secure Twilio Media Stream, exchanges bidirectional audio with OpenAI Realtime, delegates at least one tool action to the existing backend services, and terminates without exposing credentials or creating duplicate commitments. Focused API and WebSocket tests and one reproducible authorized sandbox call pass.
 
-This API phase is the sole writer for the telephony contract and generated client update. Provider mapping and operational rules remain in backend adapters and services.
+This hackathon-scoped API phase owns the minimum telephony contract and generated client update. Backend adapters and services retain provider mapping and operational rules. Later telephony integration and final-trial phases own complete status handling, reconnection, multi-call hardening, and exhaustive retry and signature tests.
 
 ### Fase 20 — Add outbound-call controls and status
 
@@ -251,9 +251,9 @@ Depends on: 16, 19
 
 Conflicts with: none
 
-Gate: The frontend requires an explicit start action, displays the allowlisted destination label, disclosure and consent readiness, live and terminal call status, provider and network failures, and browser/text fallback controls without exposing a real phone number, provider credential, or raw payload; frontend checks and browser smoke tests pass.
+Gate: Using the generated client, the frontend requires a consent checkbox and an explicit `Start demo call` action for one allowlisted destination label. It displays `starting`, `live`, `ended`, or `failed` and provides browser-voice and text fallbacks. It exposes no real phone number, credential, or raw provider payload. One focused frontend test and one desktop browser smoke test pass.
 
-This frontend-only phase reuses the control tower, evidence, and audit views and consumes only the generated telephony contract.
+This hackathon-scoped frontend phase consumes only the generated telephony contract. Later telephony integration and final-trial phases own separate provider and network diagnostics, advanced retry and reconnection, and a detailed call timeline. They also own deep evidence and audit integration, responsive coverage, intermediate states, and error-specific visuals.
 
 ### Fase 21 — Prepare the public submission package
 
@@ -271,13 +271,13 @@ This documentation and demo-assets phase can run in parallel with P0.1 implement
 
 Slug: pass-final-telephony-trial
 
-Depends on: 20, 21
+Depends on: 20, 21, 26, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through outbound public switched telephone network (PSTN) sessions, preserves evidence for every selected session, completes at least one end-to-end live negotiation with exactly one active winner, demonstrates browser voice, text, and recording fallbacks after a forced provider or network failure, and delivers all five submission artifacts within the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains a recap explicitly labeled `SIMULATED`, playable timestamp evidence, and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
 
-The cross-layer trial reports account restrictions, call outcomes, latency, disconnects, and every remaining challenge gap without presenting simulated delivery as verified.
+The cross-layer trial reports account restrictions, call outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It explicitly reports that no external recap was delivered and never presents simulated delivery or workflow-only concurrency as challenge-verified evidence.
 
 ### Fase 23 — Implement the OpenAI Realtime adapter
 
@@ -314,3 +314,27 @@ Conflicts with: none
 Gate: Backend-only tests expose one provider-neutral application facade for the accepted recap, brief, inbound-recovery, mandate-replacement, escalation, notification-acknowledgement, operation, and audit behaviors; every mutation has atomic fingerprinted idempotency and durable replay, PostgreSQL persists every accepted response fact, complete bounded projections round-trip in deterministic order, and missing evidence, stale state, rollback, and safe exceptions pass without importing FastAPI or changing the HTTP contract.
 
 This supporting backend phase closes the application and persistence gap discovered when Fase 15 began integration. It persists the accepted structured recap and brief facts, owns the deterministic good and bad recovery scripts, resolves the evidence semantics for a replacement commitment, and publishes complete operation and audit projections for recaps, briefs, recoveries, post-contact escalations, and notifications. It may add the smallest reversible migration and backend repository/query extensions required by those outcomes. It does not implement FastAPI routes, change Pydantic models, regenerate OpenAPI or Orval, add frontend behavior, call a provider, or perform a remote migration.
+
+### Fase 26 — Accept and process inbound Twilio calls
+
+Slug: accept-inbound-twilio-calls
+
+Depends on: 15, 19
+
+Conflicts with: none
+
+Gate: A signed Twilio voice webhook answers one authorized real inbound PSTN call. Fail-closed server-owned correlation resolves the allowlisted synthetic caller and exactly one active operation. The call applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream. One driver-delay scenario uses the browser's deterministic recovery services, completes one mandate-safe update, and persists its status, brief, playable timestamp evidence, and audit events. Focused tests reject invalid signatures, ambiguous correlation, duplicate events, and out-of-mandate changes. One authorized sandbox call proves the accepted path.
+
+This cross-layer telephony phase replaces the simulated inbound transport without duplicating recovery rules. Provider request parsing, signature verification, TwiML, and media ingress stay in FastAPI; operation correlation, mandate decisions, persistence, and audit stay in backend services, and the existing control tower renders only typed application state.
+
+### Fase 28 — Transfer a live call to the human coordinator
+
+Slug: transfer-live-call-to-human
+
+Depends on: 20
+
+Conflicts with: none
+
+Gate: During one authorized inbound or outbound PSTN call, an explicit takeover action presents the coordinator with the current mandate, quotes, transcript-free structured context, and call status. The action joins the coordinator to the same live conversation without disconnecting the remote participant, prevents the artificial intelligence agent from speaking or committing after handoff, and records the takeover outcome in the audit trail. Focused tests cover failure, timeout, duplicate action, and redaction. One authorized sandbox handoff proves the accepted path.
+
+This cross-layer phase keeps provider call-update or conference mapping in the telephony adapter, verified ingress and control actions in FastAPI, human controls in the frontend, and all commitment authority in the backend. A failed handoff leaves the call in an explicit safe state and never fabricates human participation.

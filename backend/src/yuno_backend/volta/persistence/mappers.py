@@ -54,6 +54,16 @@ from yuno_backend.volta.recovery.models import (
     RecoveryOutcome,
     RecoveryScenario,
 )
+from yuno_backend.volta.telephony.models import (
+    OutboundCall,
+    OutboundCallAttempt,
+    OutboundCallAttemptState,
+    OutboundCallFailure,
+    OutboundCallFailureCategory,
+    OutboundCallStatus,
+    OutboundCallUncertainReason,
+    OutboundCallUncertainState,
+)
 
 __all__: list[str] = []
 
@@ -753,4 +763,76 @@ def _text_idempotency_from_row(row: Mapping[str, Any]) -> TextMutationIdempotenc
         _utc(row["created_at"]),
         row["result_kind"],
         row["result_snapshot"],
+    )
+
+
+def _outbound_call_attempt_to_values(value: OutboundCallAttempt) -> dict[str, Any]:
+    result = value.result
+    uncertainty = value.uncertainty
+    failure = value.failure
+    return {
+        "idempotency_key": value.idempotency_key,
+        "operation_id": value.operation_id,
+        "request_fingerprint": value.request_fingerprint,
+        "state": value.state.value,
+        "call_session_id": None if result is None else result.call_session_id,
+        "provider_call_id": None if result is None else result.provider_call_id,
+        "call_status": None if result is None else result.status.value,
+        "call_created_at": None if result is None else result.created_at,
+        "status_updated_at": None if result is None else result.status_updated_at,
+        "last_status_event_id": None if result is None else result.last_status_event_id,
+        "last_status_sequence_number": (
+            None if result is None else result.last_status_sequence_number
+        ),
+        "processed_status_event_ids": (
+            None if result is None else list(result.processed_status_event_ids)
+        ),
+        "uncertainty_reason": None if uncertainty is None else uncertainty.reason.value,
+        "uncertainty_occurred_at": (
+            None if uncertainty is None else uncertainty.occurred_at
+        ),
+        "failure_category": None if failure is None else failure.category.value,
+        "failure_status_code": None if failure is None else failure.status_code,
+        "failure_occurred_at": None if failure is None else failure.occurred_at,
+        "created_at": value.created_at,
+        "updated_at": value.updated_at,
+    }
+
+
+def _outbound_call_attempt_from_row(row: Mapping[str, Any]) -> OutboundCallAttempt:
+    result = None
+    if row["state"] == OutboundCallAttemptState.SUCCEEDED.value:
+        result = OutboundCall(
+            call_session_id=row["call_session_id"],
+            provider_call_id=row["provider_call_id"],
+            status=OutboundCallStatus(row["call_status"]),
+            created_at=_utc(row["call_created_at"]),
+            status_updated_at=_utc(row["status_updated_at"]),
+            last_status_event_id=row["last_status_event_id"],
+            last_status_sequence_number=row["last_status_sequence_number"],
+            processed_status_event_ids=tuple(row["processed_status_event_ids"]),
+        )
+    uncertainty = None
+    if row["state"] == OutboundCallAttemptState.UNCERTAIN.value:
+        uncertainty = OutboundCallUncertainState(
+            OutboundCallUncertainReason(row["uncertainty_reason"]),
+            _utc(row["uncertainty_occurred_at"]),
+        )
+    failure = None
+    if row["state"] == OutboundCallAttemptState.FAILED.value:
+        failure = OutboundCallFailure(
+            OutboundCallFailureCategory(row["failure_category"]),
+            _utc(row["failure_occurred_at"]),
+            row["failure_status_code"],
+        )
+    return OutboundCallAttempt(
+        operation_id=row["operation_id"],
+        idempotency_key=row["idempotency_key"],
+        request_fingerprint=row["request_fingerprint"],
+        state=OutboundCallAttemptState(row["state"]),
+        result=result,
+        uncertainty=uncertainty,
+        failure=failure,
+        created_at=_utc(row["created_at"]),
+        updated_at=_utc(row["updated_at"]),
     )

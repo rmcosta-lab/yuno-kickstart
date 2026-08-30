@@ -99,7 +99,10 @@ def application(
 
 
 async def artifact_count(path: Path) -> int:
-    return await asyncio.to_thread(lambda: len(tuple(path.rglob("*.wav"))))
+    canonical_fixture = path / "fixture-recovery-mandate-safe.wav"
+    return await asyncio.to_thread(
+        lambda: sum(artifact != canonical_fixture for artifact in path.rglob("*.wav"))
+    )
 
 
 async def test_phase25_facade_persists_exact_replay_and_complete_recovery(
