@@ -14,6 +14,21 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+_ASYNC_POSTGRESQL_SCHEME = "postgresql+asyncpg://"
+_STANDARD_POSTGRESQL_SCHEMES = ("postgresql://", "postgres://")
+
+
+def normalize_database_url(url: str) -> str:
+    """Adapt provider PostgreSQL URLs to the application's async driver."""
+
+    if url.startswith(_ASYNC_POSTGRESQL_SCHEME):
+        return url
+    for scheme in _STANDARD_POSTGRESQL_SCHEMES:
+        if url.startswith(scheme):
+            return f"{_ASYNC_POSTGRESQL_SCHEME}{url.removeprefix(scheme)}"
+    message = "DATABASE_URL must use a PostgreSQL URL"
+    raise ValueError(message)
+
 
 class Base(DeclarativeBase):
     """Base class for future persistence models."""
@@ -28,9 +43,7 @@ class DatabaseConfig:
     pool_pre_ping: bool = True
 
     def __post_init__(self) -> None:
-        if not self.url.startswith("postgresql+asyncpg://"):
-            message = "DATABASE_URL must use the postgresql+asyncpg driver"
-            raise ValueError(message)
+        object.__setattr__(self, "url", normalize_database_url(self.url))
 
     @classmethod
     def from_environment(

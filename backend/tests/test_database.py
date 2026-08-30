@@ -5,12 +5,20 @@ from yuno_backend.database import (
     DatabaseConfig,
     create_database_engine,
     create_session_factory,
+    normalize_database_url,
 )
 
 
-def test_database_config_requires_asyncpg_url() -> None:
-    with pytest.raises(ValueError, match=r"postgresql\+asyncpg"):
-        DatabaseConfig(url="postgresql://localhost/yuno")
+@pytest.mark.parametrize("scheme", ["postgresql://", "postgres://"])
+def test_database_config_adapts_standard_provider_urls(scheme: str) -> None:
+    config = DatabaseConfig(url=f"{scheme}user:secret@localhost/yuno")
+
+    assert config.url == "postgresql+asyncpg://user:secret@localhost/yuno"
+
+
+def test_database_config_rejects_non_postgresql_urls() -> None:
+    with pytest.raises(ValueError, match="PostgreSQL URL"):
+        normalize_database_url("sqlite:///tmp/yuno.db")
 
 
 def test_database_config_reads_environment_without_exposing_url() -> None:

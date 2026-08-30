@@ -470,7 +470,7 @@ def create_volta_text_contract_service(
                 raise PersistenceUnavailable("configuration_missing", "database")
             engine = create_database_engine(DatabaseConfig(url=database_url))
             session_factory = create_session_factory(engine)
-            evidence_storage = create_demo_evidence_storage()
+            evidence_storage = create_demo_evidence_storage(settings.volta_evidence_storage_path)
         return session_factory, evidence_storage
 
     def application_factory() -> TextNegotiationApplication:

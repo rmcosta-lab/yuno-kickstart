@@ -10,6 +10,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+from yuno_backend.database import normalize_database_url
 from yuno_backend.volta.persistence.tables import _metadata
 
 config = context.config
@@ -23,9 +24,7 @@ def _database_url() -> str:
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
         raise RuntimeError("DATABASE_URL is required for migrations")
-    if not database_url.startswith("postgresql+asyncpg://"):
-        raise ValueError("DATABASE_URL must use the postgresql+asyncpg driver")
-    return database_url
+    return normalize_database_url(database_url)
 
 
 def run_migrations_offline() -> None:
