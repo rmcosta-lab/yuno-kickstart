@@ -99,7 +99,8 @@ warehouse in Guadalajara for at most MXN 9,000. One 40-foot dry container,
 standard handling conditions.
 ```
 
-Enter the local bearer when the control tower requests it. The browser keeps it in memory for the current tab.
+The Next.js server authenticates demo API requests through its same-origin proxy. Configure the
+same `VOLTA_DEMO_BEARER_TOKEN` for Next.js and FastAPI; the browser never receives or stores it.
 
 1. Open **Intake**, choose **Use canonical prompt**, and submit the request
 2. Open **Mandate** and approve the Thursday, MXN 9,000 authority boundary

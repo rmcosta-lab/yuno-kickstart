@@ -307,10 +307,10 @@ async function installApiHarness(page: Page): Promise<Harness> {
       body: JSON.stringify(body),
     });
 
-  await page.route("http://localhost:8000/**", async (route) => {
+  await page.route("**/api/volta/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const path = url.pathname;
+    const path = url.pathname.replace(/^\/api\/volta/, "");
     const method = request.method();
     if (path === "/v1/operation-drafts" && method === "POST") {
       const draft: OperationDraftResponse = {
@@ -411,8 +411,7 @@ async function installApiHarness(page: Page): Promise<Harness> {
 
 async function connectAndCreateOperation(page: Page) {
   await page.goto("/intake");
-  await page.getByLabel("Demo bearer token").fill("synthetic-browser-token");
-  await page.getByRole("button", { name: "Connect live API" }).click();
+  await page.waitForTimeout(500);
   await page.getByRole("button", { name: /Use canonical prompt/i }).click();
   await page.getByRole("button", { name: "Submit draft" }).click();
   await page.getByRole("link", { name: "Continue to mandate review" }).click();

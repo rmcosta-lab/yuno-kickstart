@@ -13,14 +13,13 @@ test("an edited drayage prompt creates an accurately extracted draft", async ({
   });
 
   await page.goto("/intake");
+  await page.waitForTimeout(500);
   await expect(page).toHaveTitle(/Volta/i);
   await expect(
     page.getByText("Submit a drayage request", { exact: true }),
   ).toBeVisible();
 
-  await page.getByLabel("Demo bearer token").fill(bearer!);
-  await page.getByRole("button", { name: "Connect live API" }).click();
-  await expect(page.getByText("CONNECTED", { exact: true })).toBeVisible();
+  await expect(page.getByText("Demo API authorization")).toHaveCount(0);
 
   await page
     .getByLabel("Source prompt")

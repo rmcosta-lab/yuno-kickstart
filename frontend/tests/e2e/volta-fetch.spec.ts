@@ -6,25 +6,18 @@ import {
   type ApiHttpResponse,
   voltaFetch,
 } from "../../src/lib/api/volta-fetch";
-import {
-  clearDemoBearerToken,
-  setDemoBearerToken,
-} from "../../src/lib/demo-auth";
 
 const originalFetch = globalThis.fetch;
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
-  clearDemoBearerToken();
 });
 
-test("preserves authenticated audio bytes as a Blob", async () => {
+test("preserves proxied audio bytes as a Blob without browser authorization", async () => {
   const wav = new Uint8Array([
     0x52, 0x49, 0x46, 0x46, 0x04, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
   ]);
   let requestHeaders = new Headers();
-  const syntheticToken = crypto.randomUUID();
-  setDemoBearerToken(syntheticToken);
   globalThis.fetch = async (_input, init) => {
     requestHeaders = new Headers(init?.headers);
     return new Response(wav, {
@@ -44,7 +37,7 @@ test("preserves authenticated audio bytes as a Blob", async () => {
   expect(response.data).toBeInstanceOf(Blob);
   expect(new Uint8Array(await response.data.arrayBuffer())).toEqual(wav);
   expect(response.headers.get("X-Request-ID")).toBe("request-audio-1");
-  expect(requestHeaders.get("Authorization")).toBe(`Bearer ${syntheticToken}`);
+  expect(requestHeaders.get("Authorization")).toBeNull();
 });
 
 test("keeps JSON success and typed JSON errors intact", async () => {
