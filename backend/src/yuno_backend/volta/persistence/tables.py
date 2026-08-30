@@ -205,7 +205,9 @@ _audit_events = Table(
         ") OR "
         "(event_type IN ('NEGOTIATION_STARTED', 'PRE_CONTACT_ESCALATED', "
         "'QUOTE_RECORDED', 'QUOTE_REJECTED', 'COMMITMENT_ACTIVATED', "
-        "'COMMITMENT_SUPERSEDED') AND metadata = '{}'::jsonb)",
+        "'COMMITMENT_SUPERSEDED', 'EVIDENCE_RECORDED', 'BRIEF_GENERATED', "
+        "'RECAP_GENERATED', 'RECOVERY_REPLACEMENT_APPLIED', 'POST_CONTACT_ESCALATED', "
+        "'ESCALATION_RESUMED') AND metadata = '{}'::jsonb)",
         name="ck_volta_audit_events_metadata_schema",
     ),
     ForeignKeyConstraint(
@@ -523,3 +525,183 @@ Index(
     _mutation_idempotency.c.commitment_id,
     postgresql_where=_mutation_idempotency.c.commitment_id.is_not(None),
 )
+
+_agreement_evidence = Table(
+    "volta_agreement_evidence",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("recording_reference", Text, nullable=False),
+    Column("audio_start_ms", Integer, nullable=False),
+    Column("item_id", Text, nullable=False),
+    Column("event_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_agreement_evidence"),
+    UniqueConstraint("commitment_id", name="uq_volta_agreement_evidence_commitment"),
+    ForeignKeyConstraint(
+        ["commitment_id"],
+        ["volta_commitments.id"],
+        name="fk_volta_agreement_evidence_commitment",
+    ),
+    CheckConstraint("audio_start_ms >= 0", name="ck_volta_agreement_evidence_audio_start_ms"),
+    CheckConstraint(
+        "char_length(recording_reference) BETWEEN 1 AND 200",
+        name="ck_volta_agreement_evidence_recording_reference",
+    ),
+    CheckConstraint(
+        "char_length(item_id) BETWEEN 1 AND 200", name="ck_volta_agreement_evidence_item_id"
+    ),
+    CheckConstraint(
+        "char_length(event_id) BETWEEN 1 AND 200", name="ck_volta_agreement_evidence_event_id"
+    ),
+)
+
+_call_briefs = Table(
+    "volta_call_briefs",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("route_origin", Text, nullable=False),
+    Column("route_destination", Text, nullable=False),
+    Column("carrier_id", UUID(as_uuid=True), nullable=False),
+    Column("agreed_terms_reference", UUID(as_uuid=True), nullable=False),
+    Column("mandate_version", Integer, nullable=False),
+    Column("generated_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_call_briefs"),
+    UniqueConstraint("commitment_id", name="uq_volta_call_briefs_commitment"),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_call_briefs_commitment_operation",
+    ),
+    CheckConstraint("mandate_version > 0", name="ck_volta_call_briefs_mandate_version"),
+)
+
+_recaps = Table(
+    "volta_recaps",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("disclosure_state", Text, nullable=False),
+    Column("generated_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_recaps"),
+    UniqueConstraint("commitment_id", name="uq_volta_recaps_commitment"),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_recaps_commitment_operation",
+    ),
+    CheckConstraint("disclosure_state = 'SIMULATED'", name="ck_volta_recaps_disclosure_state"),
+)
+
+_post_contact_escalations = Table(
+    "volta_post_contact_escalations",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("reason_code", Text, nullable=False),
+    Column("operation_version", Integer, nullable=False),
+    Column("mandate_version", Integer, nullable=False),
+    Column("resolved", Boolean, nullable=False),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("resolved_at", DateTime(timezone=True), nullable=True),
+    PrimaryKeyConstraint("id", name="pk_volta_post_contact_escalations"),
+    UniqueConstraint(
+        "id", "operation_id", name="uq_volta_post_contact_escalations_id_operation"
+    ),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_post_contact_escalations_commitment_operation",
+    ),
+    CheckConstraint(
+        "operation_version > 0", name="ck_volta_post_contact_escalations_op_version"
+    ),
+    CheckConstraint(
+        "mandate_version > 0", name="ck_volta_post_contact_escalations_mandate_version"
+    ),
+    CheckConstraint(
+        "(resolved AND resolved_at IS NOT NULL) OR (NOT resolved AND resolved_at IS NULL)",
+        name="ck_volta_post_contact_escalations_resolved_state",
+    ),
+)
+
+_recovery_attempts = Table(
+    "volta_recovery_attempts",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("outcome", Text, nullable=False),
+    Column("resulting_commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("escalation_id", UUID(as_uuid=True), nullable=True),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_recovery_attempts"),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_recovery_attempts_commitment_operation",
+    ),
+    ForeignKeyConstraint(
+        ["resulting_commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_recovery_attempts_resulting_commitment_operation",
+    ),
+    ForeignKeyConstraint(
+        ["escalation_id", "operation_id"],
+        [
+            "volta_post_contact_escalations.id",
+            "volta_post_contact_escalations.operation_id",
+        ],
+        name="fk_volta_recovery_attempts_escalation_operation",
+    ),
+    CheckConstraint(
+        "outcome IN ('REPLACED', 'ESCALATED')", name="ck_volta_recovery_attempts_outcome"
+    ),
+    CheckConstraint(
+        "(outcome = 'REPLACED' AND resulting_commitment_id IS NOT NULL AND "
+        "escalation_id IS NULL) OR (outcome = 'ESCALATED' AND resulting_commitment_id IS NULL "
+        "AND escalation_id IS NOT NULL)",
+        name="ck_volta_recovery_attempts_outcome_state",
+    ),
+)
+
+_notifications = Table(
+    "volta_notifications",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("reason_code", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("id", name="pk_volta_notifications"),
+    ForeignKeyConstraint(
+        ["commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_notifications_commitment_operation",
+    ),
+)
+
+Index("ix_volta_call_briefs_operation", _call_briefs.c.operation_id)
+Index("ix_volta_recaps_operation", _recaps.c.operation_id)
+Index(
+    "ix_volta_post_contact_escalations_operation", _post_contact_escalations.c.operation_id
+)
+Index(
+    "uq_volta_post_contact_escalations_one_unresolved",
+    _post_contact_escalations.c.operation_id,
+    unique=True,
+    postgresql_where=_post_contact_escalations.c.resolved.is_(False),
+)
+Index(
+    "ix_volta_recovery_attempts_operation",
+    _recovery_attempts.c.operation_id,
+    _recovery_attempts.c.created_at,
+    _recovery_attempts.c.id,
+)
+Index("ix_volta_notifications_operation", _notifications.c.operation_id)

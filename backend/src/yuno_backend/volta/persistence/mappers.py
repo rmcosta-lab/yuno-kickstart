@@ -8,6 +8,12 @@ from decimal import Decimal
 from typing import Any
 
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
+from yuno_backend.volta.evidence.models import (
+    AgreementEvidence,
+    CallBrief,
+    Recap,
+    RecapDisclosureState,
+)
 from yuno_backend.volta.mandates.models import (
     DraftValidationIssue,
     IntakeDraft,
@@ -35,6 +41,12 @@ from yuno_backend.volta.negotiations.models import (
     Quote,
     QuoteEligibility,
     QuoteTerms,
+)
+from yuno_backend.volta.recovery.models import (
+    Notification,
+    PostContactEscalation,
+    RecoveryAttempt,
+    RecoveryOutcome,
 )
 
 __all__: list[str] = []
@@ -414,5 +426,152 @@ def _idempotency_from_row(row: Mapping[str, Any]) -> MutationIdempotency:
         row["idempotency_key"],
         row["fingerprint"],
         result_id,
+        _utc(row["created_at"]),
+    )
+
+
+def _evidence_to_values(value: AgreementEvidence) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "commitment_id": value.commitment_id,
+        "recording_reference": value.recording_reference,
+        "audio_start_ms": value.audio_start_ms,
+        "item_id": value.item_id,
+        "event_id": value.event_id,
+        "created_at": value.created_at,
+    }
+
+
+def _evidence_from_row(row: Mapping[str, Any]) -> AgreementEvidence:
+    return AgreementEvidence(
+        row["id"],
+        row["commitment_id"],
+        row["recording_reference"],
+        row["audio_start_ms"],
+        row["item_id"],
+        row["event_id"],
+        _utc(row["created_at"]),
+    )
+
+
+def _brief_to_values(value: CallBrief) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "commitment_id": value.commitment_id,
+        "operation_id": value.operation_id,
+        "route_origin": value.route.origin,
+        "route_destination": value.route.destination,
+        "carrier_id": value.carrier_id,
+        "agreed_terms_reference": value.agreed_terms_reference,
+        "mandate_version": value.mandate_version,
+        "generated_at": value.generated_at,
+    }
+
+
+def _brief_from_row(row: Mapping[str, Any]) -> CallBrief:
+    return CallBrief(
+        row["id"],
+        row["commitment_id"],
+        row["operation_id"],
+        Route(row["route_origin"], row["route_destination"]),
+        row["carrier_id"],
+        row["agreed_terms_reference"],
+        row["mandate_version"],
+        _utc(row["generated_at"]),
+    )
+
+
+def _recap_to_values(value: Recap) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "commitment_id": value.commitment_id,
+        "operation_id": value.operation_id,
+        "disclosure_state": value.disclosure_state.value,
+        "generated_at": value.generated_at,
+    }
+
+
+def _recap_from_row(row: Mapping[str, Any]) -> Recap:
+    return Recap(
+        row["id"],
+        row["commitment_id"],
+        row["operation_id"],
+        RecapDisclosureState(row["disclosure_state"]),
+        _utc(row["generated_at"]),
+    )
+
+
+def _post_contact_escalation_to_values(value: PostContactEscalation) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "commitment_id": value.commitment_id,
+        "reason_code": value.reason_code,
+        "operation_version": value.operation_version,
+        "mandate_version": value.mandate_version,
+        "resolved": value.resolved,
+        "correlation_id": value.correlation_id,
+        "created_at": value.created_at,
+        "resolved_at": value.resolved_at,
+    }
+
+
+def _post_contact_escalation_from_row(row: Mapping[str, Any]) -> PostContactEscalation:
+    return PostContactEscalation(
+        row["id"],
+        row["operation_id"],
+        row["commitment_id"],
+        row["reason_code"],
+        row["operation_version"],
+        row["mandate_version"],
+        row["resolved"],
+        row["correlation_id"],
+        _utc(row["created_at"]),
+        None if row["resolved_at"] is None else _utc(row["resolved_at"]),
+    )
+
+
+def _recovery_attempt_to_values(value: RecoveryAttempt) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "commitment_id": value.commitment_id,
+        "outcome": value.outcome.value,
+        "resulting_commitment_id": value.resulting_commitment_id,
+        "escalation_id": value.escalation_id,
+        "correlation_id": value.correlation_id,
+        "created_at": value.created_at,
+    }
+
+
+def _recovery_attempt_from_row(row: Mapping[str, Any]) -> RecoveryAttempt:
+    return RecoveryAttempt(
+        row["id"],
+        row["operation_id"],
+        row["commitment_id"],
+        RecoveryOutcome(row["outcome"]),
+        row["resulting_commitment_id"],
+        row["escalation_id"],
+        row["correlation_id"],
+        _utc(row["created_at"]),
+    )
+
+
+def _notification_to_values(value: Notification) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "operation_id": value.operation_id,
+        "commitment_id": value.commitment_id,
+        "reason_code": value.reason_code,
+        "created_at": value.created_at,
+    }
+
+
+def _notification_from_row(row: Mapping[str, Any]) -> Notification:
+    return Notification(
+        row["id"],
+        row["operation_id"],
+        row["commitment_id"],
+        row["reason_code"],
         _utc(row["created_at"]),
     )
