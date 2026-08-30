@@ -2,10 +2,10 @@
 
 ## Planning and coordination
 
-- [ ] Phase 22 remains based on current `origin/main`; dependency PRs for 20, 21, 26, and 28 are
+- [x] Phase 22 remains based on current `origin/main`; dependency PRs for 20, 21, 26, and 28 are
       merged with gate evidence, no Phase 22 branch/PR predates this claim, and no bidirectional
       conflict is active.
-- [ ] Scope, owner, one-writer paths, no-Issue decision, Phase 28 final-SHA caveat, fallback, and the
+- [x] Scope, owner, one-writer paths, no-Issue decision, Phase 28 final-SHA caveat, fallback, and the
       separate authorization boundary are recorded without mutable status in the roadmap.
 - [ ] Current official Twilio Voice, Media Streams, signature, account/country/capacity, calling and
       recording requirements plus OpenAI Realtime model/account limits are recorded before the live
@@ -13,21 +13,21 @@
 
 ## Bounded runtime and deterministic tests
 
-- [ ] `LiveTelephonyApplication` supports at most three independent active outbound runtime entries
+- [x] `LiveTelephonyApplication` supports at most three independent active outbound runtime entries
       while preserving the existing `TelephonyApplication`, backend symbols, durable store, and
       constructor boundary.
-- [ ] Three distinct authorized requests create three calls and voice/media bindings; exact replay
+- [x] Three distinct authorized requests create three calls and voice/media bindings; exact replay
       causes no second provider I/O, changed payload conflicts safely, and a fourth active request is
       rejected before provider I/O.
-- [ ] Three WebSockets can bridge concurrently; each token is claimed once, each Realtime session,
+- [x] Three WebSockets can bridge concurrently; each token is claimed once, each Realtime session,
       audio/tool event, authority fence, disconnect, and terminal cleanup affects only its call, and
       capacity is released in `finally` paths.
-- [ ] Duplicate, reordered, mismatched, stale, timeout, and terminal status events remain correlated
+- [x] Duplicate, reordered, mismatched, stale, timeout, and terminal status events remain correlated
       and monotonic; no call, commitment, or audit fact can cross session boundaries.
-- [ ] Focused inbound tests reject invalid signatures and ambiguous callers, deduplicate callbacks,
+- [x] Focused inbound tests reject invalid signatures and ambiguous callers, deduplicate callbacks,
       and prove the mandate-safe driver-delay recovery, persisted replacement, notification, brief,
       timestamp evidence, and audit state.
-- [ ] Focused handoff tests prove explicit authorization, bounded context, duplicate-safe request,
+- [x] Focused handoff tests prove explicit authorization, bounded context, duplicate-safe request,
       verified callback-only `JOINED`, remote-leg continuity evidence, AI speech/tool fencing,
       timeout/failure safe states, and redaction.
 - [ ] Terminal projections prove exactly one `ACTIVE` winner, retained `SUPERSEDED` history,
@@ -45,6 +45,8 @@
       `frontend/src/lib/api/generated/**` without semantic change.
 - [ ] `make frontend-check` and `make check` pass on the final implementation/publication SHA; the
       full gate is not inherited from a pre-reconciliation commit.
+      `make frontend-check` passed; `make check` remains blocked by the repository-wide Python
+      formatting failure recorded below.
 - [ ] `git diff --check`, tracked/untracked review, generated-diff review, and scans for secrets,
       E.164 values, participant data, raw audio/transcripts, provider payloads, private paths, and
       recording locators pass.
@@ -99,3 +101,20 @@
 - [ ] PASS is declared only when the same authorized rehearsal satisfies all unchanged roadmap gate
       clauses and the final public artifacts report no external recap delivery or workflow-only
       concurrency as challenge evidence.
+
+## Executed evidence and current blockers
+
+- `uv run pytest api/tests/test_telephony_routes.py -q`: passed, 76 tests, with one upstream
+  Starlette deprecation warning.
+- `uv run ruff check api/app/main.py api/app/routers/telephony.py api/app/telephony/bridge.py
+  api/app/telephony/service.py api/tests/test_telephony_routes.py`: passed.
+- `make frontend-check`: passed lint, typecheck, and production build.
+- `git diff --check`: passed before the validation update.
+- `make python-check`: blocked before tests by a pre-existing Ruff import-order failure in
+  `backend/src/yuno_backend/volta/telephony/__init__.py`, which is outside the Phase 22 diff and
+  ownership.
+- Safe configuration inspection found server credentials, three outbound labels, and one inbound
+  label, but no non-placeholder public HTTPS or secure-WebSocket ingress. No live call, participant
+  contact, recording, deployment, provider mutation, or credentialed trial was executed.
+- The credentialed overlap, inbound recovery, handoff, browser, timed-artifact, and cleanup gates
+  remain unchecked. Phase 22 is not complete and Phase 27 remains blocked by its dependency.
