@@ -50,6 +50,8 @@ import type {
   EscalationResponse,
   GetOperationAuditParams,
   HealthResponse,
+  HumanHandoffReadinessResponse,
+  HumanHandoffResponse,
   NegotiationResponse,
   OperationDraftResponse,
   OperationResponse,
@@ -60,6 +62,8 @@ import type {
   RecoverySimulationResponse,
   ReplaceMandateHeaders,
   ReplaceMandateRequest,
+  RequestHumanHandoffHeaders,
+  RequestHumanHandoffRequest,
   StartInboundSimulationHeaders,
   StartInboundSimulationRequest,
   StartNegotiationHeaders,
@@ -931,6 +935,641 @@ export const useAttachCommitmentEvidence = <
     queryClient,
   );
 };
+
+export type getHumanHandoffReadinessResponse200 = {
+  data: HumanHandoffReadinessResponse;
+  status: 200;
+};
+
+export type getHumanHandoffReadinessResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type getHumanHandoffReadinessResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type getHumanHandoffReadinessResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type getHumanHandoffReadinessResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type getHumanHandoffReadinessResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type getHumanHandoffReadinessResponse503 = {
+  data: ApiErrorResponse;
+  status: 503;
+};
+
+export type getHumanHandoffReadinessResponseSuccess =
+  getHumanHandoffReadinessResponse200 & {
+    headers: Headers;
+  };
+export type getHumanHandoffReadinessResponseError = (
+  | getHumanHandoffReadinessResponse401
+  | getHumanHandoffReadinessResponse403
+  | getHumanHandoffReadinessResponse404
+  | getHumanHandoffReadinessResponse409
+  | getHumanHandoffReadinessResponse422
+  | getHumanHandoffReadinessResponse503
+) & {
+  headers: Headers;
+};
+
+export const getGetHumanHandoffReadinessUrl = (callId: string) => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/handoff-readiness`;
+};
+
+/**
+ * @summary Get Human Handoff Readiness
+ */
+export const getHumanHandoffReadiness = async (
+  callId: string,
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getHumanHandoffReadinessResponseSuccess> => {
+  return voltaFetch<getHumanHandoffReadinessResponseSuccess>(
+    getGetHumanHandoffReadinessUrl(callId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetHumanHandoffReadinessQueryKey = (callId: string) => {
+  return [
+    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/handoff-readiness`,
+  ] as const;
+};
+
+export const getGetHumanHandoffReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetHumanHandoffReadinessQueryKey(callId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getHumanHandoffReadiness>>
+  > = ({ signal }) =>
+    getHumanHandoffReadiness(callId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: callId !== null && callId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetHumanHandoffReadinessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHumanHandoffReadiness>>
+>;
+export type GetHumanHandoffReadinessQueryError = ErrorType<ApiErrorResponse>;
+
+export function useGetHumanHandoffReadiness<
+  TData = Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+          TError,
+          Awaited<ReturnType<typeof getHumanHandoffReadiness>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetHumanHandoffReadiness<
+  TData = Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+          TError,
+          Awaited<ReturnType<typeof getHumanHandoffReadiness>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetHumanHandoffReadiness<
+  TData = Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get Human Handoff Readiness
+ */
+
+export function useGetHumanHandoffReadiness<
+  TData = Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoffReadiness>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getGetHumanHandoffReadinessQueryOptions(callId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export type requestHumanHandoffResponse202 = {
+  data: HumanHandoffResponse;
+  status: 202;
+};
+
+export type requestHumanHandoffResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type requestHumanHandoffResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type requestHumanHandoffResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type requestHumanHandoffResponse409 = {
+  data: ApiErrorResponse;
+  status: 409;
+};
+
+export type requestHumanHandoffResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type requestHumanHandoffResponse429 = {
+  data: ApiErrorResponse;
+  status: 429;
+};
+
+export type requestHumanHandoffResponse502 = {
+  data: ApiErrorResponse;
+  status: 502;
+};
+
+export type requestHumanHandoffResponse503 = {
+  data: ApiErrorResponse;
+  status: 503;
+};
+
+export type requestHumanHandoffResponse504 = {
+  data: ApiErrorResponse;
+  status: 504;
+};
+
+export type requestHumanHandoffResponseSuccess =
+  requestHumanHandoffResponse202 & {
+    headers: Headers;
+  };
+export type requestHumanHandoffResponseError = (
+  | requestHumanHandoffResponse401
+  | requestHumanHandoffResponse403
+  | requestHumanHandoffResponse404
+  | requestHumanHandoffResponse409
+  | requestHumanHandoffResponse422
+  | requestHumanHandoffResponse429
+  | requestHumanHandoffResponse502
+  | requestHumanHandoffResponse503
+  | requestHumanHandoffResponse504
+) & {
+  headers: Headers;
+};
+
+export const getRequestHumanHandoffUrl = (callId: string) => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/handoffs`;
+};
+
+/**
+ * @summary Request Human Handoff
+ */
+export const requestHumanHandoff = async (
+  callId: string,
+  requestHumanHandoffRequest: RequestHumanHandoffRequest,
+  headers: RequestHumanHandoffHeaders,
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<requestHumanHandoffResponseSuccess> => {
+  const getHeaders = (
+    h?: NonNullable<RequestInit["headers"]>,
+  ): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return voltaFetch<requestHumanHandoffResponseSuccess>(
+    getRequestHumanHandoffUrl(callId),
+    {
+      ...options,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        ...getHeaders(options?.headers),
+      },
+      body: JSON.stringify(requestHumanHandoffRequest),
+    },
+  );
+};
+
+export const getRequestHumanHandoffMutationOptions = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof requestHumanHandoff>>,
+    TError,
+    RequestHumanHandoffMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof voltaFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof requestHumanHandoff>>,
+  TError,
+  RequestHumanHandoffMutationVariables,
+  TContext
+> => {
+  const mutationKey = ["requestHumanHandoff"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof requestHumanHandoff>>,
+    RequestHumanHandoffMutationVariables
+  > = (props) => {
+    const { callId, data, headers } = props ?? {};
+
+    return requestHumanHandoff(callId, data, headers, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RequestHumanHandoffMutationResult = NonNullable<
+  Awaited<ReturnType<typeof requestHumanHandoff>>
+>;
+export type RequestHumanHandoffMutationBody = RequestHumanHandoffRequest;
+export type RequestHumanHandoffMutationError = ErrorType<ApiErrorResponse>;
+export type RequestHumanHandoffMutationVariables = {
+  callId: string;
+  data: RequestHumanHandoffRequest;
+  headers: RequestHumanHandoffHeaders;
+};
+
+/**
+ * @summary Request Human Handoff
+ */
+export const useRequestHumanHandoff = <
+  TError = ErrorType<ApiErrorResponse>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof requestHumanHandoff>>,
+      TError,
+      RequestHumanHandoffMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof requestHumanHandoff>>,
+  TError,
+  RequestHumanHandoffMutationVariables,
+  TContext
+> => {
+  return useMutation(
+    getRequestHumanHandoffMutationOptions(options),
+    queryClient,
+  );
+};
+
+export type getHumanHandoffResponse200 = {
+  data: HumanHandoffResponse;
+  status: 200;
+};
+
+export type getHumanHandoffResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type getHumanHandoffResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type getHumanHandoffResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type getHumanHandoffResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type getHumanHandoffResponseSuccess = getHumanHandoffResponse200 & {
+  headers: Headers;
+};
+export type getHumanHandoffResponseError = (
+  | getHumanHandoffResponse401
+  | getHumanHandoffResponse403
+  | getHumanHandoffResponse404
+  | getHumanHandoffResponse422
+) & {
+  headers: Headers;
+};
+
+export const getGetHumanHandoffUrl = (callId: string, handoffId: string) => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/handoffs/${handoffId}`;
+};
+
+/**
+ * @summary Get Human Handoff
+ */
+export const getHumanHandoff = async (
+  callId: string,
+  handoffId: string,
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getHumanHandoffResponseSuccess> => {
+  return voltaFetch<getHumanHandoffResponseSuccess>(
+    getGetHumanHandoffUrl(callId, handoffId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetHumanHandoffQueryKey = (
+  callId: string,
+  handoffId: string,
+) => {
+  return [
+    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/calls/${callId}/handoffs/${handoffId}`,
+  ] as const;
+};
+
+export const getGetHumanHandoffQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHumanHandoff>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  handoffId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetHumanHandoffQueryKey(callId, handoffId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHumanHandoff>>> = ({
+    signal,
+  }) => getHumanHandoff(callId, handoffId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      callId !== null &&
+      callId !== undefined &&
+      handoffId !== null &&
+      handoffId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHumanHandoff>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetHumanHandoffQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHumanHandoff>>
+>;
+export type GetHumanHandoffQueryError = ErrorType<ApiErrorResponse>;
+
+export function useGetHumanHandoff<
+  TData = Awaited<ReturnType<typeof getHumanHandoff>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  handoffId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoff>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHumanHandoff>>,
+          TError,
+          Awaited<ReturnType<typeof getHumanHandoff>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetHumanHandoff<
+  TData = Awaited<ReturnType<typeof getHumanHandoff>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  handoffId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoff>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHumanHandoff>>,
+          TError,
+          Awaited<ReturnType<typeof getHumanHandoff>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetHumanHandoff<
+  TData = Awaited<ReturnType<typeof getHumanHandoff>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  handoffId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get Human Handoff
+ */
+
+export function useGetHumanHandoff<
+  TData = Awaited<ReturnType<typeof getHumanHandoff>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  callId: string,
+  handoffId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getHumanHandoff>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getGetHumanHandoffQueryOptions(
+    callId,
+    handoffId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 export type recordQuoteResponse201 = {
   data: QuoteResponse;

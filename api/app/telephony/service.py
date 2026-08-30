@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Protocol
@@ -15,11 +15,17 @@ from fastapi import FastAPI, Request, WebSocket
 from yuno_backend.database import DatabaseConfig, create_database_engine, create_session_factory
 from yuno_backend.integrations.openai import OpenAIRealtimeConfig, OpenAIRealtimeGateway
 from yuno_backend.integrations.twilio import (
+    SqlAlchemyTwilioExistingCallResolver,
+    SqlAlchemyTwilioHandoffBindingStore,
     TwilioDestinationAllowlist,
+    TwilioHandoffStatusCallback,
+    TwilioHumanHandoffConfig,
+    TwilioHumanHandoffGateway,
     TwilioOutboundCallConfig,
     TwilioOutboundCallGateway,
 )
 from yuno_backend.volta.persistence import (
+    SqlAlchemyHumanHandoffRepository,
     SqlAlchemyOperationUnitOfWork,
     SqlAlchemyOutboundCallAttemptStore,
 )
@@ -29,6 +35,13 @@ from yuno_backend.volta.realtime import (
     RealtimeToolCallRequested,
 )
 from yuno_backend.volta.telephony import (
+    AIAuthorityFence,
+    HumanHandoff,
+    HumanHandoffAudit,
+    HumanHandoffCommand,
+    HumanHandoffReadiness,
+    HumanHandoffService,
+    HumanHandoffStatusEvent,
     AcceptInboundCallInput,
     CompleteInboundRecoveryInput,
     FailInboundCallInput,
@@ -78,6 +91,22 @@ class TelephonyApplication(Protocol):
 
     async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall: ...
 
+    async def request_handoff(self, command: HumanHandoffCommand) -> HumanHandoff: ...
+
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness: ...
+
+    async def get_handoff(self, call_id: UUID, handoff_id: UUID) -> HumanHandoff: ...
+
+    async def observe_handoff(self, event: HumanHandoffStatusEvent) -> HumanHandoff: ...
+
+    async def map_handoff_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent: ...
+
+    async def ensure_ai_speech_allowed(self, call_id: UUID) -> None: ...
+
+    async def wait_for_ai_authority_revoked(self, call_id: UUID) -> None: ...
+
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None: ...
 
     async def accept_inbound_call(
@@ -122,6 +151,36 @@ class UnimplementedTelephonyApplication:
     async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
         del request
         raise RuntimeError("telephony application is not configured")
+
+    async def request_handoff(self, command: HumanHandoffCommand) -> HumanHandoff:
+        del command
+        raise RuntimeError("telephony application is not configured")
+
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness:
+        del call_id
+        raise RuntimeError("telephony application is not configured")
+
+    async def get_handoff(self, call_id: UUID, handoff_id: UUID) -> HumanHandoff:
+        del call_id, handoff_id
+        raise RuntimeError("telephony application is not configured")
+
+    async def observe_handoff(self, event: HumanHandoffStatusEvent) -> HumanHandoff:
+        del event
+        raise RuntimeError("telephony application is not configured")
+
+    async def map_handoff_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent:
+        del callback
+        raise RuntimeError("telephony application is not configured")
+
+    async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
+        del call_id
+        raise RuntimeError("telephony application is not configured")
+
+    async def wait_for_ai_authority_revoked(self, call_id: UUID) -> None:
+        del call_id
+        await asyncio.Event().wait()
 
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None:
         del provider_call_id
@@ -233,6 +292,32 @@ class VoltaToolDelegator:
         return result.payload
 
 
+class _HandoffStatusMapper(Protocol):
+    async def map_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent: ...
+
+
+class _LiveHandoffAudit(HumanHandoffAudit):
+    """Keep only safe provider-neutral audit evidence in the demo runtime."""
+
+    def __init__(self, clear_pending_audio: Callable[[UUID], Awaitable[None]]) -> None:
+        self.events: list[tuple[str, UUID, UUID, str]] = []
+        self._clear_pending_audio = clear_pending_audio
+
+    async def handoff_requested(self, handoff: HumanHandoff, command: HumanHandoffCommand) -> None:
+        del command
+        await self._clear_pending_audio(handoff.call_id)
+        self.events.append(
+            ("handoff.requested", handoff.call_id, handoff.handoff_id, handoff.status.value)
+        )
+
+    async def handoff_outcome(self, handoff: HumanHandoff) -> None:
+        self.events.append(
+            ("handoff.outcome", handoff.call_id, handoff.handoff_id, handoff.status.value)
+        )
+
+
 class LiveTelephonyApplication:
     """One-call runtime composed from existing provider-neutral adapters."""
 
@@ -264,6 +349,54 @@ class LiveTelephonyApplication:
         self._lock = asyncio.Lock()
         self._inbound_bindings: dict[str, MediaBinding] = {}
         self._tools = VoltaToolDelegator(contracts)
+        self._handoff_service: HumanHandoffService | None = None
+        self._handoff_status_mapper: _HandoffStatusMapper | None = None
+        self._authority_fence: AIAuthorityFence | None = None
+        self._authority_events: dict[UUID, asyncio.Event] = {}
+
+    def configure_handoff(
+        self,
+        service: HumanHandoffService,
+        status_mapper: _HandoffStatusMapper,
+        authority_fence: AIAuthorityFence,
+        authority_events: dict[UUID, asyncio.Event],
+    ) -> None:
+        self._handoff_service = service
+        self._handoff_status_mapper = status_mapper
+        self._authority_fence = authority_fence
+        self._authority_events = authority_events
+
+    def _require_handoff_service(self) -> HumanHandoffService:
+        if self._handoff_service is None:
+            raise RuntimeError("human handoff is not configured")
+        return self._handoff_service
+
+    async def request_handoff(self, command: HumanHandoffCommand) -> HumanHandoff:
+        return await self._require_handoff_service().request_handoff(command)
+
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness:
+        return await self._require_handoff_service().get_handoff_readiness(call_id)
+
+    async def get_handoff(self, call_id: UUID, handoff_id: UUID) -> HumanHandoff:
+        return await self._require_handoff_service().get_handoff(call_id, handoff_id)
+
+    async def observe_handoff(self, event: HumanHandoffStatusEvent) -> HumanHandoff:
+        return await self._require_handoff_service().observe_handoff(event)
+
+    async def map_handoff_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent:
+        if self._handoff_status_mapper is None:
+            raise RuntimeError("human handoff callback mapping is not configured")
+        return await self._handoff_status_mapper.map_status_callback(callback)
+
+    async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
+        if self._authority_fence is not None:
+            await self._authority_fence.ensure_speech_allowed(call_id)
+
+    async def wait_for_ai_authority_revoked(self, call_id: UUID) -> None:
+        event = self._authority_events.setdefault(call_id, asyncio.Event())
+        await event.wait()
 
     async def create_outbound_call(self, request: OutboundCallRequest) -> OutboundCall:
         operation = await self._contracts.execute(
@@ -462,6 +595,8 @@ class LiveTelephonyApplication:
             raise ValueError("inbound Realtime tools are not authorized")
         if binding != self._binding:
             raise ValueError("media binding is not active")
+        if self._authority_fence is not None:
+            await self._authority_fence.ensure_commitment_allowed(binding.call_session_id)
         return await self._tools.execute(event, idempotency_key)
 
     async def stream_finished(
@@ -552,7 +687,7 @@ def create_live_telephony_application(
         attempt_store,
         _UtcClock(),
     )
-    return LiveTelephonyApplication(
+    application = LiveTelephonyApplication(
         settings=settings,
         contracts=contracts,
         gateway=gateway,
@@ -561,3 +696,41 @@ def create_live_telephony_application(
         inbound_application=inbound_application,
         engine=engine,
     )
+    authority_events: dict[UUID, asyncio.Event] = {}
+
+    async def clear_pending_audio(call_id: UUID) -> None:
+        authority_events.setdefault(call_id, asyncio.Event()).set()
+
+    repository = SqlAlchemyHumanHandoffRepository(
+        sessions,
+        allowed_destination_labels=frozenset(settings.twilio_destination_allowlist),
+    )
+    handoff_gateway = TwilioHumanHandoffGateway(
+        client,
+        TwilioHumanHandoffConfig(
+            account_sid=account_sid,
+            api_key_sid=settings.twilio_api_key_sid.get_secret_value(),
+            api_key_secret=settings.twilio_api_key_secret.get_secret_value(),
+            coordinator_caller_id_e164=settings.twilio_from_e164.get_secret_value(),
+            status_callback_url=(
+                f"{settings.twilio_public_base_url}/v1/telephony/twilio/handoff-status"
+            ),
+        ),
+        allowlist,
+        SqlAlchemyTwilioExistingCallResolver(sessions),
+        SqlAlchemyTwilioHandoffBindingStore(sessions),
+    )
+    handoff_service = HumanHandoffService(
+        repository,
+        handoff_gateway,
+        _LiveHandoffAudit(clear_pending_audio),
+        _UtcClock(),
+        repository,
+    )
+    application.configure_handoff(
+        handoff_service,
+        handoff_gateway,
+        repository,
+        authority_events,
+    )
+    return application

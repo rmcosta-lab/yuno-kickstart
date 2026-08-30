@@ -30,6 +30,7 @@ from app.telephony.service import (
 from app.telephony.signatures import twilio_signature
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
+from yuno_backend.integrations.twilio import TwilioHandoffStatusCallback
 from yuno_backend.volta.realtime import (
     RealtimeAudioDelta,
     RealtimeSessionRequest,
@@ -38,6 +39,14 @@ from yuno_backend.volta.realtime import (
     RealtimeToolOutput,
 )
 from yuno_backend.volta.telephony import (
+    HumanHandoff,
+    HumanHandoffCommand,
+    HumanHandoffContext,
+    HumanHandoffIdempotencyConflict,
+    HumanHandoffNotFoundError,
+    HumanHandoffReadiness,
+    HumanHandoffStatus,
+    HumanHandoffStatusEvent,
     InboundCallBinding,
     InboundCorrelationAmbiguous,
     OutboundCall,
@@ -52,10 +61,13 @@ from yuno_backend.volta.telephony import (
 
 TOKEN = "synthetic-twilio-token"
 ACCOUNT_SID = "AC11111111111111111111111111111111"
+CONFERENCE_SID = "CF66666666666666666666666666666666"
+COORDINATOR_CALL_SID = "CA77777777777777777777777777777777"
 BASE_URL = "https://telephony.example.test"
 MEDIA_URL = "wss://telephony.example.test/v1/telephony/twilio/media"
 OPERATION_ID = UUID("00000000-0000-4000-8000-000000000002")
 CALL_SESSION_ID = UUID("00000000-0000-4000-8000-000000000005")
+HANDOFF_ID = UUID("00000000-0000-4000-8000-000000000028")
 BINDING = MediaBinding(
     operation_id=OPERATION_ID,
     call_session_id=CALL_SESSION_ID,
@@ -140,6 +152,36 @@ class FakeTelephonyApplication:
         self.status_events: list[OutboundCallStatusEvent] = []
         self.tool_calls: list[tuple[RealtimeToolCallRequested, str]] = []
         self.finished: list[tuple[MediaBinding, str]] = []
+        self.handoff_commands: list[HumanHandoffCommand] = []
+        self.handoff_events: list[HumanHandoffStatusEvent] = []
+        self.handoff_callbacks: list[TwilioHandoffStatusCallback] = []
+        self.handoff_audit: list[tuple[str, UUID, UUID]] = []
+        self.handoff_correlation_id: UUID | None = None
+        self.authority_revoked = asyncio.Event()
+        self.speech_checks = 0
+        self.ai_authority_fenced = False
+        self.handoff = HumanHandoff(
+            handoff_id=HANDOFF_ID,
+            call_id=CALL_SESSION_ID,
+            coordinator_destination_label="demo-coordinator",
+            idempotency_key="handoff-synthetic-001",
+            request_fingerprint="a" * 64,
+            status=HumanHandoffStatus.CONNECTING,
+            requested_at=datetime(2026, 8, 30, 12, 1, tzinfo=UTC),
+            status_updated_at=datetime(2026, 8, 30, 12, 1, tzinfo=UTC),
+            context=HumanHandoffContext(
+                mandate_version=3,
+                mandate_facts=("Maximum approved amount is bounded.",),
+                eligible_quote_summaries=("Synthetic carrier quote is eligible.",),
+                structured_call_brief=("Carrier requested pickup confirmation.",),
+                call_status="IN_PROGRESS",
+            ),
+        )
+        self.handoff_readiness = HumanHandoffReadiness(
+            call_id=CALL_SESSION_ID,
+            call_status_updated_at=datetime(2026, 8, 30, 11, 59, 59, tzinfo=UTC),
+            context=self.handoff.context,
+        )
         self.finished_evidence: list[StreamEvidence | None] = []
         self.inbound_accepts: list[tuple[str, str, UUID]] = []
         self.inbound_consents: list[str] = []
@@ -153,6 +195,83 @@ class FakeTelephonyApplication:
             status=OutboundCallStatus.QUEUED,
             created_at=datetime(2026, 8, 30, 12, tzinfo=UTC),
         )
+
+    async def request_handoff(self, command: HumanHandoffCommand) -> HumanHandoff:
+        self.handoff_commands.append(command)
+        self.handoff_correlation_id = command.correlation_id
+        self.ai_authority_fenced = True
+        self.authority_revoked.set()
+        self.handoff_audit.append(
+            ("HANDOFF_REQUESTED", self.handoff.handoff_id, command.correlation_id)
+        )
+        return self.handoff
+
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness:
+        if call_id != self.handoff_readiness.call_id:
+            raise HumanHandoffNotFoundError(call_id=call_id)
+        return self.handoff_readiness
+
+    async def get_handoff(self, call_id: UUID, handoff_id: UUID) -> HumanHandoff:
+        if call_id != self.handoff.call_id or handoff_id != self.handoff.handoff_id:
+            raise HumanHandoffNotFoundError(call_id=call_id)
+        return self.handoff
+
+    async def observe_handoff(self, event: HumanHandoffStatusEvent) -> HumanHandoff:
+        self.handoff_events.append(event)
+        previous = self.handoff
+        if event.provider_event_id not in previous.processed_status_event_ids:
+            self.handoff = replace(
+                previous,
+                status=event.status,
+                status_updated_at=max(previous.status_updated_at, event.observed_at),
+                last_status_event_id=event.provider_event_id,
+                last_status_sequence_number=event.sequence_number,
+                processed_status_event_ids=(
+                    *previous.processed_status_event_ids,
+                    event.provider_event_id,
+                ),
+            )
+            if (
+                event.status.is_terminal
+                and not previous.status.is_terminal
+                and self.handoff_correlation_id is not None
+            ):
+                self.handoff_audit.append(
+                    (
+                        f"HANDOFF_{event.status.value}",
+                        self.handoff.handoff_id,
+                        self.handoff_correlation_id,
+                    )
+                )
+        return self.handoff
+
+    async def map_handoff_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent:
+        self.handoff_callbacks.append(callback)
+        joined = callback.participant_call_sid == COORDINATOR_CALL_SID
+        return HumanHandoffStatusEvent(
+            provider_event_id=callback.provider_event_id,
+            handoff_id=HANDOFF_ID,
+            call_id=CALL_SESSION_ID,
+            status=(HumanHandoffStatus.JOINED if joined else HumanHandoffStatus.CONNECTING),
+            sequence_number=callback.sequence_number,
+            observed_at=callback.observed_at,
+            remote_participant_present=True,
+            coordinator_participant_present=joined,
+        )
+
+    async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
+        assert call_id == CALL_SESSION_ID
+        self.speech_checks += 1
+        if self.ai_authority_fenced:
+            from yuno_backend.volta.telephony import HumanHandoffAuthorityError
+
+            raise HumanHandoffAuthorityError(call_id=call_id)
+
+    async def wait_for_ai_authority_revoked(self, call_id: UUID) -> None:
+        assert call_id == CALL_SESSION_ID
+        await self.authority_revoked.wait()
 
     async def binding_for_voice(self, provider_call_id: str) -> MediaBinding | None:
         return BINDING if provider_call_id == BINDING.provider_call_id else None
@@ -268,6 +387,15 @@ def outbound_body() -> dict[str, object]:
         "ai_disclosure_required": True,
         "recording_mode": "DISABLED",
         "recording_consent_required": False,
+    }
+
+
+def handoff_body() -> dict[str, object]:
+    return {
+        "coordinator_destination_label": "demo-coordinator",
+        "authorized_by": "coordinator-demo",
+        "authorized_at": "2026-08-30T12:00:00Z",
+        "expected_call_status_updated_at": "2026-08-30T11:59:59Z",
     }
 
 
@@ -411,6 +539,225 @@ def test_outbound_preflight_preserves_typed_contract_error() -> None:
     assert response.json()["message"] == "The operation was not found."
 
 
+def test_handoff_requires_browser_boundaries_and_maps_typed_command() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/calls/{CALL_SESSION_ID}/handoffs"
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+        "Idempotency-Key": "handoff-synthetic-001",
+        "X-Request-ID": "handoff-request-001",
+    }
+    with build_client(application) as client:
+        unauthenticated = client.post(path, json=handoff_body())
+        missing_origin = client.post(
+            path,
+            headers={key: value for key, value in headers.items() if key != "Origin"},
+            json=handoff_body(),
+        )
+        accepted = client.post(path, headers=headers, json=handoff_body())
+
+    assert unauthenticated.status_code == 401
+    assert missing_origin.status_code == 403
+    assert accepted.status_code == 202
+    assert len(application.handoff_commands) == 1
+    command = application.handoff_commands[0]
+    assert command.call_id == CALL_SESSION_ID
+    assert command.idempotency_key == "handoff-synthetic-001"
+    assert command.coordinator_destination_label == "demo-coordinator"
+    assert command.correlation_id.version == 5
+    assert accepted.json() == {
+        "handoff_id": str(HANDOFF_ID),
+        "call_id": str(CALL_SESSION_ID),
+        "status": "CONNECTING",
+        "requested_at": "2026-08-30T12:01:00Z",
+        "status_updated_at": "2026-08-30T12:01:00Z",
+        "context": {
+            "mandate_version": 3,
+            "mandate_facts": ["Maximum approved amount is bounded."],
+            "eligible_quote_summaries": ["Synthetic carrier quote is eligible."],
+            "structured_call_brief": ["Carrier requested pickup confirmation."],
+            "call_status": "IN_PROGRESS",
+        },
+    }
+    for forbidden in (
+        "idempotency_key",
+        "request_fingerprint",
+        "coordinator_destination_label",
+        "provider",
+        "transcript",
+    ):
+        assert forbidden not in accepted.text.lower()
+
+
+def test_handoff_readiness_is_authenticated_bounded_and_read_only() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/calls/{CALL_SESSION_ID}/handoff-readiness"
+    with build_client(application) as client:
+        unauthenticated = client.get(path)
+        missing_origin = client.get(path, headers={"Authorization": "Bearer synthetic-test-token"})
+        found = client.get(
+            path,
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Origin": "http://localhost:3000",
+            },
+        )
+
+    assert unauthenticated.status_code == 401
+    assert missing_origin.status_code == 403
+    assert found.status_code == 200
+    assert found.json() == {
+        "call_id": str(CALL_SESSION_ID),
+        "call_status_updated_at": "2026-08-30T11:59:59Z",
+        "context": {
+            "mandate_version": 3,
+            "mandate_facts": ["Maximum approved amount is bounded."],
+            "eligible_quote_summaries": ["Synthetic carrier quote is eligible."],
+            "structured_call_brief": ["Carrier requested pickup confirmation."],
+            "call_status": "IN_PROGRESS",
+        },
+    }
+    assert application.handoff_commands == []
+    for forbidden in ("provider", "call_sid", "e164", "transcript", "idempotency_key"):
+        assert forbidden not in found.text.lower()
+
+
+class NonLiveHandoffReadinessApplication(FakeTelephonyApplication):
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness:
+        from yuno_backend.volta.telephony import HumanHandoffCallNotLiveError
+
+        raise HumanHandoffCallNotLiveError(call_id=call_id)
+
+
+class UnavailableHandoffReadinessApplication(FakeTelephonyApplication):
+    async def get_handoff_readiness(self, call_id: UUID) -> HumanHandoffReadiness:
+        del call_id
+        raise RuntimeError("database password=private participant=private-destination")
+
+
+def test_handoff_readiness_maps_unknown_and_non_live_calls_safely() -> None:
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+    }
+    missing_id = UUID("00000000-0000-4000-8000-000000000099")
+    with build_client(FakeTelephonyApplication()) as client:
+        missing = client.get(f"/v1/calls/{missing_id}/handoff-readiness", headers=headers)
+    with build_client(NonLiveHandoffReadinessApplication()) as client:
+        non_live = client.get(f"/v1/calls/{CALL_SESSION_ID}/handoff-readiness", headers=headers)
+
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "RESOURCE_NOT_FOUND"
+    assert non_live.status_code == 409
+    assert non_live.json()["code"] == "STATE_CONFLICT"
+
+
+def test_handoff_readiness_maps_durable_failure_to_safe_503() -> None:
+    with build_client(UnavailableHandoffReadinessApplication()) as client:
+        response = client.get(
+            f"/v1/calls/{CALL_SESSION_ID}/handoff-readiness",
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Origin": "http://localhost:3000",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "TELEPHONY_UNAVAILABLE"
+    assert response.json()["message"] == "Telephony is not configured."
+    assert "password" not in response.text.lower()
+    assert "private-destination" not in response.text
+
+
+def test_handoff_origin_rejection_consumes_no_rate_limit_quota() -> None:
+    application = FakeTelephonyApplication()
+    path = f"/v1/calls/{CALL_SESSION_ID}/handoffs"
+    with build_client(application) as client:
+        response = client.post(
+            path,
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Idempotency-Key": "handoff-origin-rejected-001",
+            },
+            json=handoff_body(),
+        )
+        identity_count = client.app.state.mutation_rate_limiter.identity_count
+
+    assert response.status_code == 403
+    assert identity_count == 0
+    assert application.handoff_commands == []
+
+
+class ConflictingHandoffApplication(FakeTelephonyApplication):
+    async def request_handoff(self, command: HumanHandoffCommand) -> HumanHandoff:
+        raise HumanHandoffIdempotencyConflict(call_id=command.call_id)
+
+
+def test_handoff_maps_idempotency_conflict_without_sensitive_details() -> None:
+    path = f"/v1/calls/{CALL_SESSION_ID}/handoffs"
+    with build_client(ConflictingHandoffApplication()) as client:
+        response = client.post(
+            path,
+            headers={
+                "Authorization": "Bearer synthetic-test-token",
+                "Origin": "http://localhost:3000",
+                "Idempotency-Key": "handoff-conflicting-001",
+            },
+            json=handoff_body(),
+        )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+    assert str(CALL_SESSION_ID) not in response.text
+
+
+def test_handoff_read_is_bounded_and_has_no_provider_io() -> None:
+    application = FakeTelephonyApplication()
+    headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+    }
+    with build_client(application) as client:
+        found = client.get(f"/v1/calls/{CALL_SESSION_ID}/handoffs/{HANDOFF_ID}", headers=headers)
+        missing = client.get(
+            f"/v1/calls/{CALL_SESSION_ID}/handoffs/00000000-0000-4000-8000-000000000099",
+            headers=headers,
+        )
+
+    assert found.status_code == 200
+    assert found.json()["status"] == "CONNECTING"
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "RESOURCE_NOT_FOUND"
+
+
+def test_handoff_openapi_contract_is_stable_and_callback_is_private() -> None:
+    with build_client() as client:
+        schema = client.app.openapi()
+    create = schema["paths"]["/v1/calls/{call_id}/handoffs"]["post"]
+    read = schema["paths"]["/v1/calls/{call_id}/handoffs/{handoff_id}"]["get"]
+    readiness = schema["paths"]["/v1/calls/{call_id}/handoff-readiness"]["get"]
+    assert create["operationId"] == "request_human_handoff"
+    assert read["operationId"] == "get_human_handoff"
+    assert readiness["operationId"] == "get_human_handoff_readiness"
+    assert set(create["responses"]) >= {
+        "202",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "502",
+        "503",
+        "504",
+    }
+    assert set(read["responses"]) >= {"200", "401", "403", "404"}
+    assert set(readiness["responses"]) >= {"200", "401", "403", "404", "409"}
+    assert "503" in readiness["responses"]
+    assert "/v1/telephony/twilio/handoff-status" not in schema["paths"]
+
+
 def test_disclosure_and_consent_precede_media_stream() -> None:
     application = FakeTelephonyApplication()
     voice_fields = {"CallSid": BINDING.provider_call_id}
@@ -432,6 +779,7 @@ def test_disclosure_and_consent_precede_media_stream() -> None:
 
     assert disclosure.status_code == 200
     assert "AI assistant" in disclosure.text
+    assert 'timeout="15"' in disclosure.text
     assert "&lt;Stream" not in disclosure.text and "<Stream" not in disclosure.text
     assert MEDIA_URL in consent.text
     assert BINDING.stream_token in consent.text
@@ -628,12 +976,23 @@ def test_inbound_provider_routes_remain_outside_openapi() -> None:
     assert "/v1/telephony/twilio/inbound/consent" not in paths
 
 
-def test_terminal_status_is_verified_and_normalized() -> None:
+@pytest.mark.parametrize(
+    ("provider_status", "expected_status"),
+    [
+        ("initiated", OutboundCallStatus.INITIATED),
+        ("ringing", OutboundCallStatus.RINGING),
+        ("in-progress", OutboundCallStatus.IN_PROGRESS),
+        ("completed", OutboundCallStatus.COMPLETED),
+    ],
+)
+def test_status_is_verified_and_normalized(
+    provider_status: str, expected_status: OutboundCallStatus
+) -> None:
     application = FakeTelephonyApplication()
     fields = {
         "CallSid": BINDING.provider_call_id,
         "AccountSid": ACCOUNT_SID,
-        "CallStatus": "completed",
+        "CallStatus": provider_status,
         "SequenceNumber": "4",
         "Timestamp": "Sun, 30 Aug 2026 12:05:00 +0000",
     }
@@ -643,7 +1002,176 @@ def test_terminal_status_is_verified_and_normalized() -> None:
 
     assert response.status_code == 204
     assert len(application.status_events) == 1
-    assert application.status_events[0].status is OutboundCallStatus.COMPLETED
+    assert application.status_events[0].status is expected_status
+
+
+def handoff_callback_fields(*, participant_call_sid: str) -> dict[str, str]:
+    return {
+        "AccountSid": ACCOUNT_SID,
+        "CallSid": participant_call_sid,
+        "ConferenceSid": CONFERENCE_SID,
+        "StatusCallbackEvent": "participant-join",
+        "SequenceNumber": "8",
+        "Timestamp": "Sun, 30 Aug 2026 12:05:00 +0000",
+    }
+
+
+def test_handoff_callback_verifies_and_delegates_join_evidence_durably() -> None:
+    application = FakeTelephonyApplication()
+    fields = handoff_callback_fields(participant_call_sid=COORDINATOR_CALL_SID)
+    headers, body = signed_form("/v1/telephony/twilio/handoff-status", fields)
+    with build_client(application) as client:
+        response = client.post("/v1/telephony/twilio/handoff-status", headers=headers, content=body)
+
+    assert response.status_code == 204
+    assert len(application.handoff_callbacks) == 1
+    callback = application.handoff_callbacks[0]
+    assert callback.account_sid == ACCOUNT_SID
+    assert callback.participant_call_sid == COORDINATOR_CALL_SID
+    assert len(callback.provider_event_id) == 64
+    assert len(application.handoff_events) == 1
+    event = application.handoff_events[0]
+    assert event.status is HumanHandoffStatus.JOINED
+    assert event.remote_participant_present is True
+    assert event.coordinator_participant_present is True
+
+
+def test_fake_provider_handoff_journey_fences_ai_joins_and_refreshes_projection() -> None:
+    application = FakeTelephonyApplication()
+    browser_headers = {
+        "Authorization": "Bearer synthetic-test-token",
+        "Origin": "http://localhost:3000",
+    }
+    post_headers = {
+        **browser_headers,
+        "Idempotency-Key": "handoff-full-journey-001",
+        "X-Request-ID": "handoff-full-journey-request",
+    }
+    remote_fields = handoff_callback_fields(participant_call_sid=BINDING.provider_call_id)
+    remote_headers, remote_body = signed_form("/v1/telephony/twilio/handoff-status", remote_fields)
+    coordinator_fields = handoff_callback_fields(participant_call_sid=COORDINATOR_CALL_SID)
+    coordinator_fields["SequenceNumber"] = "9"
+    coordinator_headers, coordinator_body = signed_form(
+        "/v1/telephony/twilio/handoff-status", coordinator_fields
+    )
+
+    with build_client(application) as client:
+        readiness = client.get(
+            f"/v1/calls/{CALL_SESSION_ID}/handoff-readiness",
+            headers=browser_headers,
+        )
+        requested = client.post(
+            f"/v1/calls/{CALL_SESSION_ID}/handoffs",
+            headers=post_headers,
+            json=handoff_body(),
+        )
+        remote_joined = client.post(
+            "/v1/telephony/twilio/handoff-status",
+            headers=remote_headers,
+            content=remote_body,
+        )
+        coordinator_joined = client.post(
+            "/v1/telephony/twilio/handoff-status",
+            headers=coordinator_headers,
+            content=coordinator_body,
+        )
+        refreshed = client.get(
+            f"/v1/calls/{CALL_SESSION_ID}/handoffs/{HANDOFF_ID}",
+            headers=browser_headers,
+        )
+
+    assert readiness.status_code == 200
+    assert requested.status_code == 202
+    assert remote_joined.status_code == coordinator_joined.status_code == 204
+    assert application.ai_authority_fenced
+    assert [event.status for event in application.handoff_events] == [
+        HumanHandoffStatus.CONNECTING,
+        HumanHandoffStatus.JOINED,
+    ]
+    assert all(event.remote_participant_present for event in application.handoff_events)
+    assert application.handoff_events[-1].coordinator_participant_present
+    assert refreshed.status_code == 200
+    assert refreshed.json()["status"] == "JOINED"
+    assert [event[0] for event in application.handoff_audit] == [
+        "HANDOFF_REQUESTED",
+        "HANDOFF_JOINED",
+    ]
+    assert application.handoff_audit[0][2] == application.handoff_audit[1][2]
+    for forbidden in ("transcript", "e164", "call_sid", "signature", TOKEN):
+        assert forbidden not in refreshed.text.lower()
+
+
+def test_handoff_callback_does_not_infer_join_from_one_participant() -> None:
+    application = FakeTelephonyApplication()
+    fields = handoff_callback_fields(participant_call_sid=BINDING.provider_call_id)
+    headers, body = signed_form("/v1/telephony/twilio/handoff-status", fields)
+    with build_client(application) as client:
+        response = client.post("/v1/telephony/twilio/handoff-status", headers=headers, content=body)
+
+    assert response.status_code == 204
+    assert application.handoff_events[0].status is HumanHandoffStatus.CONNECTING
+    assert application.handoff_events[0].coordinator_participant_present is False
+
+
+def test_handoff_callback_signature_covers_unrecognized_form_parameters() -> None:
+    application = FakeTelephonyApplication()
+    fields = {
+        **handoff_callback_fields(participant_call_sid=COORDINATOR_CALL_SID),
+        "ProviderExtra": "signed-value",
+    }
+    headers, body = signed_form("/v1/telephony/twilio/handoff-status", fields)
+    with build_client(application) as client:
+        accepted = client.post("/v1/telephony/twilio/handoff-status", headers=headers, content=body)
+        tampered = client.post(
+            "/v1/telephony/twilio/handoff-status",
+            headers=headers,
+            content=body.replace("signed-value", "tampered-value"),
+        )
+
+    assert accepted.status_code == 204
+    assert tampered.status_code == 403
+    assert len(application.handoff_events) == 1
+
+
+class RejectingHandoffBindingApplication(FakeTelephonyApplication):
+    async def map_handoff_status_callback(
+        self, callback: TwilioHandoffStatusCallback
+    ) -> HumanHandoffStatusEvent:
+        del callback
+        from yuno_backend.volta.telephony import HumanHandoffPermissionError
+
+        raise HumanHandoffPermissionError()
+
+
+class FailingHandoffPersistenceApplication(FakeTelephonyApplication):
+    async def observe_handoff(self, event: HumanHandoffStatusEvent) -> HumanHandoff:
+        del event
+        raise RuntimeError("synthetic persistence outage")
+
+
+def test_handoff_callback_fails_closed_for_binding_malformed_and_persistence() -> None:
+    fields = handoff_callback_fields(participant_call_sid=COORDINATOR_CALL_SID)
+    headers, body = signed_form("/v1/telephony/twilio/handoff-status", fields)
+    malformed_fields = {**fields, "SequenceNumber": "not-an-integer"}
+    malformed_headers, malformed_body = signed_form(
+        "/v1/telephony/twilio/handoff-status", malformed_fields
+    )
+    with build_client(RejectingHandoffBindingApplication()) as client:
+        rejected = client.post("/v1/telephony/twilio/handoff-status", headers=headers, content=body)
+    with build_client(FakeTelephonyApplication()) as client:
+        malformed = client.post(
+            "/v1/telephony/twilio/handoff-status",
+            headers=malformed_headers,
+            content=malformed_body,
+        )
+    with build_client(FailingHandoffPersistenceApplication()) as client:
+        retryable = client.post(
+            "/v1/telephony/twilio/handoff-status", headers=headers, content=body
+        )
+
+    assert rejected.status_code == 403
+    assert malformed.status_code == 422
+    assert retryable.status_code == 503
 
 
 def test_media_bridge_converts_audio_delegates_tool_and_terminates() -> None:
@@ -867,6 +1395,61 @@ async def test_forced_websocket_disconnect_cancels_peer_and_closes_once() -> Non
     await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
 
     assert application.realtime_gateway.connection.closed is True
+    assert application.finished == [(BINDING, "DISCONNECTED")]
+
+
+class AuthorityFenceWebSocket:
+    def __init__(self) -> None:
+        self._messages = [
+            json.dumps({"event": "connected", "protocol": "Call", "version": "1.0.0"}),
+            json.dumps(media_start()),
+        ]
+        self.sent: list[dict[str, object]] = []
+
+    async def receive_text(self) -> str:
+        if self._messages:
+            return self._messages.pop(0)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    async def send_json(self, value: dict[str, object]) -> None:
+        self.sent.append(value)
+
+
+async def test_authority_fence_clears_and_stops_realtime_output() -> None:
+    application = FakeTelephonyApplication()
+    application.ai_authority_fenced = True
+    application.authority_revoked.set()
+    websocket = AuthorityFenceWebSocket()
+
+    await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+
+    assert {message["event"] for message in websocket.sent} == {"clear"}
+    assert all(message.get("event") != "media" for message in websocket.sent)
+    assert application.finished == [(BINDING, "DISCONNECTED")]
+
+
+class FenceBetweenConversionAndSendApplication(FakeTelephonyApplication):
+    async def ensure_ai_speech_allowed(self, call_id: UUID) -> None:
+        assert call_id == CALL_SESSION_ID
+        self.speech_checks += 1
+        if self.speech_checks == 2:
+            from yuno_backend.volta.telephony import HumanHandoffAuthorityError
+
+            self.ai_authority_fenced = True
+            self.authority_revoked.set()
+            raise HumanHandoffAuthorityError(call_id=call_id)
+
+
+async def test_authority_recheck_blocks_media_when_fence_flips_before_send() -> None:
+    application = FenceBetweenConversionAndSendApplication()
+    websocket = AuthorityFenceWebSocket()
+
+    await bridge_media_stream(websocket, application)  # type: ignore[arg-type]
+
+    assert application.speech_checks == 2
+    assert all(message.get("event") != "media" for message in websocket.sent)
+    assert any(message.get("event") == "clear" for message in websocket.sent)
     assert application.finished == [(BINDING, "DISCONNECTED")]
 
 

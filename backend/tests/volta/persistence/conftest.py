@@ -84,6 +84,7 @@ def isolated_database_url() -> Iterator[str]:
                     for marker in (
                         "phase 25 downgrade refused",
                         "phase 27 downgrade refused",
+                        "phase 28 downgrade refused",
                     )
                 ):
                     raise

@@ -10,7 +10,11 @@ from ipaddress import ip_address
 from types import MappingProxyType
 from urllib.parse import urlsplit
 
-__all__ = ["TwilioDestinationAllowlist", "TwilioOutboundCallConfig"]
+__all__ = [
+    "TwilioDestinationAllowlist",
+    "TwilioHumanHandoffConfig",
+    "TwilioOutboundCallConfig",
+]
 
 _ACCOUNT_SID = re.compile(r"^AC[0-9a-fA-F]{32}$")
 _API_KEY_SID = re.compile(r"^SK[0-9a-fA-F]{32}$")
@@ -151,4 +155,53 @@ class TwilioOutboundCallConfig:
         return (
             "https://api.twilio.com/2010-04-01/Accounts/"
             f"{self.account_sid}/Calls.json"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TwilioHumanHandoffConfig:
+    """Strict server-only configuration for a bounded conference handoff."""
+
+    account_sid: str = field(repr=False)
+    api_key_sid: str = field(repr=False)
+    api_key_secret: str = field(repr=False)
+    coordinator_caller_id_e164: str = field(repr=False)
+    status_callback_url: str = field(repr=False)
+    timeout_seconds: float = 10.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.account_sid, str) or _ACCOUNT_SID.fullmatch(
+            self.account_sid
+        ) is None:
+            raise ValueError("Twilio Account SID must be a valid AC SID")
+        if not isinstance(self.api_key_sid, str) or _API_KEY_SID.fullmatch(
+            self.api_key_sid
+        ) is None:
+            raise ValueError("Twilio API key SID must be a valid SK SID")
+        if (
+            not isinstance(self.api_key_secret, str)
+            or not self.api_key_secret.strip()
+            or len(self.api_key_secret) > 256
+        ):
+            raise ValueError("Twilio API key secret is required")
+        _e164(self.coordinator_caller_id_e164, "coordinator caller ID")
+        _https_url(self.status_callback_url, "status_callback_url")
+        if (
+            isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, int | float)
+            or not math.isfinite(self.timeout_seconds)
+            or not 0 < self.timeout_seconds <= _MAX_TIMEOUT_SECONDS
+        ):
+            raise ValueError("timeout must be positive and at most 60 seconds")
+
+    def call_url(self, call_sid: str) -> str:
+        return (
+            "https://api.twilio.com/2010-04-01/Accounts/"
+            f"{self.account_sid}/Calls/{call_sid}.json"
+        )
+
+    def participants_url(self, conference_name: str) -> str:
+        return (
+            "https://api.twilio.com/2010-04-01/Accounts/"
+            f"{self.account_sid}/Conferences/{conference_name}/Participants.json"
         )

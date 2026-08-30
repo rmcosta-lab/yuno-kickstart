@@ -220,6 +220,8 @@ _audit_events = Table(
         "'RECAP_GENERATED', 'RECOVERY_REPLACEMENT_APPLIED', 'POST_CONTACT_ESCALATED', "
         "'ESCALATION_RESUMED', 'MANDATE_REPLACED', 'ESCALATION_RESOLVED', "
         "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED', "
+        "'HANDOFF_REQUESTED', 'HANDOFF_JOINED', 'HANDOFF_FAILED_SAFE', "
+        "'HANDOFF_TIMED_OUT_SAFE', "
         "'INBOUND_CALL_ACCEPTED', 'INBOUND_CONSENT_RECORDED', "
         "'INBOUND_RECOVERY_COMPLETED') "
         "AND metadata = '{}'::jsonb)",
@@ -706,6 +708,116 @@ _outbound_call_attempts = Table(
 )
 
 Index("ix_volta_outbound_call_attempts_operation", _outbound_call_attempts.c.operation_id)
+
+_human_handoffs = Table(
+    "volta_human_handoffs",
+    _metadata,
+    Column("handoff_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("operation_version", Integer, nullable=False),
+    Column("correlation_id", UUID(as_uuid=True), nullable=False),
+    Column("coordinator_destination_label", Text, nullable=False),
+    Column("idempotency_key", Text, nullable=False),
+    Column("request_fingerprint", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("requested_at", DateTime(timezone=True), nullable=False),
+    Column("status_updated_at", DateTime(timezone=True), nullable=False),
+    Column("context", JSONB, nullable=False),
+    Column("last_status_event_id", Text, nullable=True),
+    Column("last_status_sequence_number", BigInteger, nullable=True),
+    Column("processed_status_event_ids", ARRAY(Text), nullable=False),
+    PrimaryKeyConstraint("handoff_id", name="pk_volta_human_handoffs"),
+    UniqueConstraint("idempotency_key", name="uq_volta_human_handoffs_idempotency"),
+    ForeignKeyConstraint(
+        ["operation_id"], ["volta_operations.id"], name="fk_volta_handoffs_operation"
+    ),
+    CheckConstraint(
+        "char_length(idempotency_key) BETWEEN 8 AND 128 AND "
+        "idempotency_key ~ '^[ -~]+$'",
+        name="ck_volta_handoffs_key",
+    ),
+    CheckConstraint(
+        "request_fingerprint ~ '^[0-9a-f]{64}$'", name="ck_volta_handoffs_fingerprint"
+    ),
+    CheckConstraint("operation_version > 0", name="ck_volta_handoffs_operation_version"),
+    CheckConstraint(
+        "status IN ('CONNECTING', 'JOINED', 'FAILED_SAFE', 'TIMED_OUT_SAFE')",
+        name="ck_volta_handoffs_status",
+    ),
+    CheckConstraint(
+        "jsonb_typeof(context) = 'object' AND octet_length(context::text) <= 16384",
+        name="ck_volta_handoffs_context",
+    ),
+    CheckConstraint(
+        "cardinality(processed_status_event_ids) <= 128",
+        name="ck_volta_handoffs_processed_events",
+    ),
+    CheckConstraint(
+        "(last_status_event_id IS NULL AND last_status_sequence_number IS NULL) OR "
+        "(last_status_event_id IS NOT NULL AND last_status_sequence_number >= 0 "
+        "AND last_status_event_id = ANY(processed_status_event_ids))",
+        name="ck_volta_handoffs_cursor",
+    ),
+    CheckConstraint(
+        "status_updated_at >= requested_at", name="ck_volta_handoffs_timestamps"
+    ),
+)
+Index("ix_volta_handoffs_call", _human_handoffs.c.call_id)
+Index("ix_volta_handoffs_operation", _human_handoffs.c.operation_id)
+Index(
+    "uq_volta_handoffs_one_connecting_per_call",
+    _human_handoffs.c.call_id,
+    unique=True,
+    postgresql_where=_human_handoffs.c.status == "CONNECTING",
+)
+
+_ai_authority_fences = Table(
+    "volta_ai_authority_fences",
+    _metadata,
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("handoff_id", UUID(as_uuid=True), nullable=False),
+    Column("fenced_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint("call_id", name="pk_volta_ai_authority_fences"),
+    ForeignKeyConstraint(
+        ["handoff_id"], ["volta_human_handoffs.handoff_id"], name="fk_volta_fence_handoff"
+    ),
+    UniqueConstraint("handoff_id", name="uq_volta_fence_handoff"),
+)
+
+_twilio_handoff_bindings = Table(
+    "volta_twilio_handoff_bindings",
+    _metadata,
+    Column("handoff_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("remote_call_sid", Text, nullable=False),
+    Column("conference_name", Text, nullable=False),
+    Column("conference_sid", Text, nullable=True),
+    Column("coordinator_call_sid", Text, nullable=True),
+    Column("remote_present", Boolean, nullable=False),
+    Column("coordinator_present", Boolean, nullable=False),
+    Column("remote_last_sequence", BigInteger, nullable=True),
+    Column("coordinator_last_sequence", BigInteger, nullable=True),
+    PrimaryKeyConstraint("handoff_id", name="pk_volta_twilio_handoff_bindings"),
+    ForeignKeyConstraint(
+        ["handoff_id"], ["volta_human_handoffs.handoff_id"], name="fk_volta_twilio_binding_handoff"
+    ),
+    UniqueConstraint("conference_name", name="uq_volta_twilio_binding_conference_name"),
+    UniqueConstraint("conference_sid", name="uq_volta_twilio_binding_conference_sid"),
+    UniqueConstraint("coordinator_call_sid", name="uq_volta_twilio_binding_coordinator_call"),
+    CheckConstraint(
+        "remote_call_sid ~ '^CA[0-9a-fA-F]{32}$' AND "
+        "(conference_sid IS NULL OR conference_sid ~ '^CF[0-9a-fA-F]{32}$') AND "
+        "(coordinator_call_sid IS NULL OR "
+        "coordinator_call_sid ~ '^CA[0-9a-fA-F]{32}$')",
+        name="ck_volta_twilio_binding_sids",
+    ),
+    CheckConstraint(
+        "(remote_last_sequence IS NULL OR remote_last_sequence >= 0) AND "
+        "(coordinator_last_sequence IS NULL OR coordinator_last_sequence >= 0)",
+        name="ck_volta_twilio_binding_sequences",
+    ),
+)
 
 _inbound_caller_correlations = Table(
     "volta_inbound_caller_correlations",

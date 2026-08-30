@@ -23,6 +23,7 @@ from app.schemas.errors import ApiErrorCode
 
 _REALTIME_CLIENT_SECRET_PATH = "/v1/realtime/client-secrets"
 _OUTBOUND_CALL_SUFFIX = "/outbound-calls"
+_HUMAN_HANDOFF_SUFFIX = "/handoffs"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +157,11 @@ class MutationRateLimitMiddleware:
 
     def _has_invalid_browser_origin(self, scope: Scope) -> bool:
         path = str(scope.get("path", ""))
-        if path != _REALTIME_CLIENT_SECRET_PATH and not path.endswith(_OUTBOUND_CALL_SUFFIX):
+        if (
+            path != _REALTIME_CLIENT_SECRET_PATH
+            and not path.endswith(_OUTBOUND_CALL_SUFFIX)
+            and not path.endswith(_HUMAN_HANDOFF_SUFFIX)
+        ):
             return False
         origin = Headers(scope=scope).get("origin")
         return origin is None or origin not in self._realtime_origins

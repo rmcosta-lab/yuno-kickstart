@@ -471,6 +471,9 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
                 "create_realtime_client_secret",
                 "create_outbound_call",
                 "get_evidence_audio",
+                "request_human_handoff",
+                "get_human_handoff",
+                "get_human_handoff_readiness",
             }:
                 assert "501" not in operation["responses"]
                 if operation["operationId"] == "create_realtime_client_secret":
@@ -478,7 +481,10 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
                     assert operation["responses"]["401"]["headers"]["WWW-Authenticate"][
                         "schema"
                     ] == {"type": "string", "enum": ["Bearer"]}
-                if operation["operationId"] != "create_outbound_call":
+                if operation["operationId"] not in {
+                    "create_outbound_call",
+                    "request_human_handoff",
+                }:
                     assert all(
                         item["name"] != "Idempotency-Key"
                         for item in operation.get("parameters", [])
@@ -503,9 +509,19 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
         "create_realtime_client_secret",
         "create_outbound_call",
         "get_evidence_audio",
+        "request_human_handoff",
+        "get_human_handoff",
+        "get_human_handoff_readiness",
     }
-    assert len(operations) == 17
-    assert len(set(operations)) == 17
+    assert len(operations) == 20
+    assert len(set(operations)) == 20
+    assert "HTTPValidationError" not in schema["components"]["schemas"]
+    assert "ValidationError" not in schema["components"]["schemas"]
+    for operation in operations.values():
+        if "422" in operation["responses"]:
+            assert operation["responses"]["422"]["content"]["application/json"][
+                "schema"
+            ] == {"$ref": "#/components/schemas/ApiErrorResponse"}
     assert "example" not in json.dumps(schema["components"]["securitySchemes"]["HTTPBearer"])
     error_properties = schema["components"]["schemas"]["ApiErrorResponse"]["properties"]
     assert "current_draft_version" in error_properties
@@ -543,9 +559,12 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             "approve_operation",
             "create_realtime_client_secret",
             "get_evidence_audio",
-            "get_operation",
-            "get_operation_audit",
-        }
+                "get_operation",
+                "get_operation_audit",
+                "request_human_handoff",
+                "get_human_handoff",
+                "get_human_handoff_readiness",
+            }
         if operation_id in versionless_operations:
             continue
         assert "expected_operation_version" in _request_schema(schema, operation)["required"]

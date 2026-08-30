@@ -72,7 +72,16 @@ PRE_PHASE18_TABLES = PHASE14_TABLES | {
     "volta_evidence_reservations",
     "volta_text_mutation_idempotency",
 }
-EXPECTED_TABLES = PRE_PHASE18_TABLES | {"volta_outbound_call_attempts"}
+PRE_PHASE28_TABLES = PRE_PHASE18_TABLES | {
+    "volta_outbound_call_attempts",
+    "volta_inbound_caller_correlations",
+    "volta_inbound_call_attempts",
+}
+EXPECTED_TABLES = PRE_PHASE28_TABLES | {
+    "volta_human_handoffs",
+    "volta_ai_authority_fences",
+    "volta_twilio_handoff_bindings",
+}
 PHASE06_TABLES = {
     "volta_audit_events",
     "volta_intake_drafts",
@@ -285,6 +294,52 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_outbound_call_attempts_failure_status",
         "ck_volta_outbound_call_attempts_call_timestamps",
         "ck_volta_outbound_call_attempts_timestamps",
+    },
+    "volta_inbound_caller_correlations": {
+        "pk_volta_inbound_caller_correlations",
+        "fk_volta_inbound_caller_correlations_operation",
+        "uq_volta_inbound_caller_correlations_caller_operation",
+        "ck_volta_inbound_caller_correlations_label",
+    },
+    "volta_inbound_call_attempts": {
+        "pk_volta_inbound_call_attempts",
+        "uq_volta_inbound_call_attempts_provider_call",
+        "fk_volta_inbound_attempt_operation",
+        "fk_volta_inbound_attempt_commitment",
+        "fk_volta_inbound_attempt_result_commitment",
+        "fk_volta_inbound_attempt_result_evidence",
+        "fk_volta_inbound_attempt_result_brief",
+        "fk_volta_inbound_attempt_recovery",
+        "ck_volta_inbound_attempt_status",
+        "ck_volta_inbound_attempt_identifiers",
+        "ck_volta_inbound_attempt_payload",
+    },
+    "volta_human_handoffs": {
+        "pk_volta_human_handoffs",
+        "uq_volta_human_handoffs_idempotency",
+        "fk_volta_handoffs_operation",
+        "ck_volta_handoffs_key",
+        "ck_volta_handoffs_fingerprint",
+        "ck_volta_handoffs_operation_version",
+        "ck_volta_handoffs_status",
+        "ck_volta_handoffs_context",
+        "ck_volta_handoffs_processed_events",
+        "ck_volta_handoffs_cursor",
+        "ck_volta_handoffs_timestamps",
+    },
+    "volta_ai_authority_fences": {
+        "pk_volta_ai_authority_fences",
+        "uq_volta_fence_handoff",
+        "fk_volta_fence_handoff",
+    },
+    "volta_twilio_handoff_bindings": {
+        "pk_volta_twilio_handoff_bindings",
+        "fk_volta_twilio_binding_handoff",
+        "uq_volta_twilio_binding_conference_name",
+        "uq_volta_twilio_binding_conference_sid",
+        "uq_volta_twilio_binding_coordinator_call",
+        "ck_volta_twilio_binding_sids",
+        "ck_volta_twilio_binding_sequences",
     },
 }
 
@@ -508,10 +563,32 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "ix_volta_outbound_call_attempts_operation",
         "uq_volta_outbound_call_attempts_provider_call",
     }
+    assert indexes["volta_inbound_caller_correlations"] == {  # type: ignore[index]
+        "ix_volta_inbound_caller_correlations_label",
+        "uq_volta_inbound_caller_correlations_caller_operation",
+    }
+    assert indexes["volta_inbound_call_attempts"] == {  # type: ignore[index]
+        "uq_volta_inbound_attempt_one_active_operation",
+        "uq_volta_inbound_call_attempts_provider_call",
+    }
+    assert indexes["volta_human_handoffs"] == {  # type: ignore[index]
+        "ix_volta_handoffs_call",
+        "ix_volta_handoffs_operation",
+        "uq_volta_handoffs_one_connecting_per_call",
+        "uq_volta_human_handoffs_idempotency",
+    }
+    assert indexes["volta_ai_authority_fences"] == {  # type: ignore[index]
+        "uq_volta_fence_handoff"
+    }
+    assert indexes["volta_twilio_handoff_bindings"] == {  # type: ignore[index]
+        "uq_volta_twilio_binding_conference_name",
+        "uq_volta_twilio_binding_conference_sid",
+        "uq_volta_twilio_binding_coordinator_call",
+    }
 
     command.downgrade(alembic_config, "-1")
     tables_after_one_downgrade, _ = asyncio.run(_volta_tables_and_function(isolated_database_url))
-    assert tables_after_one_downgrade == PRE_PHASE18_TABLES
+    assert tables_after_one_downgrade == PRE_PHASE28_TABLES
     _, phase14_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
     assert "COMMITMENT_SUPERSEDED" in phase14_audit_definition
     assert "EVIDENCE_RECORDED" in phase14_audit_definition

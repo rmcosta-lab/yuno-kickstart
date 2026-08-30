@@ -8,6 +8,21 @@ from typing import ClassVar
 from uuid import UUID
 
 __all__ = [
+    "HumanHandoffActiveConflict",
+    "HumanHandoffAuthenticationError",
+    "HumanHandoffAuthorityError",
+    "HumanHandoffCallNotLiveError",
+    "HumanHandoffDestinationError",
+    "HumanHandoffError",
+    "HumanHandoffIdempotencyConflict",
+    "HumanHandoffMissingContextError",
+    "HumanHandoffNotFoundError",
+    "HumanHandoffOutcomeUncertain",
+    "HumanHandoffPermissionError",
+    "HumanHandoffProviderError",
+    "HumanHandoffRateLimitError",
+    "HumanHandoffStaleCallError",
+    "HumanHandoffTimeoutError",
     "InboundCallError",
     "InboundCallerNotAllowed",
     "InboundCorrelationNotFound",
@@ -65,6 +80,81 @@ _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 def _safe_identifier(value: object) -> str | None:
     return value if isinstance(value, str) and _SAFE_IDENTIFIER.fullmatch(value) else None
+
+
+class HumanHandoffError(RuntimeError):
+    """Safe application failure without participant or provider details."""
+
+    category: ClassVar[str] = "human_handoff"
+
+    def __init__(self, *, call_id: UUID | None = None) -> None:
+        self.call_id = call_id if isinstance(call_id, UUID) else None
+        super().__init__(self.category)
+
+    @property
+    def safe_metadata(self) -> MappingProxyType[str, str | None]:
+        return MappingProxyType(
+            {
+                "category": self.category,
+                "call_id": str(self.call_id) if self.call_id is not None else None,
+            }
+        )
+
+
+class HumanHandoffCallNotLiveError(HumanHandoffError):
+    category = "call_not_live"
+
+
+class HumanHandoffStaleCallError(HumanHandoffError):
+    category = "stale_call"
+
+
+class HumanHandoffMissingContextError(HumanHandoffError):
+    category = "missing_context"
+
+
+class HumanHandoffDestinationError(HumanHandoffError):
+    category = "unknown_destination"
+
+
+class HumanHandoffActiveConflict(HumanHandoffError):
+    category = "active_handoff"
+
+
+class HumanHandoffIdempotencyConflict(HumanHandoffError):
+    category = "idempotency_conflict"
+
+
+class HumanHandoffAuthorityError(HumanHandoffError):
+    category = "ai_authority_revoked"
+
+
+class HumanHandoffAuthenticationError(HumanHandoffError):
+    category = "authentication"
+
+
+class HumanHandoffPermissionError(HumanHandoffError):
+    category = "permission"
+
+
+class HumanHandoffRateLimitError(HumanHandoffError):
+    category = "rate_limit"
+
+
+class HumanHandoffProviderError(HumanHandoffError):
+    category = "provider"
+
+
+class HumanHandoffTimeoutError(HumanHandoffError):
+    category = "timeout"
+
+
+class HumanHandoffOutcomeUncertain(HumanHandoffError):
+    category = "uncertain_outcome"
+
+
+class HumanHandoffNotFoundError(HumanHandoffError):
+    category = "not_found"
 
 
 class OutboundCallError(RuntimeError):
