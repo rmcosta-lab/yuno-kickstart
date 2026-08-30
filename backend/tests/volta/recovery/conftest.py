@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditEvent
@@ -61,6 +62,19 @@ class Operations:
 
     async def update(self, operation: Operation) -> None:
         self.value = operation
+
+    async def replace_mandate(self, operation: Operation) -> None:
+        self.value = operation
+
+
+@dataclass
+class Negotiations:
+    operation_id: UUID
+
+    async def get_by_call(self, call_id: UUID) -> object | None:
+        if call_id != CALL_ID:
+            return None
+        return SimpleNamespace(operation_id=self.operation_id)
 
 
 @dataclass
@@ -152,13 +166,19 @@ class RecoveryAttempts:
 class Notifications:
     values: dict[UUID, Notification] = field(default_factory=dict)
 
-    async def get(self, notification_id: UUID) -> Notification | None:
+    async def get(
+        self, notification_id: UUID, *, for_update: bool = False
+    ) -> Notification | None:
+        del for_update
         return self.values.get(notification_id)
 
     async def list_by_operation(self, operation_id: UUID) -> tuple[Notification, ...]:
         return tuple(item for item in self.values.values() if item.operation_id == operation_id)
 
     async def add(self, notification: Notification) -> None:
+        self.values[notification.id] = notification
+
+    async def update(self, notification: Notification) -> None:
         self.values[notification.id] = notification
 
 
@@ -182,6 +202,7 @@ class Uow:
         escalations: dict[UUID, PostContactEscalation] | None = None,
     ) -> None:
         self.operations = Operations(operation)
+        self.negotiations = Negotiations(operation.id)
         self.commitments = Commitments(commitments or {})
         self.quotes = Quotes(quotes or {})
         self.post_contact_escalations = PostContactEscalations(escalations or {})
@@ -190,8 +211,18 @@ class Uow:
         self.audit_events = Audits()
         self.commits = 0
         self.rollbacks = 0
+        self._snapshot: tuple[object, ...] | None = None
 
     async def __aenter__(self) -> Uow:
+        self._snapshot = (
+            self.operations.value,
+            dict(self.commitments.values),
+            dict(self.quotes.values),
+            dict(self.post_contact_escalations.values),
+            dict(self.recovery_attempts.values),
+            dict(self.notifications.values),
+            dict(self.audit_events.values),
+        )
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -199,9 +230,27 @@ class Uow:
 
     async def commit(self) -> None:
         self.commits += 1
+        self._snapshot = None
 
     async def rollback(self) -> None:
         self.rollbacks += 1
+        if self._snapshot is not None:
+            (
+                self.operations.value,
+                commitments,
+                quotes,
+                escalations,
+                attempts,
+                notifications,
+                audits,
+            ) = self._snapshot
+            self.commitments.values = commitments  # type: ignore[assignment]
+            self.quotes.values = quotes  # type: ignore[assignment]
+            self.post_contact_escalations.values = escalations  # type: ignore[assignment]
+            self.recovery_attempts.values = attempts  # type: ignore[assignment]
+            self.notifications.values = notifications  # type: ignore[assignment]
+            self.audit_events.values = audits  # type: ignore[assignment]
+            self._snapshot = None
 
 
 def operation(

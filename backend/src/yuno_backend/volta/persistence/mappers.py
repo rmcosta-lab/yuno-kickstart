@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
 from yuno_backend.volta.evidence.models import (
@@ -44,9 +45,12 @@ from yuno_backend.volta.negotiations.models import (
     QuoteTerms,
 )
 from yuno_backend.volta.recovery.models import (
+    EscalationContext,
     Notification,
     PostContactEscalation,
     RecoveryAttempt,
+    RecoveryDecision,
+    RecoveryDecisionState,
     RecoveryOutcome,
 )
 
@@ -531,6 +535,7 @@ def _post_contact_escalation_to_values(value: PostContactEscalation) -> dict[str
         "id": value.id,
         "operation_id": value.operation_id,
         "commitment_id": value.commitment_id,
+        "call_id": value.call_id,
         "reason_code": value.reason_code,
         "operation_version": value.operation_version,
         "mandate_version": value.mandate_version,
@@ -538,10 +543,26 @@ def _post_contact_escalation_to_values(value: PostContactEscalation) -> dict[str
         "correlation_id": value.correlation_id,
         "created_at": value.created_at,
         "resolved_at": value.resolved_at,
+        "conflict": None if value.context is None else value.context.conflict,
+        "attempted_alternatives": (
+            None if value.context is None else list(value.context.attempted_alternatives)
+        ),
+        "recommended_action": (
+            None if value.context is None else value.context.recommended_action
+        ),
     }
 
 
 def _post_contact_escalation_from_row(row: Mapping[str, Any]) -> PostContactEscalation:
+    context = (
+        None
+        if row["conflict"] is None
+        else EscalationContext(
+            row["conflict"],
+            tuple(row["attempted_alternatives"]),
+            row["recommended_action"],
+        )
+    )
     return PostContactEscalation(
         row["id"],
         row["operation_id"],
@@ -553,6 +574,8 @@ def _post_contact_escalation_from_row(row: Mapping[str, Any]) -> PostContactEsca
         row["correlation_id"],
         _utc(row["created_at"]),
         None if row["resolved_at"] is None else _utc(row["resolved_at"]),
+        row["call_id"],
+        context,
     )
 
 
@@ -589,16 +612,97 @@ def _notification_to_values(value: Notification) -> dict[str, Any]:
         "commitment_id": value.commitment_id,
         "reason_code": value.reason_code,
         "created_at": value.created_at,
+        "operation_version": value.operation_version,
+        "recovery_before": (
+            None
+            if value.recovery_decision is None
+            else _decision_state_to_json(value.recovery_decision.before)
+        ),
+        "recovery_after": (
+            None
+            if value.recovery_decision is None
+            else _decision_state_to_json(value.recovery_decision.after)
+        ),
+        "decision_reason": (
+            None if value.recovery_decision is None else value.recovery_decision.reason
+        ),
+        "message": value.message,
+        "correlation_id": value.correlation_id,
+        "acknowledged_by": value.acknowledged_by,
+        "acknowledged_at": value.acknowledged_at,
     }
 
 
 def _notification_from_row(row: Mapping[str, Any]) -> Notification:
+    decision = (
+        None
+        if row["recovery_before"] is None
+        else RecoveryDecision(
+            _decision_state_from_json(row["recovery_before"]),
+            _decision_state_from_json(row["recovery_after"]),
+            row["decision_reason"],
+        )
+    )
     return Notification(
         row["id"],
         row["operation_id"],
         row["commitment_id"],
         row["reason_code"],
         _utc(row["created_at"]),
+        row["operation_version"],
+        decision,
+        row["message"],
+        row["correlation_id"],
+        row["acknowledged_by"],
+        None if row["acknowledged_at"] is None else _utc(row["acknowledged_at"]),
+    )
+
+
+def _decision_state_to_json(value: RecoveryDecisionState) -> dict[str, Any]:
+    terms = value.agreed_terms
+    return {
+        "operation_version": value.operation_version,
+        "operation_status": value.operation_status.value,
+        "active_commitment_id": (
+            None if value.active_commitment_id is None else str(value.active_commitment_id)
+        ),
+        "carrier_id": None if value.carrier_id is None else str(value.carrier_id),
+        "agreed_terms": (
+            None
+            if terms is None
+            else {
+                "amount": str(terms.amount),
+                "currency": terms.currency,
+                "pickup_window_start": terms.pickup_window_start.isoformat(),
+                "pickup_window_end": terms.pickup_window_end.isoformat(),
+                "conditions": list(terms.conditions),
+            }
+        ),
+    }
+
+
+def _decision_state_from_json(value: Mapping[str, Any]) -> RecoveryDecisionState:
+    terms = value["agreed_terms"]
+    return RecoveryDecisionState(
+        operation_version=value["operation_version"],
+        operation_status=OperationStatus(value["operation_status"]),
+        active_commitment_id=(
+            None
+            if value["active_commitment_id"] is None
+            else UUID(value["active_commitment_id"])
+        ),
+        carrier_id=None if value["carrier_id"] is None else UUID(value["carrier_id"]),
+        agreed_terms=(
+            None
+            if terms is None
+            else QuoteTerms(
+                Decimal(terms["amount"]),
+                terms["currency"],
+                date.fromisoformat(terms["pickup_window_start"]),
+                date.fromisoformat(terms["pickup_window_end"]),
+                tuple(terms["conditions"]),
+            )
+        ),
     )
 
 

@@ -244,6 +244,34 @@ class SqlAlchemyOperationRepository:
         except DBAPIError:
             raise PersistenceUnavailable("write_failed", "operation", operation.id) from None
 
+    async def replace_mandate(self, operation: Operation) -> None:
+        try:
+            await self._session.execute(
+                insert(_mandates).values(_mandate_to_values(operation.mandate))
+            )
+            changed = (
+                await self._session.execute(
+                    update(_operations)
+                    .where(_operations.c.id == operation.id)
+                    .values(
+                        version=operation.version,
+                        active_mandate_id=operation.mandate.id,
+                    )
+                    .returning(_operations.c.id)
+                )
+            ).scalar_one_or_none()
+            if changed is None:
+                raise PersistenceConflict("missing_state", "operation", operation.id)
+            await self._session.execute(
+                insert(_operation_status_history).values(
+                    _status_to_values(operation.status_history[-1])
+                )
+            )
+        except IntegrityError:
+            raise PersistenceConflict("integrity_constraint", "operation", operation.id) from None
+        except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "operation", operation.id) from None
+
 
 class SqlAlchemyAuditEventRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -811,12 +839,15 @@ class SqlAlchemyNotificationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get(self, notification_id: UUID) -> Notification | None:
+    async def get(
+        self, notification_id: UUID, *, for_update: bool = False
+    ) -> Notification | None:
         try:
+            statement = select(_notifications).where(_notifications.c.id == notification_id)
+            if for_update:
+                statement = statement.with_for_update()
             row = (
-                await self._session.execute(
-                    select(_notifications).where(_notifications.c.id == notification_id)
-                )
+                await self._session.execute(statement)
             ).first()
             return None if row is None else _notification_from_row(_mapping(row))
         except DBAPIError:
@@ -842,6 +873,25 @@ class SqlAlchemyNotificationRepository:
             await self._session.execute(
                 insert(_notifications).values(_notification_to_values(notification))
             )
+        except IntegrityError:
+            raise PersistenceConflict(
+                "integrity_constraint", "notification", notification.id
+            ) from None
+        except DBAPIError:
+            raise PersistenceUnavailable("write_failed", "notification", notification.id) from None
+
+    async def update(self, notification: Notification) -> None:
+        try:
+            changed = (
+                await self._session.execute(
+                    update(_notifications)
+                    .where(_notifications.c.id == notification.id)
+                    .values(_notification_to_values(notification))
+                    .returning(_notifications.c.id)
+                )
+            ).scalar_one_or_none()
+            if changed is None:
+                raise PersistenceConflict("missing_state", "notification", notification.id)
         except IntegrityError:
             raise PersistenceConflict(
                 "integrity_constraint", "notification", notification.id
