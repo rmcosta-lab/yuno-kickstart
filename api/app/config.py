@@ -1,15 +1,16 @@
 """Environment-driven API settings."""
 
+import json
 import re
 from functools import lru_cache
 from ipaddress import ip_address
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _PUBLIC_HOST_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
     api_title: str = "Volta API"
     api_version: str = "0.1.0"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     volta_demo_bearer_token: SecretStr = SecretStr("")
     database_url: SecretStr = SecretStr("")
@@ -53,6 +54,26 @@ class Settings(BaseSettings):
     volta_mutation_rate_limit_window_seconds: float = Field(default=60.0, gt=0, le=86_400)
     volta_mutation_rate_limit_max_identities: int = Field(default=256, ge=1, le=10_000)
     volta_evidence_storage_path: Path = Path(gettempdir()) / "yuno-volta-text-evidence"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, origins: str | list[str]) -> list[str]:
+        if isinstance(origins, list):
+            return origins
+        if not isinstance(origins, str):
+            raise TypeError("CORS_ORIGINS must be a URL, CSV, or JSON list")
+        value = origins.strip()
+        if value.startswith("["):
+            try:
+                decoded = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise ValueError("CORS_ORIGINS JSON list is invalid") from error
+            if not isinstance(decoded, list) or not all(
+                isinstance(origin, str) for origin in decoded
+            ):
+                raise ValueError("CORS_ORIGINS JSON value must be a list of URLs")
+            return decoded
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
     @field_validator("cors_origins")
     @classmethod

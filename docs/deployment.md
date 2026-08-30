@@ -10,8 +10,9 @@ efêmero e não sobrevivem a reinícios ou redeploys.
 1. No Render Dashboard, escolha **New > Blueprint** e conecte este repositório.
 2. Confirme o arquivo `render.yaml` na raiz.
 3. Durante a criação, preencha os valores marcados como secretos:
-   - `CORS_ORIGINS`: inicialmente use o domínio de produção esperado da Vercel,
-     no formato JSON `["https://SEU-PROJETO.vercel.app"]`;
+   - `CORS_ORIGINS`: use o domínio de produção da Vercel, por exemplo
+     `https://volta-control-tower.vercel.app`. Também são aceitos CSV e lista
+     JSON; nunca use `*`;
    - `VOLTA_DEMO_BEARER_TOKEN`: gere uma senha aleatória longa, guarde-a no
      gerenciador de segredos e nunca a salve no repositório;
    - `OPENAI_API_KEY`: chave server-side usada pela extração e pelo Realtime.
@@ -43,7 +44,7 @@ expira após 30 dias; use-o somente para a demonstração do hackathon.
 6. Se a URL final diferir da informada inicialmente, atualize no Render:
 
    ```text
-   CORS_ORIGINS=["https://SEU-PROJETO.vercel.app"]
+   CORS_ORIGINS=https://volta-control-tower.vercel.app
    ```
 
    Em seguida, faça um redeploy da API.
