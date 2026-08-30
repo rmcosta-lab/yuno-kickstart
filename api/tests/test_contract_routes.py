@@ -1,6 +1,7 @@
 import json
 from collections.abc import Mapping
 from typing import Any
+from uuid import UUID
 
 import pytest
 from app.config import Settings
@@ -14,6 +15,7 @@ from app.main import create_app
 from app.schemas.errors import ApiErrorCode
 from contract_fixtures import IDS, request_for, response_for
 from fastapi.testclient import TestClient
+from yuno_backend.volta.evidence.playback import EvidenceAudio
 
 AUTH = {"Authorization": "Bearer synthetic-test-token"}
 MUTATION_HEADERS = {**AUTH, "Idempotency-Key": "synthetic-key-001"}
@@ -57,6 +59,18 @@ class DeterministicFake:
         self.calls: list[tuple[str, dict[str, JsonValue], str | None]] = []
         self.idempotency: dict[str, tuple[str, ContractResult]] = {}
         self.error: Exception | None = None
+        self.audio = EvidenceAudio(
+            content=b"RIFF\x04\x00\x00\x00WAVE",
+            media_type="audio/wav",
+            content_length=12,
+        )
+        self.audio_calls: list[UUID] = []
+
+    async def get_evidence_audio(self, evidence_id: UUID) -> EvidenceAudio:
+        self.audio_calls.append(evidence_id)
+        if self.error is not None:
+            raise self.error
+        return self.audio
 
     async def execute(
         self,
@@ -170,6 +184,83 @@ def test_authentication_is_rejected_before_contract_delegation() -> None:
         missing.text + malformed.text + wrong_scheme.text + invalid.text
     )
     assert fake.calls == []
+
+
+def test_evidence_audio_authentication_precedes_retrieval() -> None:
+    fake = DeterministicFake()
+    path = f"/v1/evidence/{IDS['evidence']}/audio"
+
+    with build_client(fake) as client:
+        missing = client.get(path)
+        invalid = client.get(path, headers={"Authorization": "Bearer submitted-secret"})
+
+    assert missing.status_code == 401
+    assert missing.json()["code"] == "AUTHENTICATION_REQUIRED"
+    assert invalid.status_code == 401
+    assert invalid.json()["code"] == "AUTHENTICATION_INVALID"
+    assert fake.audio_calls == []
+
+
+def test_evidence_audio_returns_exact_bytes_and_private_headers() -> None:
+    fake = DeterministicFake()
+    expected = b"RIFF\x04\x00\x00\x00WAVE"
+
+    with build_client(fake) as client:
+        response = client.get(
+            f"/v1/evidence/{IDS['evidence']}/audio",
+            headers={**AUTH, "X-Request-ID": "audio-request-1"},
+        )
+
+    assert response.status_code == 200
+    assert response.content == expected
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.headers["content-length"] == str(len(expected))
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-request-id"] == "audio-request-1"
+    assert "content-disposition" not in response.headers
+    assert fake.audio_calls == [UUID(IDS["evidence"])]
+
+
+def test_evidence_audio_rejects_invalid_uuid_before_retrieval() -> None:
+    fake = DeterministicFake()
+
+    with build_client(fake) as client:
+        response = client.get("/v1/evidence/not-a-uuid/audio", headers=AUTH)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+    assert fake.audio_calls == []
+
+
+@pytest.mark.parametrize(
+    ("status_code", "code", "message"),
+    [
+        (404, ApiErrorCode.RESOURCE_NOT_FOUND, "Evidence audio is unavailable."),
+        (
+            413,
+            ApiErrorCode.EVIDENCE_AUDIO_TOO_LARGE,
+            "Evidence audio exceeds the demo playback limit.",
+        ),
+    ],
+)
+def test_evidence_audio_safe_errors_omit_resource_identity(
+    status_code: int,
+    code: ApiErrorCode,
+    message: str,
+) -> None:
+    fake = DeterministicFake()
+    fake.error = ContractServiceError(status_code=status_code, code=code, message=message)
+
+    with build_client(fake) as client:
+        response = client.get(f"/v1/evidence/{IDS['evidence']}/audio", headers=AUTH)
+
+    assert response.status_code == status_code
+    assert response.json()["code"] == code
+    assert response.json()["message"] == message
+    assert response.json()["resource_id"] is None
+    assert IDS["evidence"] not in response.text
 
 
 def test_validation_error_is_safe_and_preserves_request_id() -> None:
@@ -375,12 +466,16 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             operations[operation["operationId"]] = operation
             assert operation["security"] == [{"HTTPBearer": []}]
             assert "401" in operation["responses"]
-            if operation["operationId"] == "create_realtime_client_secret":
+            if operation["operationId"] in {
+                "create_realtime_client_secret",
+                "get_evidence_audio",
+            }:
                 assert "501" not in operation["responses"]
                 assert "requestBody" not in operation
-                assert operation["responses"]["401"]["headers"]["WWW-Authenticate"][
-                    "schema"
-                ] == {"type": "string", "enum": ["Bearer"]}
+                if operation["operationId"] == "create_realtime_client_secret":
+                    assert operation["responses"]["401"]["headers"]["WWW-Authenticate"][
+                        "schema"
+                    ] == {"type": "string", "enum": ["Bearer"]}
                 assert all(
                     item["name"] != "Idempotency-Key" for item in operation.get("parameters", [])
                 )
@@ -399,13 +494,34 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             else:
                 assert "429" not in operation["responses"]
 
-    assert set(operations) == {*ROUTES, "create_realtime_client_secret"}
-    assert len(operations) == 15
-    assert len(set(operations)) == 15
+    assert set(operations) == {*ROUTES, "create_realtime_client_secret", "get_evidence_audio"}
+    assert len(operations) == 16
+    assert len(set(operations)) == 16
     assert "example" not in json.dumps(schema["components"]["securitySchemes"]["HTTPBearer"])
     error_properties = schema["components"]["schemas"]["ApiErrorResponse"]["properties"]
     assert "current_draft_version" in error_properties
     assert "current_operation_version" in error_properties
+    assert "EVIDENCE_AUDIO_TOO_LARGE" in schema["components"]["schemas"]["ApiErrorCode"][
+        "enum"
+    ]
+
+    audio_operation = operations["get_evidence_audio"]
+    assert audio_operation["responses"]["200"]["content"]["audio/wav"]["schema"] == {
+        "type": "string",
+        "format": "binary",
+    }
+    assert {"404", "413", "422", "500"}.issubset(audio_operation["responses"])
+    assert all(
+        response["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ApiErrorResponse"
+        }
+        for code, response in audio_operation["responses"].items()
+        if code != "200"
+    )
+    evidence_schema = schema["components"]["schemas"]["CommitmentEvidenceResponse"]
+    assert "recording_reference" not in evidence_schema["properties"]
+    create_evidence_schema = schema["components"]["schemas"]["CreateCommitmentEvidenceRequest"]
+    assert "recording_reference" in create_evidence_schema["required"]
 
     approve_schema = _request_schema(schema, operations["approve_operation"])
     assert "expected_draft_version" in approve_schema["required"]
@@ -416,6 +532,7 @@ def test_openapi_has_stable_secure_generated_client_contract() -> None:
             "create_operation_draft",
             "approve_operation",
             "create_realtime_client_secret",
+            "get_evidence_audio",
             "get_operation",
             "get_operation_audit",
         }

@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass
 from typing import Annotated, Protocol
+from uuid import UUID
 
 from fastapi import Depends, Request
+from yuno_backend.volta.evidence.playback import EvidenceAudio
 
 from app.schemas.errors import ApiErrorCode, FieldIssue
 
@@ -24,6 +26,8 @@ class ContractService(Protocol):
         payload: dict[str, JsonValue],
         idempotency_key: str | None,
     ) -> ContractResult: ...
+
+    async def get_evidence_audio(self, evidence_id: UUID) -> EvidenceAudio: ...
 
 
 class ContractServiceError(Exception):
@@ -58,6 +62,14 @@ class UnimplementedContractService:
         idempotency_key: str | None,
     ) -> ContractResult:
         del operation_id, payload, idempotency_key
+        raise ContractServiceError(
+            status_code=501,
+            code=ApiErrorCode.CONTRACT_NOT_IMPLEMENTED,
+            message="This contract is not connected to an application service yet.",
+        )
+
+    async def get_evidence_audio(self, evidence_id: UUID) -> EvidenceAudio:
+        del evidence_id
         raise ContractServiceError(
             status_code=501,
             code=ApiErrorCode.CONTRACT_NOT_IMPLEMENTED,

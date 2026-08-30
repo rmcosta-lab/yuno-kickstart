@@ -60,6 +60,18 @@ RETRY_AFTER_HEADER = {
     "description": "Whole seconds until the authorized mutation window can accept traffic.",
     "schema": {"type": "integer", "minimum": 1},
 }
+AUDIO_CACHE_CONTROL_HEADER = {
+    "description": "Private evidence must not be stored by browsers or intermediaries.",
+    "schema": {"type": "string", "enum": ["private, no-store"]},
+}
+AUDIO_PRAGMA_HEADER = {
+    "description": "Compatibility no-cache directive for private evidence.",
+    "schema": {"type": "string", "enum": ["no-cache"]},
+}
+AUDIO_NOSNIFF_HEADER = {
+    "description": "Prevents media type sniffing.",
+    "schema": {"type": "string", "enum": ["nosniff"]},
+}
 
 
 def error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
@@ -68,6 +80,7 @@ def error_responses(*status_codes: int) -> dict[int, dict[str, Any]]:
         403: "The authenticated actor lacks authority.",
         404: "The referenced resource was not found.",
         409: "The request conflicts with current state or idempotency history.",
+        413: "The requested evidence exceeds the demo playback limit.",
         422: "The request does not satisfy the public contract.",
         429: "The configured demo traffic boundary was exceeded.",
         500: "An unexpected failure was translated safely.",
@@ -261,6 +274,42 @@ async def attach_commitment_evidence(
 ) -> JsonValue:
     return await execute_mutation(
         service, "attach_commitment_evidence", body, idempotency_key, response, call_id=call_id
+    )
+
+
+@router.get(
+    "/evidence/{evidence_id}/audio",
+    operation_id="get_evidence_audio",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Private RIFF/WAVE evidence bytes.",
+            "content": {
+                "audio/wav": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+            "headers": {
+                "X-Request-ID": REQUEST_ID_HEADER,
+                "Cache-Control": AUDIO_CACHE_CONTROL_HEADER,
+                "Pragma": AUDIO_PRAGMA_HEADER,
+                "X-Content-Type-Options": AUDIO_NOSNIFF_HEADER,
+            },
+        },
+        **error_responses(401, 403, 404, 413, 422, 500),
+    },
+)
+async def get_evidence_audio(evidence_id: UUID, service: Service) -> Response:
+    audio = await service.get_evidence_audio(evidence_id)
+    return Response(
+        content=audio.content,
+        media_type=audio.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Length": str(audio.content_length),
+        },
     )
 
 

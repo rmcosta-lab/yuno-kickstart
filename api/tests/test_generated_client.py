@@ -126,7 +126,9 @@ def test_volta_fetch_preserves_http_metadata_and_throws_typed_errors() -> None:
     assert "status: response.status" in transport
     assert "if (!response.ok)" in transport
     assert "throw new ApiHttpError<ApiErrorResponse>" in transport
-    assert "data: result.data as ApiErrorResponse" in transport
+    assert "data: safeApiError(result.data, response)" in transport
+    assert "const isApiErrorResponse" in transport
+    assert "code: ApiErrorCode.INTERNAL_ERROR" in transport
 
 
 def test_generated_transport_types_preserve_headers_and_safe_api_errors() -> None:

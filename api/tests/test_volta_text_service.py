@@ -18,6 +18,11 @@ from app.volta_text_service import (
 )
 from fastapi.testclient import TestClient
 from yuno_backend.integrations.openai import OpenAIIntakeExtractor
+from yuno_backend.volta.evidence.playback import (
+    EvidenceAudio,
+    EvidenceAudioNotFound,
+    EvidenceAudioTooLarge,
+)
 from yuno_backend.volta.idempotency import IdempotencyResultMissing
 from yuno_backend.volta.intake import DeterministicIntakeExtractor
 from yuno_backend.volta.mandates.errors import (
@@ -93,6 +98,18 @@ IDS = {
         1,
     )
 }
+
+
+class FakePlaybackService:
+    def __init__(self, result: EvidenceAudio | Exception) -> None:
+        self.result = result
+        self.calls: list[UUID] = []
+
+    async def retrieve(self, evidence_id: UUID) -> EvidenceAudio:
+        self.calls.append(evidence_id)
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
 
 
 def value(name: str) -> SimpleNamespace:
@@ -317,6 +334,7 @@ def brief() -> SimpleNamespace:
         id=IDS["brief"],
         operation_id=IDS["operation"],
         call_id=IDS["call"],
+        commitment_id=IDS["commitment"],
         facts=("Carrier is available",),
         objections=(),
         changes=("Recovered safely",),
@@ -482,6 +500,73 @@ def service(
 
 
 @pytest.mark.asyncio
+async def test_adapter_returns_provider_neutral_audio_without_reference() -> None:
+    playback = FakePlaybackService(
+        EvidenceAudio(
+            content=b"RIFF\x04\x00\x00\x00WAVE",
+            media_type="audio/wav",
+            content_length=12,
+        )
+    )
+    adapter = VoltaTextContractService(
+        FakeTextApplication(),
+        audio_service=playback,  # type: ignore[arg-type]
+    )
+
+    result = await adapter.get_evidence_audio(IDS["evidence"])
+
+    assert result.content == b"RIFF\x04\x00\x00\x00WAVE"
+    assert result.media_type == "audio/wav"
+    assert result.content_length == 12
+    assert playback.calls == [IDS["evidence"]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "status_code", "code", "message"),
+    [
+        (
+            EvidenceAudioNotFound(),
+            404,
+            ApiErrorCode.RESOURCE_NOT_FOUND,
+            "Evidence audio is unavailable.",
+        ),
+        (
+            EvidenceAudioTooLarge(),
+            413,
+            ApiErrorCode.EVIDENCE_AUDIO_TOO_LARGE,
+            "Evidence audio exceeds the demo playback limit.",
+        ),
+        (
+            RuntimeError("private/storage/reference.wav"),
+            500,
+            ApiErrorCode.INTERNAL_ERROR,
+            "The request could not be completed.",
+        ),
+    ],
+)
+async def test_adapter_maps_playback_errors_without_resource_identity(
+    error: Exception,
+    status_code: int,
+    code: ApiErrorCode,
+    message: str,
+) -> None:
+    playback = FakePlaybackService(error)
+    adapter = VoltaTextContractService(
+        FakeTextApplication(),
+        audio_service=playback,  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(ContractServiceError) as captured:
+        await adapter.get_evidence_audio(IDS["evidence"])
+
+    assert captured.value.status_code == status_code
+    assert captured.value.code is code
+    assert captured.value.safe_message == message
+    assert captured.value.resource_id is None
+
+
+@pytest.mark.asyncio
 async def test_adapter_converts_draft_and_propagates_truthful_replay() -> None:
     adapter, application = service()
     result = await adapter.execute(
@@ -569,9 +654,7 @@ async def test_adapter_converts_commitment_and_serializes_real_evidence_with_rep
     assert command.evidence_id == IDS["quote"]  # type: ignore[attr-defined]
     assert command.correlation_id == IDS["correlation"]  # type: ignore[attr-defined]
     assert result.idempotency_replayed is True
-    assert result.payload["evidence"]["recording_reference"] == (  # type: ignore[index]
-        "private/current-recording.wav"
-    )
+    assert "recording_reference" not in result.payload["evidence"]  # type: ignore[operator]
     assert result.payload["evidence"]["lifecycle"] == "CANDIDATE"  # type: ignore[index]
 
 

@@ -15,6 +15,7 @@ export type CallBriefResponse = {
    * @items.maxLength 500
    */
   changes?: string[];
+  commitment_id: string;
   created_at: string;
   /**
    * @maxItems 50

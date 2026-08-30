@@ -272,7 +272,7 @@ def test_read_projections_reconstruct_complete_p0_control_tower_state() -> None:
         "SUPERSEDED",
     }
     superseded = next(item for item in audit.commitment_history if item.disposition == "SUPERSEDED")
-    assert superseded.evidence.recording_reference == "private-demo-recording-prior"
+    assert "recording_reference" not in type(superseded.evidence).model_fields
     assert audit.recaps[0].channel == "SIMULATED"
     assert audit.briefs[0].changes == ["Recovered with a mandate-safe alternative"]
     assert audit.recoveries[0].scenario == "MANDATE_SAFE"
