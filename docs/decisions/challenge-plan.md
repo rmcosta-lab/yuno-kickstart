@@ -8,16 +8,16 @@ The team selected the drayage voice-agent case. Volta turns a coordinator's natu
 
 The current P0 prototype simulates calls in the frontend. Its deterministic browser and text journey passed, and Fase 17 merged with a visible Realtime waiver: the qualitative voice checks and complete two-tool provider roundtrip remain unproved. Browser audio and text remain useful development surfaces, but the team must not present them as equivalent to telephony.
 
-The accepted P0.1 evolution adds Twilio inbound and outbound calls over the public switched telephone network (PSTN), overlapping carrier calls, and human takeover without disconnecting the remote participant. The consent-gated outbound control and Twilio/FastAPI media bridge are implemented and merged. The control passed credential-free browser checks, but no call occurred and the live Twilio journey is not proven. The overlapping-call, inbound-recovery, and human-takeover outcomes remain final-trial work.
+The accepted P0.1 evolution adds Twilio inbound and outbound calls over the public switched telephone network (PSTN), one WhatsApp recap through Twilio Programmable Messaging, overlapping carrier calls, and human takeover without disconnecting the remote participant. The consent-gated outbound control and Twilio/FastAPI media bridge are implemented and merged. The control passed credential-free browser checks, but no call occurred and the live Twilio journey is not proven. The WhatsApp delivery, overlapping-call, inbound-recovery, and human-takeover outcomes remain final-trial work.
 
 This decision leaves four explicit challenge gaps:
 
 - No real inbound or outbound call over the phone network
-- No written recap sent through Short Message Service (SMS) or email
+- No written recap delivered through WhatsApp
 - No literal overlap of three live carrier calls
 - No human transfer inside a live phone call without disconnecting
 
-The initial P0 accepts these gaps only as a temporary implementation checkpoint. P0.1 closes the telephony, literal-overlap, and live-human-handoff gaps through the outbound path followed by dedicated inbound-call and handoff phases. The team could not enable the required A2P 10DLC registration within the hackathon schedule, so real SMS delivery remains an explicit submission gap. Browser and simulated-delivery paths remain explicit fallbacks rather than substitutes for external evidence.
+The initial P0 accepts these gaps only as a temporary implementation checkpoint. P0.1 closes them through the outbound path followed by dedicated inbound-call, WhatsApp-recap, and handoff phases. The team could not enable A2P 10DLC for SMS, so the accepted recap channel is now an authorized Twilio Sandbox for WhatsApp participant inside the 24-hour customer-service window. Browser and simulated-delivery paths remain explicit fallbacks rather than substitutes for external evidence.
 
 ## Problem to solve
 
@@ -45,10 +45,10 @@ Volta turns messy carrier conversations into mandate-safe, auditable commitments
 The challenge counts an agreement as a commitment only after the system sends a written recap and links the agreement to an audio timestamp. The plan uses three distinct states:
 
 - `CANDIDATE`: Volta extracted an agreement that passed the mandate check
-- `SIMULATED`: The prototype displayed a recap but did not send it through SMS or email
-- `VERIFIED`: A delivery provider accepted the written recap and the agreement links to an exact timestamp in playable audio
+- `SIMULATED`: The prototype displayed a recap but did not deliver it through the selected external channel
+- `VERIFIED`: A signed Twilio callback reports the WhatsApp recap as `delivered` and the agreement links to an exact timestamp in playable audio
 
-The hackathon prototype stops at `SIMULATED`. It must not label or present this state as a challenge-verified commitment. A later delivery integration may promote an agreement to `VERIFIED` only after an external provider accepts its real written recap and the agreement retains playable timestamp evidence.
+P0 stops at `SIMULATED`. P0.1 may promote the final active winner to `VERIFIED` only after the WhatsApp recap reaches `delivered` through a verified callback and the agreement retains playable timestamp evidence. API acceptance, `queued`, `sent`, or an unsigned browser callback is insufficient.
 
 This evidence lifecycle is separate from the operational disposition of a commitment. A commitment is either the one `ACTIVE` selection or a historical `SUPERSEDED` selection. Replacing a carrier changes that disposition atomically without erasing the earlier evidence or recap.
 
@@ -142,7 +142,7 @@ The first prototype includes:
 
 ## P0.1 evolution — complete real telephony path
 
-P0.1 upgrades outbound negotiation and inbound recovery from browser simulation to real calls over the phone network and supports human takeover of a live call. The browser experience remains a deterministic development harness and demo fallback. Written-recap delivery remains simulated for the hackathon because A2P 10DLC registration could not be enabled in time.
+P0.1 upgrades outbound negotiation and inbound recovery from browser simulation to real calls over the phone network, delivers one written recap through Twilio WhatsApp, and supports human takeover of a live call. The browser experience and simulated recap remain a deterministic development harness and demo fallback.
 
 P0.1 includes:
 
@@ -150,25 +150,25 @@ P0.1 includes:
 - Three overlapping outbound calls to authorized test participants acting as carrier dispatchers
 - One real inbound driver or dispatcher call correlated fail-closed to the active synthetic operation
 - A FastAPI server WebSocket that bridges Twilio bidirectional Media Streams to the OpenAI Realtime API
-- Signed inbound voice, call-status, and handoff callbacks with provider identifiers linked to provider-neutral records
+- Signed inbound voice, call-status, WhatsApp delivery-status, and handoff callbacks with provider identifiers linked to provider-neutral records
 - The same deterministic backend enforcement for mandate checks, quotes, counteroffers, winner selection, and candidate agreements
 - An explicit human action and destination allowlist before dialing
 - AI disclosure at the beginning of each call and consent before recording
-- One simulated written recap for the final active winner, visibly labeled `SIMULATED` and linked to playable timestamp evidence
+- One WhatsApp recap for the final active winner, delivered to an allowlisted participant who explicitly joined the Twilio Sandbox and opened the 24-hour customer-service window
 - One coordinator takeover that preserves the live remote leg and structured context while preventing further AI commitments
 - Browser voice, text mode, and a recorded trial as fallbacks
 
-This list is the minimum hackathon path. Phases 26 and 28 are mandatory. They prove one bounded inbound recovery and one successful live takeover. Real written-recap delivery, production routing, exhaustive provider-failure trials, and scale beyond three authorized outbound calls remain outside the gate.
+This list is the minimum hackathon path. Phases 26, 27, and 28 are mandatory. They prove one bounded inbound recovery, one verified WhatsApp recap, and one successful live takeover. Production WhatsApp sender onboarding and custom template approval, a second delivery channel, production routing, exhaustive provider-failure trials, and scale beyond three authorized outbound calls remain outside the gate.
 
-The implementation baseline is Twilio's official documentation for inbound and outbound Voice calls, Media Streams, in-progress call modification or conferencing, and the OpenAI Realtime API. The final trial requires an account that can call every authorized participant without a trial announcement or destination restriction.
+The implementation baseline is Twilio's official documentation for inbound and outbound Voice calls, Media Streams, in-progress call modification or conferencing, WhatsApp Sandbox messaging, signed Messaging status callbacks, and the OpenAI Realtime API. The final trial requires an account that can call every authorized participant without a trial announcement or destination restriction and one authorized WhatsApp participant enrolled in the Sandbox.
 
-Each phase specification must verify the current provider API, signatures, account restrictions, regional phone requirements, calling rules, and recording obligations before implementation. Twilio remains behind provider protocols so another voice provider can replace it without changing mandate or commitment rules.
+Each phase specification must verify the current provider API, signatures, account restrictions, regional phone requirements, calling rules, WhatsApp session and template rules, callback semantics, and recording obligations before implementation. Twilio remains behind provider protocols so another voice or recap provider can replace it without changing mandate or commitment rules.
 
 ## Explicit non-goals
 
 The initial P0 prototype excludes:
 
-- Real PSTN and Twilio Voice until P0.1; SMS, email, direct SIP trunking, and real-carrier integration remain excluded from the hackathon scope
+- Real PSTN, Twilio Voice, and WhatsApp until P0.1; SMS, email, a second recap channel, production WhatsApp onboarding, direct SIP trunking, and real-carrier integration remain excluded from the hackathon scope
 - A claim that browser audio satisfies the challenge requirement for real phone calls
 - A claim that a simulated recap creates a challenge-verified commitment
 - Real carrier bookings, real rates, or integration with a transportation management system
@@ -194,6 +194,7 @@ flowchart LR
     realtime["OpenAI Realtime API<br/>gpt-realtime-2.1"]
     phone["Authorized participant<br/>phone on the PSTN"]
     provider["Twilio Programmable Voice<br/>P0.1 inbound/outbound adapter"]
+    recap["Twilio Programmable Messaging<br/>WhatsApp Sandbox recap"]
     coordinator["Human coordinator<br/>live takeover"]
 
     participant --> browser
@@ -204,6 +205,7 @@ flowchart LR
     browser <-->|"WebRTC call, audio, events, and tool calls"| realtime
     phone <-->|"Live phone call in P0.1"| provider
     provider <-->|"Bidirectional Media Stream"| api
+    core <-->|"Idempotent recap and verified status"| recap
     api <-->|"Server WebSocket audio and events"| realtime
     coordinator <-->|"Context and same live call"| provider
 ```
@@ -216,7 +218,7 @@ During calls, the browser receives tool requests from the Realtime session and i
 
 The client-secret endpoint must enforce an authorized demo identity, allowed origins, rate limits, a narrow session configuration, and a privacy-preserving safety identifier. It must disable caching and redact credentials from logs and errors.
 
-P0.1 uses the FastAPI server bridge for inbound and outbound calls. Twilio initiates each authorized outbound PSTN call or requests signed instructions for an inbound call, then streams audio bidirectionally to the API, which exchanges audio and events with OpenAI Realtime. A verified control action moves the same live remote call into human takeover while stopping further AI commitments. The Python core remains the only component that can validate a mandate or change an agreement state. Direct SIP and external recap delivery remain later alternatives rather than part of P0.1.
+P0.1 uses the FastAPI server bridge for inbound and outbound calls. Twilio initiates each authorized outbound PSTN call or requests signed instructions for an inbound call, then streams audio bidirectionally to the API, which exchanges audio and events with OpenAI Realtime. A provider-neutral delivery adapter sends the final active winner's bounded recap through Twilio WhatsApp and consumes signed, potentially out-of-order status callbacks. A verified control action moves the same live remote call into human takeover while stopping further AI commitments. The Python core remains the only component that can validate a mandate or change an agreement state. Direct SIP and additional recap channels remain later alternatives rather than part of P0.1.
 
 ## OpenAI capabilities required
 
@@ -255,7 +257,7 @@ The backend needs a small, auditable model:
 | `Quote` | Rate, window, conditions, and validity | Source session and mandate eligibility result |
 | `Commitment` | Agreed facts and `CANDIDATE`, `SIMULATED`, or `VERIFIED` evidence lifecycle | Carrier, quote, mandate version, recap status, active or superseded disposition, replacement link, and agreement evidence |
 | `CommitmentEvidence` | Link from an agreement to the caller turn that confirms it | Call session, playable audio reference, `audio_start_ms`, item ID, and event ID |
-| `WrittenRecap` | Human-readable agreement summary | Channel `simulated`, content hash, and simulated display time |
+| `WrittenRecap` | Human-readable agreement summary and delivery evidence | Channel `simulated` or `whatsapp`, content hash, provider-neutral delivery state, safe provider reference, and delivered time |
 | `CallBrief` | Actions and relevant mentions from the conversation | Structured facts, objections, changes, and unresolved items |
 | `CoordinatorNotification` | Auditable notice for an autonomous mandate-safe recovery | Operation version, before-and-after decision, reason, and acknowledgement state |
 | `Escalation` | Context for human takeover | Trigger, mandate conflict, context package, and resolution |
@@ -279,7 +281,8 @@ The FastAPI boundary will version application routes under `/v1`:
 | `POST /v1/telephony/twilio/status` | Receive and verify Twilio call-status events before typed delegation |
 | `POST /v1/calls/{call_id}/quotes` | Record and validate a quoted rate and pickup window |
 | `POST /v1/calls/{call_id}/commitments` | Create a `CANDIDATE` agreement after deterministic mandate validation |
-| `POST /v1/calls/{call_id}/recaps` | Create an idempotent written recap with explicit simulated-delivery state |
+| `POST /v1/calls/{call_id}/recaps` | Create an idempotent written recap and request delivery through the configured provider |
+| `POST /v1/delivery/twilio/whatsapp/status` | Verify asynchronous WhatsApp status callbacks before typed delegation |
 | `POST /v1/calls/{call_id}/briefs` | Persist the structured call brief |
 | `POST /v1/calls/{call_id}/escalations` | Start a human takeover with the current context |
 | `POST /v1/calls/{call_id}/handoffs` | Authorize the coordinator to join the same live call and stop further AI commitments |
@@ -293,7 +296,7 @@ These routes are proposed boundaries, not final contracts. The phase specificati
 The submission must contain five artifacts:
 
 1. **Presentation**: Explain the phone-process problem, mandate model, demo story, architecture, known gap, and evidence.
-2. **Demo**: Run three overlapping outbound PSTN negotiations, one mandate-safe inbound recovery, and one live human takeover. Show the final winner's recap explicitly labeled `SIMULATED`, playable timestamp evidence, and structured brief, and keep browser voice plus video fallbacks ready.
+2. **Demo**: Run three overlapping outbound PSTN negotiations, one mandate-safe inbound recovery, one delivered WhatsApp recap for the final active winner, and one live human takeover. Show the winner's playable timestamp evidence and structured brief, and keep browser voice, simulated recap, plus video fallbacks ready.
 3. **Public GitHub repository**: Add a README with setup, architecture, demo steps, test data, security notes, and known limitations. Remove secrets and private participant data before publication.
 4. **Architecture diagram**: Refine the diagram in this decision record and distinguish the P0 browser harness from the P0.1 Twilio path.
 5. **Decision log**: Preserve the alternatives below and add later decisions as they occur.
@@ -310,7 +313,7 @@ The submission must contain five artifacts:
 | Carrier parallelism | Three overlapping real outbound calls in the final trial | Workflow-only overlap; three sequential calls | It directly proves the challenge's market-negotiation requirement | The account, bridge, and application must sustain three independent live sessions safely |
 | Realtime transport | WebRTC for P0 browser audio and a FastAPI WebSocket bridge for P0.1 Twilio calls | Direct SIP; provider-managed voice-agent platform | Both channels reuse the same backend tools and mandate enforcement | The bridge must be tested under interruption and disconnects |
 | Voice model | `gpt-realtime-2.1` | Another Realtime model available to the account; text-only model | It is the current model recommended in the official Realtime voice-agent overview | Account access and limits must be checked before implementation |
-| Written recap | Remain simulated during the hackathon | Add SMS now; support SMS and email initially | A2P 10DLC registration could not be enabled within the schedule, so telephony and handoff take priority | The demo labels the recap `SIMULATED`; `VERIFIED` remains unreachable without accepted external delivery |
+| Written recap | Twilio Programmable Messaging for WhatsApp through an opted-in Sandbox participant | Keep simulated; add SMS; support SMS and email initially | It bypasses the unavailable A2P 10DLC route and is the smallest real-channel proof that fits the schedule | Only a signed `delivered` callback plus playable timestamp evidence promotes the final active winner to `VERIFIED`; production use requires sender and template policy work |
 | Recovery autonomy | Renegotiate with the winner, then reconfirm the best valid alternative | Always require approval; switch without reconfirmation | It shows bounded autonomy while preventing stale quotes from becoming commitments | Mandate-safe changes notify the coordinator; conflicts or no viable option escalate |
 | Recovery demo | Reproducible browser scripts followed by one authorized real inbound PSTN trial | Browser-only inbound; one improvised branch | Deterministic scripts preserve diagnosis while the real call proves the required channel | Inbound correlation must fail closed before exposing or changing an operation |
 | Human takeover | Join the coordinator to one live call with structured context and stop further AI commitments | Hang up and call back; simulator-only takeover | It satisfies the explicit no-disconnect escalation requirement without moving mandate authority into the provider | One successful sandbox handoff plus focused failure tests completes the dedicated vertical phase |
@@ -322,7 +325,8 @@ The submission must contain five artifacts:
 | Risk | Impact | Mitigation or decision gate |
 | --- | --- | --- |
 | Twilio provisioning, destination restrictions, or phone-number requirements block P0.1 | Critical scoring gap | Provision early, use authorized test numbers, verify account limits, and retain browser plus recorded fallbacks |
-| A simulated recap appears to verify an agreement | Misleading audit evidence | Keep explicit states and reserve `VERIFIED` for accepted external delivery |
+| The WhatsApp recipient has not joined the Sandbox or the 24-hour window expires | The recap cannot be sent as free-form demo content | Enroll the allowlisted participant during setup, open the window immediately before rehearsal, show the remaining fallback as `SIMULATED`, and never fabricate `VERIFIED` |
+| A simulated recap appears to verify an agreement | Misleading audit evidence | Keep explicit states and reserve `VERIFIED` for a signed WhatsApp `delivered` callback plus playable timestamp evidence |
 | Prompt extraction omits or invents a constraint | Calls start under the wrong authority | Validate the structured draft, show the source and policy version, and require coordinator approval before dialing |
 | Carrier selection finds no eligible option | The workflow stalls or dials an unsuitable participant | Escalate before dialing and record failed eligibility reasons |
 | A dispatcher persuades the model to exceed the mandate | Invalid or unsafe commitment | Enforce the mandate in deterministic backend code and reject invalid tool calls |
@@ -341,9 +345,9 @@ The submission must contain five artifacts:
 
 ## Fallback and case checkpoint
 
-The primary P0.1 demo uses Twilio inbound and outbound Voice plus live human takeover through the FastAPI media bridge and provider adapters. Browser voice and text exercise the same tool contracts when telephony or browser audio fails. The browser also preserves deterministic good and bad inbound recovery scripts and simulated recap state. A short recording covers the full operation when the live environment fails, but neither the simulated recap nor the other fallbacks are reported as real-channel evidence.
+The primary P0.1 demo uses Twilio inbound and outbound Voice, one WhatsApp Sandbox recap, and live human takeover through the FastAPI media bridge and provider adapters. Browser voice and text exercise the same tool contracts when telephony or browser audio fails. The browser also preserves deterministic good and bad inbound recovery scripts and simulated recap state. A short recording covers the full operation when the live environment fails, but neither the simulated recap nor the other fallbacks are reported as real-channel evidence.
 
-The case checkpoint selected the real-phone challenge path as the P0.1 evolution while explicitly deferring external written-recap delivery. Implementation may invest in the narrow Twilio Voice and live-handoff boundaries defined here. Direct SIP, production recording infrastructure, real-carrier dialing, external delivery providers, and additional provider integrations remain outside scope until a later explicit decision.
+The case checkpoint selected the complete real-channel challenge path as the P0.1 evolution and restored external written-recap delivery through Twilio WhatsApp after SMS registration proved unavailable. Implementation may invest in the narrow Twilio Voice, WhatsApp-recap, and live-handoff boundaries defined here. Direct SIP, production recording infrastructure, real-carrier dialing, production WhatsApp onboarding, additional delivery channels, and other provider integrations remain outside scope until a later explicit decision.
 
 ## Sources
 
@@ -355,6 +359,8 @@ The case checkpoint selected the real-phone challenge path as the P0.1 evolution
 - [Twilio Voice webhooks documentation](https://www.twilio.com/docs/usage/webhooks/voice-webhooks), consulted for signed inbound call handling and TwiML responses
 - [Twilio Call resource documentation](https://www.twilio.com/docs/voice/api/call-resource), consulted for modifying an in-progress call during handoff
 - [Twilio Conference documentation](https://www.twilio.com/docs/voice/twiml/conference), consulted for preserving a live remote leg while another participant joins
-- [Twilio A2P 10DLC documentation](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc), consulted when the required registration could not be enabled within the hackathon schedule and SMS was deferred
+- [Twilio WhatsApp API overview](https://www.twilio.com/docs/whatsapp/api), consulted for the 24-hour customer-service window, templates, and status callbacks
+- [Twilio Sandbox for WhatsApp documentation](https://www.twilio.com/docs/whatsapp/sandbox), consulted for participant enrollment, Sandbox limitations, and demo delivery
+- [Twilio outbound Messaging status documentation](https://www.twilio.com/docs/messaging/guides/track-outbound-message-status), consulted for signed, channel-specific, potentially out-of-order status callbacks
 - [Twilio outbound calls with Python, FastAPI, and OpenAI Realtime](https://www.twilio.com/en-us/blog/outbound-calls-python-openai-realtime-api-voice), selected as the P0.1 implementation baseline
 - [Twilio trial account documentation](https://www.twilio.com/docs/usage/tutorials/how-to-use-your-free-trial-account), consulted for verified-destination and trial-account constraints

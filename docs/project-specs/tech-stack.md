@@ -25,7 +25,7 @@ The repository's application programming interface (API) remains a backend for f
 | Browser voice | OpenAI Realtime over Web Real-Time Communication (WebRTC) | Supports low-latency speech, interruptions, events, and tool calls without routing browser audio through the API. |
 | Server AI | OpenAI API for schema-validated intake extraction | Keeps the prompt policy and standard API credentials server-side; deterministic validation follows every extraction. |
 | Telephony | Twilio Programmable Voice and bidirectional Media Streams behind an adapter | Defines the minimum P0.1 inbound and outbound public switched telephone network (PSTN) path while keeping telephony out of domain rules. |
-| Written recap | Deterministic simulated delivery in the existing application boundary | A2P 10DLC registration could not be enabled within the hackathon schedule; the UI keeps `SIMULATED` explicit and never promotes the winner to `VERIFIED`. |
+| Written recap | Twilio Programmable Messaging for WhatsApp behind a provider-neutral delivery adapter | Avoids the unavailable A2P 10DLC path while proving one real recap to an allowlisted, opted-in Sandbox participant; simulated delivery remains the deterministic fallback. |
 | Local runtime | Docker Compose for PostgreSQL, `uv` for Python, and `pnpm` for the frontend | Reuses the checked-in development workflow and keeps local setup small. |
 
 Dependency versions remain in manifests and lockfiles rather than this document.
@@ -46,7 +46,7 @@ FastAPI owns:
 - versioned `/v1` routes and the committed OpenAPI document;
 - demo authorization, explicit Cross-Origin Resource Sharing (CORS) origins, rate limits, correlation IDs, and safe error translation;
 - minting narrowly scoped Realtime client credentials without caching them;
-- Twilio request verification, inbound voice and call-status webhook ingress, live-handoff controls, and the server WebSocket boundary for Media Streams;
+- Twilio request verification, inbound voice, call-status, WhatsApp delivery-status webhook ingress, live-handoff controls, and the server WebSocket boundary for Media Streams;
 - dependency wiring from HTTP or WebSocket ingress to typed core services.
 
 FastAPI remains thin. It does not own carrier ranking, mandate decisions, quote eligibility, winner transitions, persistence queries, or provider payload mapping. Application HTTP contracts are regenerated with `make generate` after a Pydantic change.
@@ -59,7 +59,7 @@ The backend owns:
 - carrier eligibility, fixed ranking, negotiation state, quote validity, and the atomic active-winner transition;
 - commitment evidence, recap state, call briefs, notifications, escalations, and append-only audit events;
 - repositories, transactions, and migrations;
-- provider-neutral Realtime, telephony, and recording protocols;
+- provider-neutral Realtime, telephony, recording, and written-delivery protocols;
 - provider adapters containing external URLs, headers, payload models, event mapping, retries, and redaction.
 
 The backend package never imports FastAPI. Provider mutations must be explicit, idempotent where retry is possible, and correlated to the operation and call session.
@@ -81,13 +81,13 @@ Playable demo audio is private and remains outside Git and PostgreSQL binary col
 - Start with low reasoning effort and measure mandate accuracy and response latency against the fixed trial matrix before changing the configuration.
 - Deterministic text mode exercises the same API contracts when speech is unavailable.
 
-## Twilio telephony decisions
+## Twilio telephony and messaging decisions
 
-P0.1 uses Twilio for three overlapping outbound calls, one inbound recovery, and one live coordinator takeover. A human must explicitly start outbound dialing, and every participant must be allowlisted and authorized. Volta discloses that it is an AI system at the beginning of each call and obtains consent before recording. Written recaps remain simulated during the hackathon.
+P0.1 uses Twilio for three overlapping outbound calls, one inbound recovery, one WhatsApp recap, and one live coordinator takeover. A human must explicitly start outbound dialing, and every participant must be allowlisted and authorized. Volta discloses that it is an AI system at the beginning of each call and obtains consent before recording. The recap proof uses a Twilio Sandbox participant who has explicitly joined and opened the 24-hour customer-service window; production sender onboarding and custom template approval remain outside the hackathon gate.
 
-FastAPI terminates the public HTTPS and secure-WebSocket ingress. The Twilio adapters own call creation, live-call updates, and provider-specific event mapping. The Realtime adapter owns the server-side OpenAI event stream. These adapters delegate tools and state changes to the same core services used by browser voice and text mode.
+FastAPI terminates the public HTTPS and secure-WebSocket ingress. The Twilio adapters own call creation, WhatsApp submission, live-call updates, and provider-specific event mapping. The Realtime adapter owns the server-side OpenAI event stream. These adapters delegate tools and state changes to the same core services used by browser voice and text mode.
 
-Each provider phase must verify current Twilio signatures, trial restrictions, regional rules, number requirements, recording obligations, and retry behavior against official documentation. Short Message Service (SMS), email, other external recap delivery, direct Session Initiation Protocol (SIP), production contact-center routing, and telephony scale beyond the fixed demo are not selected technologies.
+Each provider phase must verify current Twilio signatures, trial and Sandbox restrictions, regional rules, number requirements, WhatsApp session and template rules, callback status semantics, recording obligations, and retry behavior against official documentation. Short Message Service (SMS), email, a second recap channel, direct Session Initiation Protocol (SIP), production WhatsApp onboarding, production contact-center routing, and telephony scale beyond the fixed demo are not selected technologies.
 
 ## Yuno decision
 
@@ -106,6 +106,7 @@ Every layer has a deterministic local gate and a separately reported provider tr
 | Rendered journey | Browser checks for responsive layout, console errors, network failures, permission denial, loading, reconnect, and fallback states. |
 | AI and voice | Mocked event tests plus a separate credentialed matrix for English, natural pacing, noise, contradiction, barge-in, and disconnects. |
 | Telephony | Mocked adapters and signature tests, followed by separately marked calls to authorized test destinations. |
+| WhatsApp recap | Mocked idempotency, signature, and out-of-order status tests, followed by one separately marked delivery to an allowlisted, opted-in Sandbox participant. |
 | Security | Secret and personal-data diff review, origin and authorization tests, redacted-log checks, and recording-access review. |
 
 `make check` is the repository-wide handoff gate for cross-layer code. Credentialed provider trials are reported separately because they require account access, authorized participants, and explicit scope.

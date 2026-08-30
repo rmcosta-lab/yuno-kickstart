@@ -271,13 +271,13 @@ This documentation and demo-assets phase can run in parallel with P0.1 implement
 
 Slug: pass-final-telephony-trial
 
-Depends on: 20, 21, 26, 28
+Depends on: 20, 21, 26, 27, 28
 
 Conflicts with: none
 
-Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The final winner retains a recap explicitly labeled `SIMULATED`, playable timestamp evidence, and a structured brief. Browser voice, text, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
+Gate: An authorized rehearsal exercises the canonical three-carrier fixture through three overlapping outbound public switched telephone network (PSTN) sessions. It completes one mandate-safe inbound recovery call, delivers the final active winner's recap through Twilio WhatsApp, and transfers one live call to the coordinator without disconnecting the remote participant or losing structured context. The delivered recap promotes the winner to `VERIFIED` only when playable timestamp evidence exists. Browser voice, text, simulated recap, and a private recording remain ready as fallbacks, and all five submission artifacts fit the allotted time.
 
-The cross-layer trial reports account restrictions, call outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It explicitly reports that no external recap was delivered and never presents simulated delivery or workflow-only concurrency as challenge-verified evidence.
+The cross-layer trial reports account and Sandbox restrictions, call and WhatsApp delivery outcomes, overlap, latency, handoff continuity, disconnects, and every remaining challenge gap. It never presents API submission, simulated delivery, or workflow-only concurrency as challenge-verified evidence.
 
 ### Fase 23 — Implement the OpenAI Realtime adapter
 
@@ -326,6 +326,18 @@ Conflicts with: none
 Gate: A signed Twilio voice webhook answers one authorized real inbound PSTN call. Fail-closed server-owned correlation resolves the allowlisted synthetic caller and exactly one active operation. The call applies artificial intelligence disclosure and recording consent before opening the existing bidirectional Media Stream. One driver-delay scenario uses the browser's deterministic recovery services, completes one mandate-safe update, and persists its status, brief, playable timestamp evidence, and audit events. Focused tests reject invalid signatures, ambiguous correlation, duplicate events, and out-of-mandate changes. One authorized sandbox call proves the accepted path.
 
 This cross-layer telephony phase replaces the simulated inbound transport without duplicating recovery rules. Provider request parsing, signature verification, TwiML, and media ingress stay in FastAPI; operation correlation, mandate decisions, persistence, and audit stay in backend services, and the existing control tower renders only typed application state.
+
+### Fase 27 — Send and verify WhatsApp recaps
+
+Slug: send-verified-whatsapp-recaps
+
+Depends on: 19, 25
+
+Conflicts with: none
+
+Gate: A provider-neutral delivery service idempotently sends the final active winner's bounded recap through Twilio Programmable Messaging for WhatsApp to one allowlisted synthetic participant who explicitly joined the Sandbox and opened the 24-hour customer-service window. Signed asynchronous status callbacks persist provider-neutral delivery state despite duplicates or out-of-order arrival, and only `delivered` plus playable `audio_start_ms` evidence promotes the agreement to `VERIFIED`. Focused adapter, API, generated-client, and control-tower tests cover invalid signatures, retry, timeout, missing evidence, safe errors, and redaction. One authorized Sandbox delivery and visible status prove the accepted path.
+
+This vertical evidence phase owns the external recap adapter, callback ingress, durable verification transition, and visible delivery status. It keeps contact details out of public contracts and logs, preserves `SIMULATED` as the deterministic fallback, and treats an accepted or queued API response as unverified. Production sender onboarding and custom template approval are follow-up work, not hidden prerequisites for the Sandbox gate.
 
 ### Fase 28 — Transfer a live call to the human coordinator
 
