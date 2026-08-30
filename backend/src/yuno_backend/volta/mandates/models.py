@@ -214,8 +214,12 @@ class Mandate:
         _require_tuple(self.authorized_actions, "authorized_actions")
         if not all(isinstance(action, MandateAction) for action in self.authorized_actions):
             raise InvalidDomainValue("authorized_actions", "mandate_action_items_required")
-        if not self.approval_actor.strip():
-            raise InvalidDomainValue("approval_actor", "non_empty_required")
+        if (
+            not isinstance(self.approval_actor, str)
+            or not self.approval_actor.strip()
+            or len(self.approval_actor) > 500
+        ):
+            raise InvalidDomainValue("approval_actor", "bounded_non_empty_required")
         _require_utc(self.approved_at, "approved_at")
 
 

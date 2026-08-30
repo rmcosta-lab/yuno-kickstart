@@ -217,7 +217,9 @@ _audit_events = Table(
         "'QUOTE_RECORDED', 'QUOTE_REJECTED', 'COMMITMENT_ACTIVATED', "
         "'COMMITMENT_SUPERSEDED', 'EVIDENCE_RECORDED', 'BRIEF_GENERATED', "
         "'RECAP_GENERATED', 'RECOVERY_REPLACEMENT_APPLIED', 'POST_CONTACT_ESCALATED', "
-        "'ESCALATION_RESUMED') AND metadata = '{}'::jsonb)",
+        "'ESCALATION_RESUMED', 'MANDATE_REPLACED', 'ESCALATION_RESOLVED', "
+        "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED') "
+        "AND metadata = '{}'::jsonb)",
         name="ck_volta_audit_events_metadata_schema",
     ),
     ForeignKeyConstraint(
@@ -280,6 +282,7 @@ _carrier_sessions = Table(
     UniqueConstraint(
         "call_id", "operation_id", "carrier_id", name="uq_volta_sessions_call_operation_carrier"
     ),
+    UniqueConstraint("call_id", "operation_id", name="uq_volta_sessions_call_operation"),
     ForeignKeyConstraint(
         ["negotiation_id", "operation_id"],
         ["volta_negotiations.id", "volta_negotiations.operation_id"],
@@ -710,7 +713,8 @@ _post_contact_escalations = Table(
     _metadata,
     Column("id", UUID(as_uuid=True), nullable=False),
     Column("operation_id", UUID(as_uuid=True), nullable=False),
-    Column("commitment_id", UUID(as_uuid=True), nullable=False),
+    Column("commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("call_id", UUID(as_uuid=True), nullable=True),
     Column("reason_code", Text, nullable=False),
     Column("operation_version", Integer, nullable=False),
     Column("mandate_version", Integer, nullable=False),
@@ -718,6 +722,9 @@ _post_contact_escalations = Table(
     Column("correlation_id", UUID(as_uuid=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("resolved_at", DateTime(timezone=True), nullable=True),
+    Column("conflict", Text, nullable=True),
+    Column("attempted_alternatives", ARRAY(Text), nullable=True),
+    Column("recommended_action", Text, nullable=True),
     PrimaryKeyConstraint("id", name="pk_volta_post_contact_escalations"),
     UniqueConstraint(
         "id", "operation_id", name="uq_volta_post_contact_escalations_id_operation"
@@ -726,6 +733,11 @@ _post_contact_escalations = Table(
         ["commitment_id", "operation_id"],
         ["volta_commitments.id", "volta_commitments.operation_id"],
         name="fk_volta_post_contact_escalations_commitment_operation",
+    ),
+    ForeignKeyConstraint(
+        ["call_id", "operation_id"],
+        ["volta_carrier_sessions.call_id", "volta_carrier_sessions.operation_id"],
+        name="fk_volta_post_contact_escalations_call_operation",
     ),
     CheckConstraint(
         "operation_version > 0", name="ck_volta_post_contact_escalations_op_version"
@@ -736,6 +748,17 @@ _post_contact_escalations = Table(
     CheckConstraint(
         "(resolved AND resolved_at IS NOT NULL) OR (NOT resolved AND resolved_at IS NULL)",
         name="ck_volta_post_contact_escalations_resolved_state",
+    ),
+    CheckConstraint(
+        "(call_id IS NULL AND conflict IS NULL AND attempted_alternatives IS NULL "
+        "AND recommended_action IS NULL) OR "
+        "(call_id IS NOT NULL AND conflict IS NOT NULL AND attempted_alternatives IS NOT NULL "
+        "AND char_length(btrim(conflict)) BETWEEN 1 AND 500 "
+        "AND cardinality(attempted_alternatives) <= 25 "
+        "AND volta_bounded_text_array(attempted_alternatives) "
+        "AND recommended_action IS NOT NULL "
+        "AND char_length(btrim(recommended_action)) BETWEEN 1 AND 500)",
+        name="ck_volta_post_contact_escalations_context",
     ),
 )
 
@@ -788,11 +811,37 @@ _notifications = Table(
     Column("commitment_id", UUID(as_uuid=True), nullable=False),
     Column("reason_code", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("operation_version", Integer, nullable=True),
+    Column("recovery_before", JSONB, nullable=True),
+    Column("recovery_after", JSONB, nullable=True),
+    Column("decision_reason", Text, nullable=True),
+    Column("message", Text, nullable=True),
+    Column("correlation_id", UUID(as_uuid=True), nullable=True),
+    Column("acknowledged_by", Text, nullable=True),
+    Column("acknowledged_at", DateTime(timezone=True), nullable=True),
     PrimaryKeyConstraint("id", name="pk_volta_notifications"),
     ForeignKeyConstraint(
         ["commitment_id", "operation_id"],
         ["volta_commitments.id", "volta_commitments.operation_id"],
         name="fk_volta_notifications_commitment_operation",
+    ),
+    CheckConstraint(
+        "(acknowledged_by IS NULL AND acknowledged_at IS NULL) OR "
+        "(char_length(btrim(acknowledged_by)) BETWEEN 1 AND 500 "
+        "AND acknowledged_at IS NOT NULL)",
+        name="ck_volta_notifications_acknowledgement",
+    ),
+    CheckConstraint(
+        "(operation_version IS NULL AND recovery_before IS NULL AND recovery_after IS NULL "
+        "AND decision_reason IS NULL AND message IS NULL AND correlation_id IS NULL) OR "
+        "(operation_version > 0 AND recovery_before IS NOT NULL "
+        "AND recovery_after IS NOT NULL AND decision_reason IS NOT NULL "
+        "AND message IS NOT NULL AND correlation_id IS NOT NULL "
+        "AND jsonb_typeof(recovery_before) = 'object' "
+        "AND jsonb_typeof(recovery_after) = 'object' "
+        "AND char_length(btrim(decision_reason)) BETWEEN 1 AND 500 "
+        "AND char_length(btrim(message)) BETWEEN 1 AND 500)",
+        name="ck_volta_notifications_recovery_context",
     ),
 )
 
@@ -800,6 +849,11 @@ Index("ix_volta_call_briefs_operation", _call_briefs.c.operation_id)
 Index("ix_volta_recaps_operation", _recaps.c.operation_id)
 Index(
     "ix_volta_post_contact_escalations_operation", _post_contact_escalations.c.operation_id
+)
+Index(
+    "ix_volta_post_contact_escalations_call",
+    _post_contact_escalations.c.call_id,
+    postgresql_where=_post_contact_escalations.c.call_id.is_not(None),
 )
 Index(
     "uq_volta_post_contact_escalations_one_unresolved",

@@ -52,6 +52,9 @@ class InMemoryOperationRepository:
         self.add_calls += 1
         self.values[operation.id] = operation
 
+    async def replace_mandate(self, operation: Operation) -> None:
+        self.values[operation.id] = operation
+
 
 @dataclass
 class InMemoryAuditEventRepository:

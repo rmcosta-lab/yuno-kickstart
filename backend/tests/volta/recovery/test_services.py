@@ -1,29 +1,49 @@
 from dataclasses import replace as dc_replace
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from yuno_backend.volta.mandates.errors import MandateConflict
+from yuno_backend.volta.mandates.models import Money, OperationStatus, PickupWindow
 from yuno_backend.volta.mandates.services import MandatePolicy
-from yuno_backend.volta.negotiations.errors import StaleOperationVersion
+from yuno_backend.volta.negotiations.errors import CallSessionNotFound, StaleOperationVersion
 from yuno_backend.volta.negotiations.models import CommitmentDisposition
 from yuno_backend.volta.recovery.commands import (
+    AcknowledgeNotificationCommand,
+    CreateEscalationCommand,
+    ReplaceMandateCommand,
     ResumeAfterEscalationCommand,
     SimulateInboundRecoveryCommand,
 )
 from yuno_backend.volta.recovery.errors import (
     CommitmentNotFound,
+    EscalationAlreadyResolved,
+    EscalationContextConflict,
     EscalationNotFound,
     InvalidCommitmentDisposition,
     MandateVersionNotAdvanced,
+    NotificationAlreadyAcknowledged,
+    NotificationNotFound,
     OperationBlockedByEscalation,
 )
-from yuno_backend.volta.recovery.models import RecoveryOutcome
+from yuno_backend.volta.recovery.models import (
+    Notification,
+    PostContactEscalation,
+    RecoveryDecision,
+    RecoveryDecisionState,
+    RecoveryOutcome,
+)
 from yuno_backend.volta.recovery.services import (
+    AcknowledgeNotificationService,
+    CreateEscalationService,
+    ReplaceMandateService,
     ResumeAfterEscalationService,
     SimulateInboundRecoveryService,
 )
 
 from .conftest import (
+    CALL_ID,
     OPERATION_ID,
     Clock,
     Ids,
@@ -46,6 +66,28 @@ def _recovery_command(**overrides: object) -> SimulateInboundRecoveryCommand:
     }
     values.update(overrides)
     return SimulateInboundRecoveryCommand(**values)  # type: ignore[arg-type]
+
+
+def _notification(notification_id: int = 500) -> Notification:
+    active = active_commitment()
+    state = RecoveryDecisionState(
+        operation_version=2,
+        operation_status=OperationStatus.COMMITTED,
+        active_commitment_id=active.id,
+        carrier_id=active.carrier_id,
+        agreed_terms=active.agreed_terms,
+    )
+    return Notification(
+        UUID(int=notification_id),
+        OPERATION_ID,
+        active.id,
+        "MANDATE_SAFE_REPLACEMENT",
+        operation().created_at,
+        operation_version=2,
+        recovery_decision=RecoveryDecision(state, state, "MANDATE_SAFE_REPLACEMENT"),
+        message="A mandate-safe replacement commitment was activated.",
+        correlation_id=UUID(int=notification_id + 1),
+    )
 
 
 async def test_mandate_safe_attempt_atomically_replaces_and_notifies() -> None:
@@ -180,3 +222,337 @@ async def test_resume_rejects_unknown_escalation_and_is_idempotent_once_resolved
         ResumeAfterEscalationCommand(OPERATION_ID, 4, escalated.escalation_id, 3, UUID(int=922))
     )
     assert replay == resolved
+
+
+async def test_replace_mandate_appends_version_resolves_escalation_and_audits() -> None:
+    active = active_commitment()
+    escalation = PostContactEscalation(
+        UUID(int=300),
+        OPERATION_ID,
+        active.id,
+        "OUT_OF_MANDATE",
+        2,
+        1,
+        False,
+        UUID(int=301),
+        operation().created_at,
+    )
+    uow = Uow(
+        operation(status=OperationStatus.ESCALATED),
+        {active.id: active},
+        escalations={escalation.id: escalation},
+    )
+    service = ReplaceMandateService(uow, MandatePolicy(), Clock(), Ids())
+
+    result = await service.replace(
+        ReplaceMandateCommand(
+            OPERATION_ID,
+            2,
+            escalation.id,
+            Money(Decimal("2000"), "MXN"),
+            PickupWindow(date(2026, 9, 1), date(2026, 9, 4)),
+            ("sealed",),
+            ("weather",),
+            "coordinator",
+            UUID(int=302),
+        )
+    )
+
+    assert result.version == 3
+    assert result.mandate.version == 2
+    assert result.mandate.approval_actor == "coordinator"
+    assert uow.post_contact_escalations.values[escalation.id].resolved
+    assert {event.event_type for event in uow.audit_events.values.values()} == {
+        "MANDATE_REPLACED",
+        "ESCALATION_RESOLVED",
+    }
+    assert all(
+        event.actor_kind.value == "COORDINATOR" for event in uow.audit_events.values.values()
+    )
+    assert uow.commits == 1
+
+    with pytest.raises(EscalationAlreadyResolved):
+        await service.replace(
+            ReplaceMandateCommand(
+                OPERATION_ID,
+                3,
+                escalation.id,
+                result.mandate.maximum_amount,
+                result.mandate.pickup_window,
+                result.mandate.allowed_conditions,
+                result.mandate.escalation_conditions,
+                "coordinator",
+                UUID(int=303),
+            )
+        )
+
+
+async def test_replace_mandate_rolls_back_all_in_memory_writes_on_audit_failure() -> None:
+    active = active_commitment()
+    escalation = PostContactEscalation(
+        UUID(int=350),
+        OPERATION_ID,
+        active.id,
+        "OUT_OF_MANDATE",
+        2,
+        1,
+        False,
+        UUID(int=351),
+        operation().created_at,
+    )
+    original = operation(status=OperationStatus.ESCALATED)
+    uow = Uow(original, {active.id: active}, escalations={escalation.id: escalation})
+
+    async def fail_audit(_: object) -> None:
+        raise RuntimeError("injected audit failure")
+
+    uow.audit_events.add = fail_audit  # type: ignore[method-assign]
+    service = ReplaceMandateService(uow, MandatePolicy(), Clock(), Ids())
+    with pytest.raises(RuntimeError, match="injected audit failure"):
+        await service.replace(
+            ReplaceMandateCommand(
+                OPERATION_ID,
+                2,
+                escalation.id,
+                Money(Decimal("2000"), "MXN"),
+                original.mandate.pickup_window,
+                original.mandate.allowed_conditions,
+                original.mandate.escalation_conditions,
+                "coordinator",
+                UUID(int=352),
+            )
+        )
+    assert uow.operations.value == original
+    assert uow.post_contact_escalations.values[escalation.id] == escalation
+    assert not uow.audit_events.values
+    assert uow.commits == 0
+    assert uow.rollbacks == 1
+
+
+async def test_replace_mandate_rejects_missing_foreign_and_stale_without_writes() -> None:
+    active = active_commitment()
+    original = operation(status=OperationStatus.ESCALATED)
+    foreign = PostContactEscalation(
+        UUID(int=370),
+        UUID(int=999),
+        active.id,
+        "OUT_OF_MANDATE",
+        2,
+        1,
+        False,
+        UUID(int=371),
+        original.created_at,
+    )
+    for escalation_id, escalations, expected_version in (
+        (UUID(int=999), {}, 2),
+        (foreign.id, {foreign.id: foreign}, 2),
+        (foreign.id, {foreign.id: foreign}, 99),
+    ):
+        uow = Uow(original, {active.id: active}, escalations=escalations)
+        with pytest.raises((EscalationNotFound, StaleOperationVersion)):
+            await ReplaceMandateService(uow, MandatePolicy(), Clock(), Ids()).replace(
+                ReplaceMandateCommand(
+                    OPERATION_ID,
+                    expected_version,
+                    escalation_id,
+                    original.mandate.maximum_amount,
+                    original.mandate.pickup_window,
+                    original.mandate.allowed_conditions,
+                    original.mandate.escalation_conditions,
+                    "coordinator",
+                    UUID(int=372),
+                )
+            )
+        assert uow.operations.value == original
+        assert uow.post_contact_escalations.values == escalations
+        assert not uow.audit_events.values
+        assert uow.commits == 0
+
+
+async def test_replace_mandate_rejects_invalid_values_without_writes() -> None:
+    active = active_commitment()
+    escalation = PostContactEscalation(
+        UUID(int=380),
+        OPERATION_ID,
+        active.id,
+        "OUT_OF_MANDATE",
+        2,
+        1,
+        False,
+        UUID(int=381),
+        operation().created_at,
+    )
+    original = operation(status=OperationStatus.ESCALATED)
+    for maximum_amount, pickup_window, allowed_conditions in (
+        (Money(Decimal("-1"), "MXN"), original.mandate.pickup_window, ("sealed",)),
+        (Money(Decimal("2000"), "USD"), original.mandate.pickup_window, ("sealed",)),
+        (
+            Money(Decimal("2000"), "MXN"),
+            PickupWindow(date(2026, 9, 4), date(2026, 9, 1)),
+            ("sealed",),
+        ),
+        (
+            Money(Decimal("2000"), "MXN"),
+            original.mandate.pickup_window,
+            ("",),
+        ),
+    ):
+        uow = Uow(original, {active.id: active}, escalations={escalation.id: escalation})
+        with pytest.raises(MandateConflict):
+            await ReplaceMandateService(uow, MandatePolicy(), Clock(), Ids()).replace(
+                ReplaceMandateCommand(
+                    OPERATION_ID,
+                    2,
+                    escalation.id,
+                    maximum_amount,
+                    pickup_window,
+                    allowed_conditions,
+                    original.mandate.escalation_conditions,
+                    "coordinator",
+                    UUID(int=382),
+                )
+            )
+        assert uow.operations.value == original
+        assert uow.post_contact_escalations.values[escalation.id] == escalation
+        assert not uow.audit_events.values
+        assert uow.commits == 0
+
+
+async def test_explicit_escalation_supports_call_without_commitment_and_blocks_duplicate() -> None:
+    uow = Uow(operation(status=OperationStatus.NEGOTIATING))
+    service = CreateEscalationService(uow, Clock(), Ids())
+    command = CreateEscalationCommand(
+        CALL_ID,
+        2,
+        "Carrier cannot honor the pickup window.",
+        ("Asked for another slot.",),
+        "Coordinator should choose a fallback.",
+        UUID(int=400),
+    )
+
+    escalation = await service.create(command)
+
+    assert escalation.call_id == CALL_ID
+    assert escalation.commitment_id is None
+    assert escalation.context is not None
+    assert uow.operations.value.status is OperationStatus.ESCALATED
+    assert not uow.commitments.values
+    with pytest.raises(EscalationContextConflict):
+        await service.create(
+            CreateEscalationCommand(
+                CALL_ID,
+                3,
+                "Another conflict.",
+                (),
+                "Review.",
+                UUID(int=401),
+            )
+        )
+
+
+async def test_explicit_escalation_ignores_active_commitment_from_another_call() -> None:
+    active = dc_replace(active_commitment(), call_id=UUID(int=777))
+    uow = Uow(operation(status=OperationStatus.NEGOTIATING), {active.id: active})
+    escalation = await CreateEscalationService(uow, Clock(), Ids()).create(
+        CreateEscalationCommand(
+            CALL_ID,
+            2,
+            "The selected call needs coordinator review.",
+            (),
+            "Review this call.",
+            UUID(int=450),
+        )
+    )
+    assert escalation.commitment_id is None
+    assert uow.commitments.values[active.id] == active
+
+
+async def test_explicit_escalation_rejects_missing_call_and_stale_without_writes() -> None:
+    for call_id, expected_version in ((UUID(int=999), 2), (CALL_ID, 99)):
+        original = operation(status=OperationStatus.NEGOTIATING)
+        uow = Uow(original)
+        with pytest.raises((CallSessionNotFound, StaleOperationVersion)):
+            await CreateEscalationService(uow, Clock(), Ids()).create(
+                CreateEscalationCommand(
+                    call_id,
+                    expected_version,
+                    "Conflict.",
+                    (),
+                    "Review.",
+                    UUID(int=460),
+                )
+            )
+        assert uow.operations.value == original
+        assert not uow.post_contact_escalations.values
+        assert not uow.audit_events.values
+        assert uow.commits == 0
+
+
+async def test_explicit_escalation_rolls_back_on_audit_failure() -> None:
+    original = operation(status=OperationStatus.NEGOTIATING)
+    uow = Uow(original)
+
+    async def fail_audit(_: object) -> None:
+        raise RuntimeError("injected audit failure")
+
+    uow.audit_events.add = fail_audit  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="injected audit failure"):
+        await CreateEscalationService(uow, Clock(), Ids()).create(
+            CreateEscalationCommand(
+                CALL_ID,
+                2,
+                "Conflict.",
+                (),
+                "Review.",
+                UUID(int=470),
+            )
+        )
+    assert uow.operations.value == original
+    assert not uow.post_contact_escalations.values
+    assert not uow.audit_events.values
+    assert uow.commits == 0
+
+
+async def test_notification_acknowledgement_is_idempotent_and_actor_is_immutable() -> None:
+    active = active_commitment()
+    uow = Uow(operation(), {active.id: active})
+    notification = _notification()
+    uow.notifications.values[notification.id] = notification
+    service = AcknowledgeNotificationService(uow, Clock(), Ids())
+    command = AcknowledgeNotificationCommand(notification.id, 2, "coordinator", UUID(int=501))
+
+    acknowledged = await service.acknowledge(command)
+    replay = await service.acknowledge(command)
+
+    assert acknowledged == replay
+    assert acknowledged.acknowledged_by == "coordinator"
+    assert acknowledged.acknowledged_at == Clock().now()
+    assert acknowledged.operation_version == 2
+    assert uow.operations.value.version == 3
+    assert len(uow.audit_events.values) == 1
+    with pytest.raises(NotificationAlreadyAcknowledged):
+        await service.acknowledge(
+            AcknowledgeNotificationCommand(notification.id, 3, "other", UUID(int=502))
+        )
+    with pytest.raises(NotificationNotFound):
+        await service.acknowledge(
+            AcknowledgeNotificationCommand(UUID(int=999), 3, "coordinator", UUID(int=503))
+        )
+
+
+async def test_notification_acknowledgement_rejects_stale_before_first_write() -> None:
+    active = active_commitment()
+    original = operation()
+    notification = _notification(550)
+    uow = Uow(original, {active.id: active})
+    uow.notifications.values[notification.id] = notification
+    with pytest.raises(StaleOperationVersion):
+        await AcknowledgeNotificationService(uow, Clock(), Ids()).acknowledge(
+            AcknowledgeNotificationCommand(
+                notification.id, 99, "coordinator", UUID(int=551)
+            )
+        )
+    assert uow.operations.value == original
+    assert uow.notifications.values[notification.id] == notification
+    assert not uow.audit_events.values
+    assert uow.commits == 0

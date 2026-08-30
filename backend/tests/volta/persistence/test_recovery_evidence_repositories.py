@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from yuno_backend.volta.evidence.commands import (
@@ -24,22 +24,32 @@ from yuno_backend.volta.evidence.services import (
     GenerateRecapService,
     RecordEvidenceService,
 )
+from yuno_backend.volta.mandates.models import Money
 from yuno_backend.volta.mandates.services import MandatePolicy
 from yuno_backend.volta.negotiations.models import CommitmentDisposition
 from yuno_backend.volta.persistence import SqlAlchemyOperationUnitOfWork
 from yuno_backend.volta.persistence import repositories as repository_module
 from yuno_backend.volta.persistence.tables import (
     _agreement_evidence,
+    _audit_events,
     _commitments,
+    _mandates,
+    _notifications,
     _post_contact_escalations,
 )
 from yuno_backend.volta.recovery.commands import (
+    AcknowledgeNotificationCommand,
+    CreateEscalationCommand,
+    ReplaceMandateCommand,
     ResumeAfterEscalationCommand,
     SimulateInboundRecoveryCommand,
 )
 from yuno_backend.volta.recovery.errors import OperationBlockedByEscalation, StaleOperationVersion
 from yuno_backend.volta.recovery.models import RecoveryAttempt, RecoveryOutcome
 from yuno_backend.volta.recovery.services import (
+    AcknowledgeNotificationService,
+    CreateEscalationService,
+    ReplaceMandateService,
     ResumeAfterEscalationService,
     SimulateInboundRecoveryService,
 )
@@ -255,6 +265,130 @@ async def test_second_unresolved_escalation_for_same_operation_is_rejected(
         await engine.dispose()
 
 
+async def test_phase24_constraints_reject_unsafe_context_and_partial_acknowledgement(
+    phase14_database_url: str,
+) -> None:
+    engine, factory = _factory(phase14_database_url)
+    base = 23500
+    try:
+        operation_id, commitment = await _seed_winner(factory, base)
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_post_contact_escalations).values(
+                        id=UUID(int=base + 1),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        call_id=commitment.call_id,
+                        reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                        operation_version=4,
+                        mandate_version=1,
+                        resolved=False,
+                        correlation_id=UUID(int=base + 2),
+                        created_at=FixedClock().now(),
+                        resolved_at=None,
+                        conflict="x" * 501,
+                        attempted_alternatives=[],
+                        recommended_action="review",
+                    )
+                )
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_post_contact_escalations).values(
+                        id=UUID(int=base + 8),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        call_id=commitment.call_id,
+                        reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                        operation_version=4,
+                        mandate_version=1,
+                        resolved=False,
+                        correlation_id=UUID(int=base + 9),
+                        created_at=FixedClock().now(),
+                        resolved_at=None,
+                        conflict="Valid conflict.",
+                        attempted_alternatives=[""],
+                        recommended_action="Review.",
+                    )
+                )
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_post_contact_escalations).values(
+                        id=UUID(int=base + 10),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        call_id=commitment.call_id,
+                        reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                        operation_version=4,
+                        mandate_version=1,
+                        resolved=False,
+                        correlation_id=UUID(int=base + 11),
+                        created_at=FixedClock().now(),
+                        resolved_at=None,
+                        conflict="Valid conflict.",
+                        attempted_alternatives=["x" * 501],
+                        recommended_action="Review.",
+                    )
+                )
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_post_contact_escalations).values(
+                        id=UUID(int=base + 4),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        call_id=commitment.call_id,
+                        reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                        operation_version=4,
+                        mandate_version=1,
+                        resolved=False,
+                        correlation_id=UUID(int=base + 5),
+                        created_at=FixedClock().now(),
+                        resolved_at=None,
+                        conflict=None,
+                        attempted_alternatives=None,
+                        recommended_action=None,
+                    )
+                )
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_post_contact_escalations).values(
+                        id=UUID(int=base + 6),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        call_id=None,
+                        reason_code="EXPLICIT_COORDINATOR_ESCALATION",
+                        operation_version=4,
+                        mandate_version=1,
+                        resolved=False,
+                        correlation_id=UUID(int=base + 7),
+                        created_at=FixedClock().now(),
+                        resolved_at=None,
+                        conflict="Conflict.",
+                        attempted_alternatives=[],
+                        recommended_action="Review.",
+                    )
+                )
+        async with factory.begin() as session:
+            with pytest.raises(IntegrityError):
+                await session.execute(
+                    insert(_notifications).values(
+                        id=UUID(int=base + 3),
+                        operation_id=operation_id,
+                        commitment_id=commitment.id,
+                        reason_code="MANDATE_SAFE_REPLACEMENT",
+                        created_at=FixedClock().now(),
+                        acknowledged_by="coordinator",
+                        acknowledged_at=None,
+                    )
+                )
+    finally:
+        await engine.dispose()
+
+
 async def test_mandate_safe_replacement_round_trips_and_out_of_mandate_escalation_blocks(
     phase14_database_url: str,
 ) -> None:
@@ -394,3 +528,174 @@ async def test_concurrent_recovery_replacement_attempts_leave_exactly_one_active
         assert active[0].id == winner.resulting_commitment_id
     finally:
         await engine.dispose()
+
+
+async def test_phase24_recovery_services_round_trip_immutable_state(
+    phase14_database_url: str,
+) -> None:
+    engine, factory = _factory(phase14_database_url)
+    base = 25000
+    try:
+        operation_id, commitment = await _seed_winner(factory, base)
+        escalation = await CreateEscalationService(
+            SqlAlchemyOperationUnitOfWork(factory),
+            FixedClock(),
+            FixedIds([UUID(int=value) for value in range(base + 100, base + 103)]),
+        ).create(
+            CreateEscalationCommand(
+                commitment.call_id,
+                4,
+                "Carrier rejected the current pickup window.",
+                ("Requested a later slot.",),
+                "Approve a revised mandate.",
+                UUID(int=base + 103),
+            )
+        )
+        assert escalation.context is not None
+
+        async with SqlAlchemyOperationUnitOfWork(factory) as uow:
+            current = await uow.operations.get(operation_id)
+        assert current is not None
+        replaced = await ReplaceMandateService(
+            SqlAlchemyOperationUnitOfWork(factory),
+            MandatePolicy(),
+            FixedClock(),
+            FixedIds([UUID(int=value) for value in range(base + 110, base + 114)]),
+        ).replace(
+            ReplaceMandateCommand(
+                operation_id,
+                5,
+                escalation.id,
+                Money(Decimal("2000"), "MXN"),
+                current.mandate.pickup_window,
+                current.mandate.allowed_conditions,
+                current.mandate.escalation_conditions,
+                "synthetic-coordinator",
+                UUID(int=base + 114),
+            )
+        )
+        assert replaced.mandate.version == 2
+        async with factory() as session:
+            mandate_count = (
+                await session.execute(
+                    select(func.count()).select_from(_mandates).where(
+                        _mandates.c.operation_id == operation_id
+                    )
+                )
+            ).scalar_one()
+            stored_escalation = await repository_module.SqlAlchemyPostContactEscalationRepository(
+                session
+            ).get(escalation.id)
+        assert mandate_count == 2
+        assert stored_escalation is not None and stored_escalation.resolved
+        assert stored_escalation.context == escalation.context
+    finally:
+        await engine.dispose()
+
+
+async def test_phase24_notification_acknowledgement_round_trip_and_replay(
+    phase14_database_url: str,
+) -> None:
+    engine, factory = _factory(phase14_database_url)
+    base = 26000
+    try:
+        operation_id, commitment = await _seed_winner(factory, base)
+        attempt = await SimulateInboundRecoveryService(
+            SqlAlchemyOperationUnitOfWork(factory),
+            MandatePolicy(),
+            FixedClock(),
+            FixedIds([UUID(int=value) for value in range(base + 100, base + 109)]),
+        ).simulate(
+            SimulateInboundRecoveryCommand(
+                operation_id,
+                4,
+                commitment.id,
+                1,
+                replace(commitment.agreed_terms, amount=Decimal("900")),
+                UUID(int=base + 109),
+            )
+        )
+        async with factory() as session:
+            notification = (
+                await repository_module.SqlAlchemyNotificationRepository(
+                    session
+                ).list_by_operation(operation_id)
+            )[0]
+        command = AcknowledgeNotificationCommand(
+            notification.id, 5, "synthetic-coordinator", UUID(int=base + 120)
+        )
+        acknowledged = await AcknowledgeNotificationService(
+            SqlAlchemyOperationUnitOfWork(factory),
+            FixedClock(),
+            FixedIds([UUID(int=base + 121), UUID(int=base + 122)]),
+        ).acknowledge(command)
+        replay = await AcknowledgeNotificationService(
+            SqlAlchemyOperationUnitOfWork(factory), FixedClock(), FixedIds([])
+        ).acknowledge(command)
+        assert attempt.resulting_commitment_id == acknowledged.commitment_id
+        assert replay == acknowledged
+        assert acknowledged.operation_version == notification.operation_version == 5
+        async with factory() as session:
+            audit_count = (
+                await session.execute(
+                    select(func.count()).select_from(_audit_events).where(
+                        _audit_events.c.operation_id == operation_id,
+                        _audit_events.c.event_type == "NOTIFICATION_ACKNOWLEDGED",
+                    )
+                )
+            ).scalar_one()
+            stored = await repository_module.SqlAlchemyNotificationRepository(session).get(
+                notification.id
+            )
+        assert audit_count == 1
+        assert stored == acknowledged
+        assert stored.operation_version == 5
+    finally:
+        await engine.dispose()
+
+
+def test_phase24_downgrade_rejects_incompatible_durable_data_before_ddl(
+    phase14_database_url: str,
+) -> None:
+    base = 27000
+    async def seed_explicit_escalation() -> UUID:
+        engine, factory = _factory(phase14_database_url)
+        operation_id, commitment = await _seed_winner(factory, base)
+        await CreateEscalationService(
+            SqlAlchemyOperationUnitOfWork(factory),
+            FixedClock(),
+            FixedIds(
+                [
+                    UUID(int=base + 100),
+                    UUID(int=base + 101),
+                    UUID(int=base + 102),
+                ]
+            ),
+        ).create(
+            CreateEscalationCommand(
+                commitment.call_id,
+                4,
+                "Carrier needs a coordinator decision.",
+                (),
+                "Review the mandate.",
+                UUID(int=base + 103),
+            )
+        )
+        await engine.dispose()
+        return operation_id
+
+    async def current_revision() -> str:
+        engine, _ = _factory(phase14_database_url)
+        try:
+            async with engine.connect() as connection:
+                return (
+                    await connection.execute(text("SELECT version_num FROM alembic_version"))
+                ).scalar_one()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(seed_explicit_escalation())
+    alembic_config = Config(str(persistence_conftest.ROOT / "backend" / "alembic.ini"))
+    with pytest.raises(RuntimeError, match="reconcile data"):
+        command.downgrade(alembic_config, "-1")
+    assert asyncio.run(current_revision()) == "20260830_24"

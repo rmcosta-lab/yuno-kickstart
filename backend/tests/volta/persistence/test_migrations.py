@@ -95,6 +95,7 @@ EXPECTED_CONSTRAINTS = {
         "pk_volta_carrier_sessions",
         "uq_volta_sessions_negotiation_carrier",
         "uq_volta_sessions_call_operation_carrier",
+        "uq_volta_sessions_call_operation",
         "fk_volta_sessions_negotiation_operation",
         "ck_volta_sessions_priority_positive",
         "ck_volta_sessions_rank",
@@ -184,9 +185,11 @@ EXPECTED_CONSTRAINTS = {
         "pk_volta_post_contact_escalations",
         "uq_volta_post_contact_escalations_id_operation",
         "fk_volta_post_contact_escalations_commitment_operation",
+        "fk_volta_post_contact_escalations_call_operation",
         "ck_volta_post_contact_escalations_op_version",
         "ck_volta_post_contact_escalations_mandate_version",
         "ck_volta_post_contact_escalations_resolved_state",
+        "ck_volta_post_contact_escalations_context",
     },
     "volta_recovery_attempts": {
         "pk_volta_recovery_attempts",
@@ -199,6 +202,8 @@ EXPECTED_CONSTRAINTS = {
     "volta_notifications": {
         "pk_volta_notifications",
         "fk_volta_notifications_commitment_operation",
+        "ck_volta_notifications_acknowledgement",
+        "ck_volta_notifications_recovery_context",
     },
     "volta_text_mutation_idempotency": {
         "pk_volta_text_mutation_idempotency",
@@ -367,6 +372,7 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
     assert indexes["volta_carrier_sessions"] == {  # type: ignore[index]
         "ix_volta_sessions_negotiation",
         "uq_volta_sessions_call_operation_carrier",
+        "uq_volta_sessions_call_operation",
         "uq_volta_sessions_negotiation_carrier",
     }
     assert indexes["volta_pre_contact_escalations"] == {  # type: ignore[index]
@@ -408,6 +414,7 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "uq_volta_recaps_commitment",
     }
     assert indexes["volta_post_contact_escalations"] == {  # type: ignore[index]
+        "ix_volta_post_contact_escalations_call",
         "ix_volta_post_contact_escalations_operation",
         "uq_volta_post_contact_escalations_one_unresolved",
         "uq_volta_post_contact_escalations_id_operation",
@@ -415,7 +422,9 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
     assert indexes["volta_recovery_attempts"] == {  # type: ignore[index]
         "ix_volta_recovery_attempts_operation"
     }
-    assert indexes["volta_notifications"] == {"ix_volta_notifications_operation"}  # type: ignore[index]
+    assert indexes["volta_notifications"] == {  # type: ignore[index]
+        "ix_volta_notifications_operation",
+    }
     assert indexes["volta_text_mutation_idempotency"] == {  # type: ignore[index]
         "ix_volta_text_idempotency_draft",
         "ix_volta_text_idempotency_operation",
@@ -423,7 +432,7 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
 
     command.downgrade(alembic_config, "-1")
     tables_after_one_downgrade, _ = asyncio.run(_volta_tables_and_function(isolated_database_url))
-    assert tables_after_one_downgrade == PHASE14_TABLES
+    assert tables_after_one_downgrade == EXPECTED_TABLES
     _, phase14_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
     assert "COMMITMENT_SUPERSEDED" in phase14_audit_definition
     assert "EVIDENCE_RECORDED" in phase14_audit_definition
