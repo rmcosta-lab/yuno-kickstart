@@ -184,7 +184,7 @@ This phase records the selected private evidence-storage mechanism, access rules
 
 Slug: expose-evidence-recovery-routes
 
-Depends on: 12, 14
+Depends on: 12, 14, 24
 
 Conflicts with: none
 
@@ -287,3 +287,15 @@ Conflicts with: none
 Gate: A backend adapter implements narrow Realtime session configuration and event mapping behind provider-neutral protocols; mocked tests cover session configuration, tool-call and tool-output correlation, provider events, disconnects, timeouts, and redaction, while a separately marked credentialed test reproduces the accepted Phase 02 server WebSocket roundtrip and correlated `audio_start_ms` plus item ID evidence without exposing a standard credential.
 
 This backend-only phase keeps OpenAI URLs, headers, payloads, events, and responses outside the domain and API layers. It does not mint browser credentials, expose an HTTP contract, or allow model events to bypass the deterministic negotiation services.
+
+### Fase 24 — Complete evidence and recovery backend services
+
+Slug: complete-evidence-recovery-services
+
+Depends on: 14
+
+Conflicts with: none
+
+Gate: Backend-only tests prove three outcomes: mandate replacement resolves its post-contact escalation and creates an immutable mandate version; explicit escalation preserves safe structured context without changing a commitment; notification acknowledgement records the actor and timestamp idempotently. PostgreSQL round trips, stale-version handling, audit events, and rollback preserve consistent state. The backend imports no FastAPI types and changes no HTTP contract.
+
+This supporting backend phase defines the typed commands, services, results, and safe exceptions required by the accepted mandate-replacement, escalation-creation, and notification-acknowledgement contracts. It extends the Fase 14 persistence boundary. It does not implement routes, change Pydantic models, regenerate OpenAPI or Orval, or add frontend behavior.
