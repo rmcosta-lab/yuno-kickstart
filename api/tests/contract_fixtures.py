@@ -118,7 +118,6 @@ def evidence() -> dict[str, Any]:
     return {
         "evidence_id": IDS["evidence"],
         "call_id": IDS["call"],
-        "recording_reference": "private-demo-recording-001",
         "audio_start_ms": 4200,
         "item_id": "synthetic-item-001",
         "event_id": "synthetic-event-001",
@@ -165,7 +164,6 @@ def superseded_commitment() -> dict[str, Any]:
             **evidence(),
             "evidence_id": IDS["prior_evidence"],
             "call_id": IDS["prior_call"],
-            "recording_reference": "private-demo-recording-prior",
             "audio_start_ms": 3100,
             "item_id": "synthetic-item-prior",
             "event_id": "synthetic-event-prior",
@@ -197,6 +195,7 @@ def brief() -> dict[str, Any]:
         "brief_id": IDS["brief"],
         "operation_id": IDS["operation"],
         "call_id": IDS["call"],
+        "commitment_id": IDS["commitment"],
         "facts": ["Carrier is available"],
         "objections": [],
         "changes": ["Recovered with a mandate-safe alternative"],

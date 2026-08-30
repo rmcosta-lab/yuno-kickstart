@@ -1,4 +1,4 @@
-import type { ApiErrorResponse } from "./generated/models";
+import { ApiErrorCode, type ApiErrorResponse } from "./generated/models";
 import { getDemoBearerToken } from "../demo-auth";
 
 export type ApiHttpResponse<TData> = {
@@ -18,6 +18,31 @@ const errorMessage = (data: unknown, status: number): string => {
   }
 
   return `API request failed with status ${status}`;
+};
+
+const apiErrorCodes = new Set<string>(Object.values(ApiErrorCode));
+
+const isApiErrorResponse = (value: unknown): value is ApiErrorResponse => {
+  if (typeof value !== "object" || value === null) return false;
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.code === "string" &&
+    apiErrorCodes.has(candidate.code) &&
+    typeof candidate.message === "string" &&
+    typeof candidate.request_id === "string"
+  );
+};
+
+const safeApiError = (value: unknown, response: Response): ApiErrorResponse => {
+  if (isApiErrorResponse(value)) return value;
+
+  return {
+    code: ApiErrorCode.INTERNAL_ERROR,
+    message: `API request failed with status ${response.status}`,
+    request_id:
+      response.headers.get("x-request-id")?.trim() || "request-unavailable",
+  };
 };
 
 export class ApiHttpError<TError = ApiErrorResponse> extends Error {
@@ -43,12 +68,16 @@ const parseResponseBody = async (response: Response): Promise<unknown> => {
     return undefined;
   }
 
+  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+  if (response.ok && contentType.startsWith("audio/")) {
+    return response.blob();
+  }
+
   const body = await response.text();
   if (!body) {
     return undefined;
   }
 
-  const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.includes("json")) {
     return body;
   }
@@ -82,7 +111,7 @@ export const voltaFetch = async <TResponse>(
   if (!response.ok) {
     throw new ApiHttpError<ApiErrorResponse>({
       ...result,
-      data: result.data as ApiErrorResponse,
+      data: safeApiError(result.data, response),
     });
   }
 

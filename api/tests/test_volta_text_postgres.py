@@ -19,6 +19,8 @@ from yuno_backend.volta.text_slice import create_demo_evidence_storage
 
 ROOT = Path(__file__).resolve().parents[2]
 AUTH = {"Authorization": "Bearer synthetic-test-token"}
+FIRST_EVIDENCE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEagreement-fixture-one"
+SECOND_EVIDENCE_AUDIO = b"RIFF\x00\x00\x00\x00WAVEagreement-fixture-two"
 
 
 class _RedactedDatabaseUrl(str):
@@ -95,10 +97,10 @@ def demo_evidence_references() -> Iterator[tuple[str, str]]:
     storage = create_demo_evidence_storage()
     references = (
         asyncio.run(
-            storage.store(uuid4(), b"RIFF\x00\x00\x00\x00WAVEagreement-fixture-one")
+            storage.store(uuid4(), FIRST_EVIDENCE_AUDIO)
         ),
         asyncio.run(
-            storage.store(uuid4(), b"RIFF\x00\x00\x00\x00WAVEagreement-fixture-two")
+            storage.store(uuid4(), SECOND_EVIDENCE_AUDIO)
         ),
     )
     try:
@@ -360,7 +362,33 @@ def test_postgres_text_slice_persists_replays_and_reloads(
         assert first_commitment_replay.status_code == 201, first_commitment_replay.text
         assert first_commitment_replay.headers["idempotency-replayed"] == "true"
         assert first_commitment_replay.json() == first_commitment.json()
-        assert first_commitment.json()["evidence"]["recording_reference"]
+        assert "recording_reference" not in first_commitment.json()["evidence"]
+
+        evidence_audio = client.get(
+            f"/v1/evidence/{first_commitment.json()['evidence']['evidence_id']}/audio",
+            headers=AUTH,
+        )
+        assert evidence_audio.status_code == 200, evidence_audio.text
+        assert evidence_audio.content == FIRST_EVIDENCE_AUDIO
+        assert evidence_audio.headers["content-type"] == "audio/wav"
+        assert evidence_audio.headers["content-length"] == str(len(FIRST_EVIDENCE_AUDIO))
+        assert evidence_audio.headers["cache-control"] == "private, no-store"
+        assert evidence_audio.headers["pragma"] == "no-cache"
+        assert evidence_audio.headers["x-content-type-options"] == "nosniff"
+        assert "content-disposition" not in evidence_audio.headers
+
+        asyncio.run(
+            create_demo_evidence_storage().delete(demo_evidence_references[0])
+        )
+        missing_evidence_audio = client.get(
+            f"/v1/evidence/{first_commitment.json()['evidence']['evidence_id']}/audio",
+            headers=AUTH,
+        )
+        assert missing_evidence_audio.status_code == 404
+        assert missing_evidence_audio.json()["code"] == "RESOURCE_NOT_FOUND"
+        assert missing_evidence_audio.json()["message"] == "Evidence audio is unavailable."
+        assert missing_evidence_audio.json()["resource_id"] is None
+        assert demo_evidence_references[0] not in missing_evidence_audio.text
 
         after_first_commitment = client.get(
             f"/v1/operations/{operation['operation_id']}", headers=AUTH

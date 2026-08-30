@@ -52,20 +52,42 @@ WATCHPACK_POLLING=true make dev-frontend
 
 Open `http://localhost:3000` for the app and `http://localhost:8000/docs` for the API documentation.
 
-## Application architecture
+## Entenda as abas da torre de controle
 
-The browser calls only the FastAPI boundary. FastAPI imports the backend package directly, which keeps deployment small while preserving code boundaries.
+A torre de controle organiza a jornada do Volta, desde a solicitação de transporte até o histórico auditável da operação. O protótipo usa transportadoras, cotações e conversas sintéticas: ele não contata nem contrata transportadoras reais.
+
+| Aba | Finalidade |
+| --- | --- |
+| **Overview** | Resume operações, mandatos, sessões e escalonamentos. Também oferece acesso às demais etapas da jornada. |
+| **Intake** | Recebe a solicitação de transporte em linguagem natural. O Volta mantém o texto original e extrai um rascunho estruturado com rota, janela de coleta e proposta de mandato. |
+| **Mandate** | Permite revisar e aprovar as regras da negociação, como valor máximo, moeda, janela de coleta e condições permitidas. A extração cria apenas uma proposta; a aprovação concede autoridade operacional ao Volta. Cada aprovação cria uma versão imutável do mandato. |
+| **Sessions** | Exibe até três sessões sintéticas com transportadoras elegíveis. Cada sessão mostra o motivo da seleção, seu estado, o histórico de cotações e as violações do mandato. |
+| **Comparison** | Compara as cotações registradas por preço, janela de coleta, condições e validade. Também identifica a opção selecionada pelo backend e o compromisso ativo resultante. |
+| **Evidence** | Reúne a gravação autenticada, o instante do acordo no áudio, o resumo escrito e o relatório da chamada. Separa o ciclo da evidência, como `CANDIDATE` ou `SIMULATED`, da situação do compromisso, como `ACTIVE` ou `SUPERSEDED`. |
+| **Recovery** | Simula uma alteração solicitada depois do acordo. Uma mudança dentro do mandato pode substituir o compromisso ativo de forma atômica; uma mudança fora do mandato preserva o estado atual e cria um escalonamento. |
+| **Escalation** | Apresenta casos que exigem decisão humana, incluindo o conflito, as alternativas tentadas e a ação recomendada. O coordenador pode aprovar uma nova versão do mandato para resolver o bloqueio e permitir a retomada. |
+| **Audit** | Exibe a linha do tempo permanente dos eventos e artefatos da operação. O histórico inclui cotações, compromissos, evidências, resumos, recuperações, notificações e escalonamentos. |
+
+O fluxo principal segue esta sequência:
 
 ```text
-Browser / Next.js
+Intake -> Mandate -> Sessions -> Comparison -> Evidence
+```
+
+Quando uma condição muda depois do acordo, a jornada continua por **Recovery** e, quando uma decisão humana é necessária, por **Escalation**. A aba **Audit** registra os resultados de todas as etapas.
+
+## Application architecture
+
+The browser sends operational actions through FastAPI and the generated client. The only direct provider connection is OpenAI Realtime over WebRTC, using a short-lived credential minted by FastAPI. FastAPI imports the backend package directly, which keeps deployment small while preserving code boundaries.
+
+```text
+Browser / Next.js ── scoped WebRTC ── OpenAI Realtime
         │ HTTPS / generated client
         ▼
-API / FastAPI
+API / FastAPI ── provider ingress ── Twilio / OpenAI
         │ typed Python calls
         ▼
 Backend / Core ── PostgreSQL
-        │
-        └────────── Yuno API
 ```
 
 Read [the architecture guide](docs/architecture.md) for layer ownership and the contract flow. The [bootstrap visual concept](docs/design/bootstrap-concept.png) records the frontend design reference used during setup.
@@ -86,11 +108,11 @@ make check
 
 That target runs Ruff, pytest, the frontend linter, the TypeScript checker, and the production frontend build. Rendered frontend changes also require browser, console, network, and responsive smoke tests.
 
-## Protect payment credentials
+## Protect provider credentials and recordings
 
-Use `https://api-sandbox.y.uno` until production access is explicitly approved. `YUNO_PRIVATE_SECRET_KEY` and `YUNO_WEBHOOK_HMAC_SECRET` stay server-side, and neither name may use the `NEXT_PUBLIC_` prefix.
+Volta does not use Yuno, payments, or payment credentials. Standard OpenAI and Twilio credentials stay server-side; the browser receives only the narrowly scoped, short-lived Realtime credential created for its session.
 
-Never store or log card numbers, card verification values, private keys, authorization headers, or complete sensitive payloads. The Yuno Web SDK handles browser-side payment tokenization with the public key.
+Never store or log private keys, authorization headers, complete provider payloads, raw transcripts, or participant recordings. Demo audio remains in private storage outside Git and PostgreSQL binary columns, using synthetic or explicitly authorized participants and the documented deletion window.
 
 ## Activate development MCP servers
 

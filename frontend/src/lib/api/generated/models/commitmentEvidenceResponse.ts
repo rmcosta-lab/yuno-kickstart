@@ -27,9 +27,4 @@ export type CommitmentEvidenceResponse = {
    */
   item_id: string;
   lifecycle: EvidenceLifecycle;
-  /**
-   * @minLength 1
-   * @maxLength 255
-   */
-  recording_reference: string;
 };

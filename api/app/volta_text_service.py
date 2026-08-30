@@ -12,7 +12,14 @@ import httpx
 from yuno_backend.database import DatabaseConfig, create_database_engine, create_session_factory
 from yuno_backend.integrations.openai import OpenAIExtractionConfig, OpenAIIntakeExtractor
 from yuno_backend.volta.errors import InvalidDomainValue
-from yuno_backend.volta.evidence import CallBrief, Recap
+from yuno_backend.volta.evidence import (
+    CallBrief,
+    EvidenceAudio,
+    EvidenceAudioNotFound,
+    EvidenceAudioTooLarge,
+    Recap,
+    RetrieveEvidenceAudioService,
+)
 from yuno_backend.volta.idempotency import IdempotencyConflict, IdempotencyResultMissing
 from yuno_backend.volta.intake import IntakeExtractor
 from yuno_backend.volta.mandates.errors import (
@@ -175,6 +182,8 @@ class VoltaTextContractService:
         application: TextNegotiationApplication | None = None,
         *,
         application_factory: Callable[[], TextNegotiationApplication] | None = None,
+        audio_service: RetrieveEvidenceAudioService | None = None,
+        audio_service_factory: Callable[[], RetrieveEvidenceAudioService] | None = None,
         correlation_id_factory: Callable[[], UUID] = uuid4,
         close: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -182,6 +191,8 @@ class VoltaTextContractService:
             raise ValueError("provide exactly one text application source")
         self._application = application
         self._application_factory = application_factory
+        self._audio_service = audio_service
+        self._audio_service_factory = audio_service_factory
         self._correlation_ids = correlation_id_factory
         self._close = close
         self._unimplemented = UnimplementedContractService()
@@ -196,6 +207,33 @@ class VoltaTextContractService:
             assert self._application_factory is not None
             self._application = self._application_factory()
         return self._application
+
+    def _get_audio_service(self) -> RetrieveEvidenceAudioService:
+        if self._audio_service is None:
+            if self._audio_service_factory is None:
+                raise PersistenceUnavailable("configuration_missing", "evidence_audio")
+            self._audio_service = self._audio_service_factory()
+        return self._audio_service
+
+    async def get_evidence_audio(self, evidence_id: UUID) -> EvidenceAudio:
+        try:
+            return await self._get_audio_service().retrieve(evidence_id)
+        except EvidenceAudioNotFound:
+            raise ContractServiceError(
+                status_code=404,
+                code=ApiErrorCode.RESOURCE_NOT_FOUND,
+                message="Evidence audio is unavailable.",
+            ) from None
+        except EvidenceAudioTooLarge:
+            raise ContractServiceError(
+                status_code=413,
+                code=ApiErrorCode.EVIDENCE_AUDIO_TOO_LARGE,
+                message="Evidence audio exceeds the demo playback limit.",
+            ) from None
+        except ContractServiceError:
+            raise
+        except Exception as error:
+            raise _translate_error(error) from None
 
     async def execute(
         self,
@@ -421,14 +459,22 @@ def create_volta_text_contract_service(
     """Build the live adapter without opening a database connection at import time."""
 
     engine = None
+    session_factory = None
+    evidence_storage = None
+
+    def runtime_dependencies():
+        nonlocal engine, session_factory, evidence_storage
+        if session_factory is None:
+            database_url = settings.database_url.get_secret_value()
+            if not database_url:
+                raise PersistenceUnavailable("configuration_missing", "database")
+            engine = create_database_engine(DatabaseConfig(url=database_url))
+            session_factory = create_session_factory(engine)
+            evidence_storage = create_demo_evidence_storage()
+        return session_factory, evidence_storage
 
     def application_factory() -> TextNegotiationApplication:
-        nonlocal engine
-        database_url = settings.database_url.get_secret_value()
-        if not database_url:
-            raise PersistenceUnavailable("configuration_missing", "database")
-        engine = create_database_engine(DatabaseConfig(url=database_url))
-        session_factory = create_session_factory(engine)
+        session_factory, evidence_storage = runtime_dependencies()
         extractor = _create_intake_extractor(settings, http_client)
         return TextNegotiationApplication(
             unit_of_work_factory=lambda: SqlAlchemyOperationUnitOfWork(session_factory),
@@ -436,15 +482,26 @@ def create_volta_text_contract_service(
             carrier_catalog=create_demo_carrier_catalog(),
             clock=_UtcClock(),
             id_generator=_UuidGenerator(),
-            evidence_storage=create_demo_evidence_storage(),
+            evidence_storage=evidence_storage,
             extraction_policy_version=settings.volta_extraction_policy_version,
+        )
+
+    def audio_service_factory() -> RetrieveEvidenceAudioService:
+        session_factory, evidence_storage = runtime_dependencies()
+        return RetrieveEvidenceAudioService(
+            unit_of_work_factory=lambda: SqlAlchemyOperationUnitOfWork(session_factory),
+            evidence_storage=evidence_storage,
         )
 
     async def close() -> None:
         if engine is not None:
             await engine.dispose()
 
-    return VoltaTextContractService(application_factory=application_factory, close=close)
+    return VoltaTextContractService(
+        application_factory=application_factory,
+        audio_service_factory=audio_service_factory,
+        close=close,
+    )
 
 
 def _create_intake_extractor(
@@ -781,7 +838,6 @@ def _commitment_response(projection: CommitmentProjection) -> CommitmentResponse
         evidence={
             "evidence_id": evidence.id,
             "call_id": commitment.call_id,
-            "recording_reference": evidence.recording_reference,
             "audio_start_ms": evidence.audio_start_ms,
             "item_id": evidence.item_id,
             "event_id": evidence.event_id,
@@ -800,7 +856,6 @@ def _evidence_response(reservation: EvidenceReservation) -> CommitmentEvidenceRe
     return CommitmentEvidenceResponse(
         evidence_id=reservation.id,
         call_id=reservation.call_id,
-        recording_reference=reservation.recording_reference,
         audio_start_ms=reservation.audio_start_ms,
         item_id=reservation.item_id,
         event_id=reservation.event_id,
@@ -827,6 +882,7 @@ def _brief_response(brief: CallBrief) -> CallBriefResponse:
         brief_id=brief.id,
         operation_id=brief.operation_id,
         call_id=brief.call_id,
+        commitment_id=brief.commitment_id,
         facts=list(brief.facts),
         objections=list(brief.objections),
         changes=list(brief.changes),

@@ -118,7 +118,6 @@ class NegotiationSummary(ResponseModel):
 class CommitmentEvidenceResponse(ResponseModel):
     evidence_id: UUID
     call_id: UUID
-    recording_reference: SafeIdentifier
     audio_start_ms: NonNegativeMilliseconds
     item_id: SafeIdentifier
     event_id: SafeIdentifier
@@ -288,6 +287,7 @@ class CallBriefResponse(ResponseModel):
     brief_id: UUID
     operation_id: UUID
     call_id: UUID
+    commitment_id: UUID
     facts: list[ShortText] = Field(default_factory=list, max_length=50)
     objections: list[ShortText] = Field(default_factory=list, max_length=50)
     changes: list[ShortText] = Field(default_factory=list, max_length=50)

@@ -1274,6 +1274,230 @@ export const useCreateSimulatedRecap = <
   );
 };
 
+export type getEvidenceAudioResponse200 = {
+  data: Blob;
+  status: 200;
+};
+
+export type getEvidenceAudioResponse401 = {
+  data: ApiErrorResponse;
+  status: 401;
+};
+
+export type getEvidenceAudioResponse403 = {
+  data: ApiErrorResponse;
+  status: 403;
+};
+
+export type getEvidenceAudioResponse404 = {
+  data: ApiErrorResponse;
+  status: 404;
+};
+
+export type getEvidenceAudioResponse413 = {
+  data: ApiErrorResponse;
+  status: 413;
+};
+
+export type getEvidenceAudioResponse422 = {
+  data: ApiErrorResponse;
+  status: 422;
+};
+
+export type getEvidenceAudioResponse500 = {
+  data: ApiErrorResponse;
+  status: 500;
+};
+
+export type getEvidenceAudioResponseSuccess = getEvidenceAudioResponse200 & {
+  headers: Headers;
+};
+export type getEvidenceAudioResponseError = (
+  | getEvidenceAudioResponse401
+  | getEvidenceAudioResponse403
+  | getEvidenceAudioResponse404
+  | getEvidenceAudioResponse413
+  | getEvidenceAudioResponse422
+  | getEvidenceAudioResponse500
+) & {
+  headers: Headers;
+};
+
+export const getGetEvidenceAudioUrl = (evidenceId: string) => {
+  return `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/evidence/${evidenceId}/audio`;
+};
+
+/**
+ * @summary Get Evidence Audio
+ */
+export const getEvidenceAudio = async (
+  evidenceId: string,
+  options?: Parameters<typeof voltaFetch>[1],
+): Promise<getEvidenceAudioResponseSuccess> => {
+  return voltaFetch<getEvidenceAudioResponseSuccess>(
+    getGetEvidenceAudioUrl(evidenceId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEvidenceAudioQueryKey = (evidenceId: string) => {
+  return [
+    `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"}/v1/evidence/${evidenceId}/audio`,
+  ] as const;
+};
+
+export const getGetEvidenceAudioQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEvidenceAudio>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  evidenceId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getEvidenceAudio>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEvidenceAudioQueryKey(evidenceId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEvidenceAudio>>
+  > = ({ signal }) =>
+    getEvidenceAudio(evidenceId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: evidenceId !== null && evidenceId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEvidenceAudio>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type GetEvidenceAudioQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEvidenceAudio>>
+>;
+export type GetEvidenceAudioQueryError = ErrorType<ApiErrorResponse>;
+
+export function useGetEvidenceAudio<
+  TData = Awaited<ReturnType<typeof getEvidenceAudio>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  evidenceId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getEvidenceAudio>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getEvidenceAudio>>,
+          TError,
+          Awaited<ReturnType<typeof getEvidenceAudio>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetEvidenceAudio<
+  TData = Awaited<ReturnType<typeof getEvidenceAudio>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  evidenceId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getEvidenceAudio>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getEvidenceAudio>>,
+          TError,
+          Awaited<ReturnType<typeof getEvidenceAudio>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useGetEvidenceAudio<
+  TData = Awaited<ReturnType<typeof getEvidenceAudio>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  evidenceId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getEvidenceAudio>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get Evidence Audio
+ */
+
+export function useGetEvidenceAudio<
+  TData = Awaited<ReturnType<typeof getEvidenceAudio>>,
+  TError = ErrorType<ApiErrorResponse>,
+>(
+  evidenceId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof getEvidenceAudio>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof voltaFetch>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getGetEvidenceAudioQueryOptions(evidenceId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 export type acknowledgeNotificationResponse200 = {
   data: CoordinatorNotificationResponse;
   status: 200;

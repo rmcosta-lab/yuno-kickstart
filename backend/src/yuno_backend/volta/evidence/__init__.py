@@ -16,6 +16,12 @@ from yuno_backend.volta.evidence.models import (
     Recap,
     RecapDisclosureState,
 )
+from yuno_backend.volta.evidence.playback import (
+    EvidenceAudio,
+    EvidenceAudioNotFound,
+    EvidenceAudioTooLarge,
+    RetrieveEvidenceAudioService,
+)
 from yuno_backend.volta.evidence.repositories import (
     BriefRepository,
     EvidenceRepository,
@@ -35,6 +41,9 @@ __all__ = [
     "CallBrief",
     "CommitmentNotFound",
     "EvidenceAlreadyRecorded",
+    "EvidenceAudio",
+    "EvidenceAudioNotFound",
+    "EvidenceAudioTooLarge",
     "EvidenceRepository",
     "EvidenceStorage",
     "FilesystemEvidenceStorage",
@@ -48,4 +57,5 @@ __all__ = [
     "RecapRepository",
     "RecordEvidenceCommand",
     "RecordEvidenceService",
+    "RetrieveEvidenceAudioService",
 ]

@@ -77,9 +77,9 @@
 ## Parallel workstreams and ownership
 
 - The backend writer owns group 2 after group 1 freezes the application contract.
-- The API contract writer owns the route, error schema, and generated artifacts; the frontend
-  contract writer owns the shared fetch mutator. Frontend integration waits for their reviewed
-  generation/parsing checkpoint.
+- The API writer owns the route, error schema, and `api/openapi.json`. The frontend writer owns the
+  Orval output and shared fetch mutator. Frontend integration waits for their reviewed
+  OpenAPI/generation/parsing checkpoint.
 - The frontend writer may prepare presentation-only composition for groups 4–7 after group 1, but
   owns no copied DTO and does not wire audio before the generated client is frozen.
 - The phase coordinator is the only writer for phase specs, roadmap clarification, and the playback
@@ -94,12 +94,14 @@
 - Checkpoint 1 also records a clean repository-wide compatibility search before removing the public
   response field; evidence ingestion and backend persistence retain the reference.
 - Checkpoint 2: backend unit tests and API contract tests pass before `make generate`.
-- Checkpoint 3: OpenAPI and Orval are regenerated once by the contract writer; the frontend uses
-  generated Blob behavior and never edits generated files.
+- Checkpoint 3: the API writer regenerates and freezes OpenAPI; the frontend writer then regenerates
+  Orval once, uses generated Blob behavior, and never hand-edits generated files.
 - Checkpoint 4: every accepted mutation invalidates/refetches operation and audit queries and
   preserves one idempotency key for an identical logical retry.
-- Checkpoint 5: the complete browser journey proves playback offset and both recovery outcomes
-  against durable PostgreSQL state.
+- Checkpoint 5 (satisfied): the complete production-build browser journey proved the playback offset,
+  both recovery outcomes, notification acknowledgement, stale conflict recovery, named escalation
+  resolution, and mixed audit against the local FastAPI API and durable PostgreSQL state without
+  intercepting application requests.
 
 ## Tests near changed behavior
 

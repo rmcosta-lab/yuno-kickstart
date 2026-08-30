@@ -39,6 +39,7 @@
           "AUTHENTICATION_INVALID",
           "ACTION_NOT_AUTHORIZED",
           "RESOURCE_NOT_FOUND",
+          "EVIDENCE_AUDIO_TOO_LARGE",
           "STALE_OPERATION_VERSION",
           "STALE_DRAFT_VERSION",
           "IDEMPOTENCY_KEY_REUSED",
@@ -359,6 +360,11 @@
             "title": "Changes",
             "type": "array"
           },
+          "commitment_id": {
+            "format": "uuid",
+            "title": "Commitment Id",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -404,6 +410,7 @@
           "brief_id",
           "operation_id",
           "call_id",
+          "commitment_id",
           "created_at"
         ],
         "title": "CallBriefResponse",
@@ -564,18 +571,11 @@
           },
           "lifecycle": {
             "$ref": "#/components/schemas/EvidenceLifecycle"
-          },
-          "recording_reference": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Recording Reference",
-            "type": "string"
           }
         },
         "required": [
           "evidence_id",
           "call_id",
-          "recording_reference",
           "audio_start_ms",
           "item_id",
           "event_id",
@@ -3777,6 +3777,202 @@
           }
         ],
         "summary": "Create Simulated Recap",
+        "tags": [
+          "volta"
+        ]
+      }
+    },
+    "/v1/evidence/{evidence_id}/audio": {
+      "get": {
+        "operationId": "get_evidence_audio",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidence_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evidence Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Private RIFF/WAVE evidence bytes.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Private evidence must not be stored by browsers or intermediaries.",
+                "schema": {
+                  "enum": [
+                    "private, no-store"
+                  ],
+                  "type": "string"
+                }
+              },
+              "Pragma": {
+                "description": "Compatibility no-cache directive for private evidence.",
+                "schema": {
+                  "enum": [
+                    "no-cache"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Content-Type-Options": {
+                "description": "Prevents media type sniffing.",
+                "schema": {
+                  "enum": [
+                    "nosniff"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The authenticated actor lacks authority.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The referenced resource was not found.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The requested evidence exceeds the demo playback limit.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request does not satisfy the public contract.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "An unexpected failure was translated safely.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Evidence Audio",
         "tags": [
           "volta"
         ]
