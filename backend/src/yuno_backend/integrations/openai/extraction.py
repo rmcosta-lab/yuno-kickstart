@@ -39,8 +39,10 @@ DEFAULT_POLICY_VERSION = "volta-intake-v1"
 DEFAULT_POLICY_INSTRUCTIONS = """You extract a proposed drayage operation from coordinator text.
 Extract only facts explicitly present in the source request. Represent an absent scalar fact as null
 and an absent condition list as an empty list. Never invent a place, date, price, currency, or
-condition. Never approve an operation, grant authority, select a carrier, or claim that the proposal
-is eligible. Return only the JSON object required by the supplied schema."""
+condition. Resolve relative calendar expressions against the reference date when one is supplied.
+When the source gives one pickup date but no wider pickup window, use that date for both window
+boundaries. Never approve an operation, grant authority, select a carrier, or claim that the
+proposal is eligible. Return only the JSON object required by the supplied schema."""
 MAX_RESPONSE_TEXT_BYTES = 32_768
 MAX_DECIMAL_TEXT_LENGTH = 64
 _DECIMAL = re.compile(r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$")
@@ -211,9 +213,15 @@ class OpenAIIntakeExtractor:
         raise AssertionError("bounded extraction loop did not terminate")
 
     def _request_payload(self, request: ExtractionRequest) -> dict[str, Any]:
+        instructions = self._config.policy_instructions
+        if request.reference_date is not None:
+            instructions = (
+                f"{instructions}\nReference date (UTC): "
+                f"{request.reference_date.isoformat()}."
+            )
         return {
             "model": self._config.model,
-            "instructions": self._config.policy_instructions,
+            "instructions": instructions,
             "input": request.source_prompt,
             "store": False,
             "metadata": {
@@ -362,12 +370,17 @@ def _operation_proposal(value: object) -> OperationProposal:
     window = _object_with_keys(root["pickup_window"], {"start_date", "end_date"})
     maximum = _object_with_keys(root["maximum_amount"], {"amount", "currency"})
     amount = _decimal(maximum["amount"])
+    pickup_date = _date(root["pickup_date"])
+    window_start = (
+        pickup_date if window["start_date"] is None else _date(window["start_date"])
+    )
+    window_end = pickup_date if window["end_date"] is None else _date(window["end_date"])
     return OperationProposal(
         route=Route(
             origin=_bounded_string(root["origin"]),
             destination=_bounded_string(root["destination"]),
         ),
-        pickup_date=_date(root["pickup_date"]),
+        pickup_date=pickup_date,
         cargo_label=_bounded_string(root["cargo_label"]),
         mandate=MandateProposal(
             maximum_amount=Money(
@@ -375,8 +388,8 @@ def _operation_proposal(value: object) -> OperationProposal:
                 currency=_currency(maximum["currency"]),
             ),
             pickup_window=PickupWindow(
-                start_date=_date(window["start_date"]),
-                end_date=_date(window["end_date"]),
+                start_date=window_start,
+                end_date=window_end,
             ),
             allowed_conditions=_conditions(root["allowed_conditions"]),
             escalation_conditions=_conditions(root["escalation_conditions"]),

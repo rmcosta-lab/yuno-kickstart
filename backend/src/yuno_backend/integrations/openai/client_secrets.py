@@ -41,6 +41,7 @@ _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _MAX_TIMEOUT_SECONDS = 300
 _MAX_RESPONSE_BYTES = 65_536
 _MAX_SECRET_TTL_SECONDS = 600
+_MAX_CLOCK_SKEW_SECONDS = 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +171,11 @@ def _parse_secret(
     if not isinstance(session_id, str):
         raise ValueError
     current_time = math.floor(now)
-    if expires_at <= current_time or expires_at > current_time + _MAX_SECRET_TTL_SECONDS:
+    if (
+        expires_at <= current_time
+        or expires_at
+        > current_time + _MAX_SECRET_TTL_SECONDS + _MAX_CLOCK_SKEW_SECONDS
+    ):
         raise ValueError
     return RealtimeClientSecret(
         value=value,

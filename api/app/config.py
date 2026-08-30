@@ -3,6 +3,8 @@
 import re
 from functools import lru_cache
 from ipaddress import ip_address
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -50,6 +52,7 @@ class Settings(BaseSettings):
     volta_mutation_rate_limit_requests: int = Field(default=30, ge=1, le=10_000)
     volta_mutation_rate_limit_window_seconds: float = Field(default=60.0, gt=0, le=86_400)
     volta_mutation_rate_limit_max_identities: int = Field(default=256, ge=1, le=10_000)
+    volta_evidence_storage_path: Path = Path(gettempdir()) / "yuno-volta-text-evidence"
 
     @field_validator("cors_origins")
     @classmethod
