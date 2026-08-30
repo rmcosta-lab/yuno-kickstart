@@ -83,14 +83,11 @@ def isolated_api_database_url() -> Iterator[str]:
         command.upgrade(alembic_config, "head")
         yield _RedactedDatabaseUrl(rendered_test_url)
     finally:
-        try:
-            command.downgrade(alembic_config, "base")
-        finally:
-            if previous_url is None:
-                os.environ.pop("DATABASE_URL", None)
-            else:
-                os.environ["DATABASE_URL"] = previous_url
-            asyncio.run(_drop_database(admin_url, database_name))
+        if previous_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_url
+        asyncio.run(_drop_database(admin_url, database_name))
 
 
 @pytest.fixture
@@ -280,8 +277,8 @@ def test_postgres_text_slice_persists_replays_and_reloads(
                 "evidence_id": rejected_quote.json()["quote_id"],
             },
         )
-        assert rejected_commitment.status_code == 409, rejected_commitment.text
-        assert rejected_commitment.json()["code"] == "STATE_CONFLICT"
+        assert rejected_commitment.status_code == 404, rejected_commitment.text
+        assert rejected_commitment.json()["code"] == "RESOURCE_NOT_FOUND"
 
         mismatched_evidence = client.post(
             f"/v1/calls/{selected['call_id']}/commitments",
@@ -293,8 +290,8 @@ def test_postgres_text_slice_persists_replays_and_reloads(
                 "evidence_id": rejected_quote.json()["quote_id"],
             },
         )
-        assert mismatched_evidence.status_code == 409, mismatched_evidence.text
-        assert mismatched_evidence.json()["code"] == "STATE_CONFLICT"
+        assert mismatched_evidence.status_code == 404, mismatched_evidence.text
+        assert mismatched_evidence.json()["code"] == "RESOURCE_NOT_FOUND"
 
         attached_evidence_body = {
             "expected_operation_version": reloaded.json()["operation_version"],
@@ -311,8 +308,8 @@ def test_postgres_text_slice_persists_replays_and_reloads(
                 "recording_reference": "private/missing-recording.wav",
             },
         )
-        assert missing_artifact.status_code == 409, missing_artifact.text
-        assert missing_artifact.json()["code"] == "STATE_CONFLICT"
+        assert missing_artifact.status_code == 404, missing_artifact.text
+        assert missing_artifact.json()["code"] == "RESOURCE_NOT_FOUND"
         assert "missing-recording" not in missing_artifact.text
 
         attached_evidence = client.post(
@@ -380,8 +377,8 @@ def test_postgres_text_slice_persists_replays_and_reloads(
                 ],
             },
         )
-        assert consumed_evidence_reuse.status_code == 409, consumed_evidence_reuse.text
-        assert consumed_evidence_reuse.json()["code"] == "STATE_CONFLICT"
+        assert consumed_evidence_reuse.status_code == 404, consumed_evidence_reuse.text
+        assert consumed_evidence_reuse.json()["code"] == "RESOURCE_NOT_FOUND"
 
         third_session = started.json()["sessions"][2]
         better_quote = client.post(
@@ -444,6 +441,229 @@ def test_postgres_text_slice_persists_replays_and_reloads(
             "SUPERSEDED",
             "ACTIVE",
         ]
+
+        recap_body = {
+            "expected_operation_version": final_operation.json()["operation_version"],
+            "commitment_id": replacement.json()["commitment_id"],
+            "rendered_content": "Confirmed terms for the simulated agreement recap.",
+        }
+        recap = client.post(
+            f"/v1/calls/{third_session['call_id']}/recaps",
+            headers=mutation_headers("postgres-recap-001"),
+            json=recap_body,
+        )
+        recap_replay = client.post(
+            f"/v1/calls/{third_session['call_id']}/recaps",
+            headers=mutation_headers("postgres-recap-001"),
+            json=recap_body,
+        )
+        assert recap.status_code == 201, recap.text
+        assert recap.json()["channel"] == "SIMULATED"
+        assert recap_replay.status_code == 201, recap_replay.text
+        assert recap_replay.headers["idempotency-replayed"] == "true"
+        assert recap_replay.json() == recap.json()
+        recap_conflict = client.post(
+            f"/v1/calls/{third_session['call_id']}/recaps",
+            headers=mutation_headers("postgres-recap-001"),
+            json={**recap_body, "rendered_content": "Changed recap content."},
+        )
+        assert recap_conflict.status_code == 409, recap_conflict.text
+        assert recap_conflict.json()["code"] == "IDEMPOTENCY_KEY_REUSED"
+
+        brief_body = {
+            "expected_operation_version": final_operation.json()["operation_version"],
+            "facts": ["Carrier reconfirmed availability"],
+            "objections": [],
+            "changes": ["Rate improved during comparison"],
+            "unresolved_items": [],
+        }
+        brief = client.post(
+            f"/v1/calls/{third_session['call_id']}/briefs",
+            headers=mutation_headers("postgres-brief-001"),
+            json=brief_body,
+        )
+        brief_replay = client.post(
+            f"/v1/calls/{third_session['call_id']}/briefs",
+            headers=mutation_headers("postgres-brief-001"),
+            json=brief_body,
+        )
+        assert brief.status_code == 201, brief.text
+        assert brief.json()["changes"] == ["Rate improved during comparison"]
+        assert brief_replay.status_code == 201, brief_replay.text
+        assert brief_replay.headers["idempotency-replayed"] == "true"
+        assert brief_replay.json() == brief.json()
+
+        safe_recovery_body = {
+            "expected_operation_version": final_operation.json()["operation_version"],
+            "scenario": "MANDATE_SAFE",
+            "active_commitment_id": replacement.json()["commitment_id"],
+        }
+        safe_recovery = client.post(
+            f"/v1/operations/{operation['operation_id']}/inbound-simulations",
+            headers=mutation_headers("postgres-recovery-safe-001"),
+            json=safe_recovery_body,
+        )
+        safe_recovery_replay = client.post(
+            f"/v1/operations/{operation['operation_id']}/inbound-simulations",
+            headers=mutation_headers("postgres-recovery-safe-001"),
+            json=safe_recovery_body,
+        )
+        assert safe_recovery.status_code == 201, safe_recovery.text
+        assert safe_recovery.json()["scenario"] == "MANDATE_SAFE"
+        assert safe_recovery.json()["active_commitment"] is not None
+        assert safe_recovery.json()["escalation"] is None
+        assert safe_recovery_replay.status_code == 201, safe_recovery_replay.text
+        assert safe_recovery_replay.headers["idempotency-replayed"] == "true"
+        assert safe_recovery_replay.json() == safe_recovery.json()
+
+        bad_recovery = client.post(
+            f"/v1/operations/{operation['operation_id']}/inbound-simulations",
+            headers=mutation_headers("postgres-recovery-bad-001"),
+            json={
+                "expected_operation_version": safe_recovery.json()[
+                    "after_operation_version"
+                ],
+                "scenario": "OUT_OF_MANDATE",
+                "active_commitment_id": safe_recovery.json()["active_commitment"][
+                    "commitment_id"
+                ],
+            },
+        )
+        assert bad_recovery.status_code == 201, bad_recovery.text
+        assert bad_recovery.json()["active_commitment"] is None
+        assert bad_recovery.json()["escalation"]["resolution_state"] == "OPEN"
+
+        after_bad = client.get(
+            f"/v1/operations/{operation['operation_id']}", headers=AUTH
+        )
+        assert after_bad.status_code == 200, after_bad.text
+        assert after_bad.json()["open_escalation"]["escalation_id"] == (
+            bad_recovery.json()["escalation"]["escalation_id"]
+        )
+        assert len(after_bad.json()["notifications"]) == 1
+        notification_id = after_bad.json()["notifications"][0]["notification_id"]
+
+        mandate_body = {
+            "expected_operation_version": after_bad.json()["operation_version"],
+            "resolved_escalation_id": bad_recovery.json()["escalation"]["escalation_id"],
+            "maximum_amount_minor": after_bad.json()["active_mandate"][
+                "maximum_amount_minor"
+            ],
+            "currency": after_bad.json()["active_mandate"]["currency"],
+            "pickup_window": after_bad.json()["active_mandate"]["pickup_window"],
+            "allowed_conditions": after_bad.json()["active_mandate"][
+                "allowed_conditions"
+            ],
+            "escalation_conditions": after_bad.json()["active_mandate"][
+                "escalation_conditions"
+            ],
+            "approval_actor": "demo-coordinator",
+        }
+        replaced_mandate = client.post(
+            f"/v1/operations/{operation['operation_id']}/mandates",
+            headers=mutation_headers("postgres-mandate-001"),
+            json=mandate_body,
+        )
+        replaced_mandate_replay = client.post(
+            f"/v1/operations/{operation['operation_id']}/mandates",
+            headers=mutation_headers("postgres-mandate-001"),
+            json=mandate_body,
+        )
+        assert replaced_mandate.status_code == 201, replaced_mandate.text
+        assert replaced_mandate.json()["open_escalation"] is None
+        assert replaced_mandate_replay.status_code == 201, replaced_mandate_replay.text
+        assert replaced_mandate_replay.headers["idempotency-replayed"] == "true"
+
+        explicit_escalation_body = {
+            "expected_operation_version": replaced_mandate.json()["operation_version"],
+            "conflict": "Coordinator review requested for synthetic terms.",
+            "attempted_alternatives": ["Keep active commitment"],
+            "recommended_action": "Review current carrier terms",
+        }
+        explicit_escalation = client.post(
+            f"/v1/calls/{third_session['call_id']}/escalations",
+            headers=mutation_headers("postgres-escalation-001"),
+            json=explicit_escalation_body,
+        )
+        explicit_escalation_replay = client.post(
+            f"/v1/calls/{third_session['call_id']}/escalations",
+            headers=mutation_headers("postgres-escalation-001"),
+            json=explicit_escalation_body,
+        )
+        assert explicit_escalation.status_code == 201, explicit_escalation.text
+        assert explicit_escalation.json()["call_id"] == third_session["call_id"]
+        assert explicit_escalation_replay.status_code == 201
+        assert explicit_escalation_replay.headers["idempotency-replayed"] == "true"
+        assert explicit_escalation_replay.json() == explicit_escalation.json()
+
+        before_ack = client.get(
+            f"/v1/operations/{operation['operation_id']}", headers=AUTH
+        )
+        acknowledgement_body = {
+            "expected_operation_version": before_ack.json()["operation_version"],
+            "acknowledged_by": "demo-coordinator",
+        }
+        acknowledgement = client.post(
+            f"/v1/notifications/{notification_id}/acknowledgements",
+            headers=mutation_headers("postgres-notification-001"),
+            json=acknowledgement_body,
+        )
+        acknowledgement_replay = client.post(
+            f"/v1/notifications/{notification_id}/acknowledgements",
+            headers=mutation_headers("postgres-notification-001"),
+            json=acknowledgement_body,
+        )
+        assert acknowledgement.status_code == 200, acknowledgement.text
+        assert acknowledgement.json()["acknowledged"] is True
+        assert acknowledgement_replay.status_code == 200, acknowledgement_replay.text
+        assert acknowledgement_replay.headers["idempotency-replayed"] == "true"
+        assert acknowledgement_replay.json() == acknowledgement.json()
+        conflicting_actor = client.post(
+            f"/v1/notifications/{notification_id}/acknowledgements",
+            headers=mutation_headers("postgres-notification-002"),
+            json={**acknowledgement_body, "acknowledged_by": "another-coordinator"},
+        )
+        assert conflicting_actor.status_code == 409, conflicting_actor.text
+        assert conflicting_actor.json()["code"] == "STATE_CONFLICT"
+
+        complete_audit = client.get(
+            f"/v1/operations/{operation['operation_id']}/audit?limit=100",
+            headers=AUTH,
+        )
+        assert complete_audit.status_code == 200, complete_audit.text
+        assert any(
+            item["recap_id"] == recap.json()["recap_id"]
+            for item in complete_audit.json()["recaps"]
+        )
+        assert any(
+            item["brief_id"] == brief.json()["brief_id"]
+            for item in complete_audit.json()["briefs"]
+        )
+        assert len(complete_audit.json()["recoveries"]) == 2
+        assert len(complete_audit.json()["escalations"]) >= 2
+        assert complete_audit.json()["notifications"][0]["acknowledged"] is True
+
+        first_page = client.get(
+            f"/v1/operations/{operation['operation_id']}/audit",
+            headers=AUTH,
+            params={"limit": 2},
+        )
+        assert first_page.status_code == 200, first_page.text
+        assert first_page.json()["next_cursor"]
+        second_page = client.get(
+            f"/v1/operations/{operation['operation_id']}/audit",
+            headers=AUTH,
+            params={"limit": 2, "cursor": first_page.json()["next_cursor"]},
+        )
+        assert second_page.status_code == 200, second_page.text
+        malformed_cursor = client.get(
+            f"/v1/operations/{operation['operation_id']}/audit",
+            headers=AUTH,
+            params={"cursor": "submitted-private-cursor", "limit": 2},
+        )
+        assert malformed_cursor.status_code == 422, malformed_cursor.text
+        assert malformed_cursor.json()["code"] == "VALIDATION_ERROR"
+        assert "submitted-private-cursor" not in malformed_cursor.text
 
         no_carrier_draft = client.post(
             "/v1/operation-drafts",

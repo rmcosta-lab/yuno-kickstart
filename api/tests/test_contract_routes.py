@@ -119,7 +119,7 @@ def test_every_route_serializes_its_typed_success_contract(
     assert fake.calls[0][0] == operation_id
 
 
-def test_default_service_returns_honest_not_implemented_after_validation() -> None:
+def test_integrated_phase15_route_fails_safely_without_database_configuration() -> None:
     with build_client() as client:
         response = client.post(
             f"/v1/calls/{IDS['call']}/recaps",
@@ -127,10 +127,10 @@ def test_default_service_returns_honest_not_implemented_after_validation() -> No
             json=request_for("create_simulated_recap"),
         )
 
-    assert response.status_code == 501
+    assert response.status_code == 500
     assert response.json() == {
-        "code": "CONTRACT_NOT_IMPLEMENTED",
-        "message": "This contract is not connected to an application service yet.",
+        "code": "INTERNAL_ERROR",
+        "message": "The request could not be completed.",
         "request_id": response.headers["x-request-id"],
         "field_issues": None,
         "resource_id": None,

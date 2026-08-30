@@ -38,6 +38,14 @@ from yuno_backend.volta.negotiations.errors import (
     StaleOperationVersion,
 )
 from yuno_backend.volta.persistence.errors import PersistenceConflict, PersistenceUnavailable
+from yuno_backend.volta.recovery import (
+    EscalationAlreadyResolved,
+    EscalationContext,
+    EscalationNotFound,
+    NotificationAlreadyAcknowledged,
+    NotificationNotFound,
+    OperationBlockedByEscalation,
+)
 from yuno_backend.volta.text_slice import (
     AuditProjection,
     AuditQuoteProjection,
@@ -77,6 +85,10 @@ IDS = {
             "prior_commitment",
             "prior_evidence",
             "prior_quote",
+            "recap",
+            "brief",
+            "recovery",
+            "notification",
         ),
         1,
     )
@@ -287,6 +299,112 @@ def audit_projection() -> AuditProjection:
     )
 
 
+def recap() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=IDS["recap"],
+        operation_id=IDS["operation"],
+        call_id=IDS["call"],
+        commitment_id=IDS["commitment"],
+        disclosure_state=value("SIMULATED"),
+        content_hash="a" * 64,
+        rendered_content="Simulated agreement recap.",
+        generated_at=NOW,
+    )
+
+
+def brief() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=IDS["brief"],
+        operation_id=IDS["operation"],
+        call_id=IDS["call"],
+        facts=("Carrier is available",),
+        objections=(),
+        changes=("Recovered safely",),
+        unresolved_items=(),
+        generated_at=NOW,
+    )
+
+
+def post_contact_escalation(*, resolved: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=IDS["escalation"],
+        operation_id=IDS["operation"],
+        call_id=IDS["call"],
+        reason_code="pickup_window_conflict",
+        resolved=resolved,
+        correlation_id=IDS["correlation"],
+        created_at=NOW,
+        resolved_at=NOW if resolved else None,
+        context=EscalationContext(
+            "Pickup window falls outside the current mandate.",
+            ("Requested the approved window",),
+            "Coordinator review required",
+        ),
+    )
+
+
+def recovery_projection(*, escalated: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        attempt=SimpleNamespace(
+            id=IDS["recovery"],
+            operation_id=IDS["operation"],
+            scenario=value("OUT_OF_MANDATE" if escalated else "MANDATE_SAFE"),
+            before_operation_version=3,
+            after_operation_version=4,
+            decision_reason="Recovery stayed inside the approved mandate.",
+            correlation_id=IDS["correlation"],
+            created_at=NOW,
+        ),
+        active_commitment=None if escalated else commitment_projection(),
+        escalation=post_contact_escalation() if escalated else None,
+    )
+
+
+def notification(*, acknowledged: bool = False) -> SimpleNamespace:
+    before = SimpleNamespace(
+        operation_version=3,
+        operation_status=value("COMMITTED"),
+        active_commitment_id=IDS["prior_commitment"],
+        carrier_id=IDS["carrier"],
+        agreed_terms=terms("8800"),
+    )
+    after = SimpleNamespace(
+        operation_version=4,
+        operation_status=value("COMMITTED"),
+        active_commitment_id=IDS["commitment"],
+        carrier_id=IDS["carrier"],
+        agreed_terms=terms(),
+    )
+    return SimpleNamespace(
+        id=IDS["notification"],
+        operation_id=IDS["operation"],
+        operation_version=4,
+        recovery_decision=SimpleNamespace(
+            before=before,
+            after=after,
+            reason="Mandate-safe replacement completed.",
+        ),
+        message="The active carrier was replaced inside the approved mandate.",
+        acknowledged=acknowledged,
+        acknowledged_by="demo-coordinator" if acknowledged else None,
+        acknowledged_at=NOW if acknowledged else None,
+        correlation_id=IDS["correlation"],
+        created_at=NOW,
+    )
+
+
+def complete_audit_projection() -> AuditProjection:
+    return replace(
+        audit_projection(),
+        recaps=(recap(),),
+        briefs=(brief(),),
+        recoveries=(recovery_projection(),),
+        escalations=(post_contact_escalation(),),
+        notifications=(notification(),),
+        next_cursor="safe-cursor",
+    )
+
+
 class FakeTextApplication:
     def __init__(self) -> None:
         self.commands: list[object] = []
@@ -326,6 +444,30 @@ class FakeTextApplication:
     async def create_candidate_commitment(self, command: object):
         self.check(command)
         return MutationOutcome(commitment_projection(), True)
+
+    async def create_simulated_recap(self, command: object):
+        self.check(command)
+        return MutationOutcome(recap(), True)
+
+    async def create_call_brief(self, command: object):
+        self.check(command)
+        return MutationOutcome(brief(), False)
+
+    async def start_inbound_simulation(self, command: object):
+        self.check(command)
+        return MutationOutcome(recovery_projection(), False)
+
+    async def replace_mandate(self, command: object):
+        self.check(command)
+        return MutationOutcome(operation_projection(), True)
+
+    async def create_escalation(self, command: object):
+        self.check(command)
+        return MutationOutcome(post_contact_escalation(), False)
+
+    async def acknowledge_notification(self, command: object):
+        self.check(command)
+        return MutationOutcome(notification(acknowledged=True), True)
 
     async def get_operation_audit(self, operation_id: UUID):
         self.check(operation_id)
@@ -526,6 +668,155 @@ async def test_adapter_attaches_existing_f14_evidence_and_preserves_replay() -> 
     assert result.payload["lifecycle"] == "CANDIDATE"  # type: ignore[index]
 
 
+@pytest.mark.asyncio
+async def test_adapter_maps_all_phase15_mutations_to_the_durable_facade() -> None:
+    adapter, application = service()
+
+    recap_result = await adapter.execute(
+        "create_simulated_recap",
+        {
+            "call_id": str(IDS["call"]),
+            "body": {
+                "expected_operation_version": 3,
+                "commitment_id": str(IDS["commitment"]),
+                "rendered_content": "Simulated agreement recap.",
+            },
+        },
+        "recap-key-001",
+    )
+    brief_result = await adapter.execute(
+        "create_call_brief",
+        {
+            "call_id": str(IDS["call"]),
+            "body": {
+                "expected_operation_version": 3,
+                "facts": ["Carrier is available"],
+                "objections": [],
+                "changes": ["Recovered safely"],
+                "unresolved_items": [],
+            },
+        },
+        "brief-key-001",
+    )
+    recovery_result = await adapter.execute(
+        "start_inbound_simulation",
+        {
+            "operation_id": str(IDS["operation"]),
+            "body": {
+                "expected_operation_version": 3,
+                "scenario": "MANDATE_SAFE",
+                "active_commitment_id": str(IDS["commitment"]),
+            },
+        },
+        "recovery-key-001",
+    )
+    mandate_result = await adapter.execute(
+        "replace_mandate",
+        {
+            "operation_id": str(IDS["operation"]),
+            "body": {
+                "expected_operation_version": 4,
+                "resolved_escalation_id": str(IDS["escalation"]),
+                "maximum_amount_minor": 950000,
+                "currency": "MXN",
+                "pickup_window": {
+                    "start_date": "2026-09-03",
+                    "end_date": "2026-09-04",
+                },
+                "allowed_conditions": ["40ft dry container"],
+                "escalation_conditions": ["Pickup after Friday"],
+                "approval_actor": "demo-coordinator",
+            },
+        },
+        "mandate-key-001",
+    )
+    escalation_result = await adapter.execute(
+        "create_escalation",
+        {
+            "call_id": str(IDS["call"]),
+            "body": {
+                "expected_operation_version": 4,
+                "conflict": "Pickup window falls outside the current mandate.",
+                "attempted_alternatives": ["Requested the approved window"],
+                "recommended_action": "Coordinator review required",
+            },
+        },
+        "escalation-key-001",
+    )
+    notification_result = await adapter.execute(
+        "acknowledge_notification",
+        {
+            "notification_id": str(IDS["notification"]),
+            "body": {
+                "expected_operation_version": 4,
+                "acknowledged_by": "demo-coordinator",
+            },
+        },
+        "notification-key-001",
+    )
+
+    recap_command, brief_command, recovery_command, mandate_command = application.commands[:4]
+    assert recap_command.commitment_id == IDS["commitment"]  # type: ignore[attr-defined]
+    assert recap_command.idempotency_key == "recap-key-001"  # type: ignore[attr-defined]
+    assert brief_command.facts == ("Carrier is available",)  # type: ignore[attr-defined]
+    assert recovery_command.scenario.value == "MANDATE_SAFE"  # type: ignore[attr-defined]
+    assert mandate_command.maximum_amount.amount == Decimal("9500")  # type: ignore[attr-defined]
+    assert mandate_command.pickup_window.end_date == date(2026, 9, 4)  # type: ignore[attr-defined]
+    assert recap_result.idempotency_replayed is True
+    assert recap_result.payload["channel"] == "SIMULATED"  # type: ignore[index]
+    assert brief_result.payload["facts"] == ["Carrier is available"]  # type: ignore[index]
+    assert recovery_result.payload["active_commitment"]["commitment_id"] == str(  # type: ignore[index]
+        IDS["commitment"]
+    )
+    assert mandate_result.idempotency_replayed is True
+    assert escalation_result.payload["resolution_state"] == "OPEN"  # type: ignore[index]
+    assert notification_result.idempotency_replayed is True
+    assert notification_result.payload["acknowledged"] is True  # type: ignore[index]
+    assert notification_result.payload["recovery_decision"]["after"][  # type: ignore[index]
+        "operation_version"
+    ] == 4
+
+
+@pytest.mark.asyncio
+async def test_adapter_serializes_complete_operation_and_paged_audit_projection() -> None:
+    application = FakeTextApplication()
+    application.operation_result = replace(
+        operation_projection(),
+        open_escalation=post_contact_escalation(),
+        notifications=(notification(),),
+    )
+    application.audit_result = complete_audit_projection()
+    adapter, _ = service(application)
+
+    operation = await adapter.execute(
+        "get_operation", {"operation_id": str(IDS["operation"])}, None
+    )
+    audit = await adapter.execute(
+        "get_operation_audit",
+        {
+            "operation_id": str(IDS["operation"]),
+            "cursor": "safe-cursor",
+            "limit": 25,
+        },
+        None,
+    )
+
+    query = application.commands[-1]
+    assert query.operation_id == IDS["operation"]  # type: ignore[attr-defined]
+    assert query.cursor == "safe-cursor"  # type: ignore[attr-defined]
+    assert query.limit == 25  # type: ignore[attr-defined]
+    assert operation.payload["open_escalation"]["call_id"] == str(IDS["call"])  # type: ignore[index]
+    assert operation.payload["notifications"][0]["acknowledged"] is False  # type: ignore[index]
+    assert audit.payload["recaps"][0]["rendered_content"] == (  # type: ignore[index]
+        "Simulated agreement recap."
+    )
+    assert audit.payload["briefs"][0]["changes"] == ["Recovered safely"]  # type: ignore[index]
+    assert audit.payload["recoveries"][0]["scenario"] == "MANDATE_SAFE"  # type: ignore[index]
+    assert audit.payload["escalations"][0]["conflict"].startswith("Pickup window")  # type: ignore[index]
+    assert audit.payload["notifications"][0]["message"].startswith("The active carrier")  # type: ignore[index]
+    assert audit.payload["next_cursor"] == "safe-cursor"  # type: ignore[index]
+
+
 ERROR_CASES = [
     (DraftNotFound(IDS["draft"]), 404, ApiErrorCode.RESOURCE_NOT_FOUND),
     (OperationNotFound(IDS["operation"]), 404, ApiErrorCode.RESOURCE_NOT_FOUND),
@@ -571,9 +862,22 @@ ERROR_CASES = [
         409,
         ApiErrorCode.STATE_CONFLICT,
     ),
-    (EvidenceReservationNotFound(IDS["evidence"]), 409, ApiErrorCode.STATE_CONFLICT),
+    (EvidenceReservationNotFound(IDS["evidence"]), 404, ApiErrorCode.RESOURCE_NOT_FOUND),
     (
         EvidenceArtifactUnavailable("private/missing-recording.wav"),
+        404,
+        ApiErrorCode.RESOURCE_NOT_FOUND,
+    ),
+    (EscalationNotFound(IDS["escalation"]), 404, ApiErrorCode.RESOURCE_NOT_FOUND),
+    (NotificationNotFound(IDS["notification"]), 404, ApiErrorCode.RESOURCE_NOT_FOUND),
+    (EscalationAlreadyResolved(IDS["escalation"]), 409, ApiErrorCode.STATE_CONFLICT),
+    (
+        NotificationAlreadyAcknowledged(IDS["notification"]),
+        409,
+        ApiErrorCode.STATE_CONFLICT,
+    ),
+    (
+        OperationBlockedByEscalation(IDS["operation"], IDS["escalation"]),
         409,
         ApiErrorCode.STATE_CONFLICT,
     ),
