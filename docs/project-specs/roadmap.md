@@ -331,7 +331,7 @@ This cross-layer telephony phase replaces the simulated inbound transport withou
 
 Slug: send-verified-whatsapp-recaps
 
-Depends on: 22
+Depends on: 19, 25
 
 Conflicts with: none
 
