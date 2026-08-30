@@ -105,6 +105,7 @@ def build_client(fake: DeterministicFake | None = None) -> TestClient:
     app = create_app(
         Settings(
             app_env="test",
+            database_url="",
             volta_demo_bearer_token="synthetic-test-token",
             cors_origins=["http://localhost:3000"],
         )

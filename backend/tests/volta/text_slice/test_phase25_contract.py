@@ -1,10 +1,14 @@
 import stat
+import wave
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from yuno_backend.volta.errors import InvalidDomainValue
+from yuno_backend.volta.evidence.models import AgreementEvidence
+from yuno_backend.volta.evidence.playback import RetrieveEvidenceAudioService
 from yuno_backend.volta.idempotency import TextMutationIdempotency
 from yuno_backend.volta.negotiations.errors import InvalidNegotiationTransition
 from yuno_backend.volta.recovery.fixtures import (
@@ -51,14 +55,64 @@ async def test_default_safe_fixture_is_retrievable_from_demo_storage(tmp_path) -
     payload = await create_demo_evidence_storage(tmp_path).retrieve(
         evidence.recording_reference
     )
-    assert payload == b"synthetic deterministic recovery evidence"
+    assert payload[:4] == b"RIFF"
+    assert payload[8:12] == b"WAVE"
+    with wave.open(BytesIO(payload), "rb") as artifact:
+        assert artifact.getnchannels() == 1
+        assert artifact.getsampwidth() == 1
+        assert artifact.getframerate() == 8_000
+        assert artifact.getnframes() == 24_000
+        duration_ms = artifact.getnframes() * 1_000 / artifact.getframerate()
+        assert evidence.audio_start_ms < duration_ms
+
+
+async def test_default_safe_fixture_passes_evidence_audio_retrieval(tmp_path) -> None:
+    catalog = DeterministicRecoveryFixtureCatalog()
+    fixture_evidence = catalog.get(RecoveryScenario.MANDATE_SAFE).evidence
+    assert fixture_evidence is not None
+    evidence_id = UUID(int=1701)
+    stored_evidence = AgreementEvidence(
+        evidence_id,
+        UUID(int=1702),
+        fixture_evidence.recording_reference,
+        fixture_evidence.audio_start_ms,
+        fixture_evidence.item_id,
+        fixture_evidence.event_id,
+        datetime(2026, 9, 1, 12, tzinfo=UTC),
+    )
+
+    class EvidenceRepository:
+        async def get(self, requested_id: UUID) -> AgreementEvidence | None:
+            return stored_evidence if requested_id == evidence_id else None
+
+    class UnitOfWork:
+        evidence = EvidenceRepository()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    storage = create_demo_evidence_storage(tmp_path)
+    audio = await RetrieveEvidenceAudioService(UnitOfWork, storage).retrieve(
+        evidence_id
+    )
+
+    assert audio.media_type == "audio/wav"
+    assert audio.content_length == len(audio.content)
+    assert audio.content[:4] == b"RIFF"
+    assert audio.content[8:12] == b"WAVE"
 
 
 @pytest.mark.parametrize("residual_payload", [b"", b"corrupt fixture"])
 async def test_demo_storage_restores_empty_or_corrupt_recovery_fixture(
     tmp_path, residual_payload: bytes
 ) -> None:
-    fixture = tmp_path / "fixture-recovery-mandate-safe.webm"
+    fixture = tmp_path / "fixture-recovery-mandate-safe.wav"
     fixture.write_bytes(residual_payload)
     fixture.chmod(0o644)
 
@@ -69,8 +123,10 @@ async def test_demo_storage_restores_empty_or_corrupt_recovery_fixture(
         evidence.recording_reference
     )
 
-    assert payload == b"synthetic deterministic recovery evidence"
+    assert payload[:4] == b"RIFF"
+    assert payload[8:12] == b"WAVE"
     assert stat.S_IMODE(fixture.stat().st_mode) == 0o600
+    assert list(tmp_path.glob(".fixture-recovery-mandate-safe.wav.*.tmp")) == []
 
 
 @pytest.mark.parametrize(

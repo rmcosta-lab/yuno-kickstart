@@ -72,7 +72,7 @@ def _default_fixtures() -> tuple[RecoveryFixture, ...]:
             ),
             "MANDATE_SAFE_REPLACEMENT",
             ReplacementEvidence(
-                "fixture-recovery-mandate-safe.webm",
+                "fixture-recovery-mandate-safe.wav",
                 1840,
                 "recovery-safe-item",
                 "recovery-safe-event",
