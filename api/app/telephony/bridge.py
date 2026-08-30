@@ -13,6 +13,7 @@ from yuno_backend.volta.realtime import (
     RealtimeToolCallRequested,
     RealtimeToolOutput,
 )
+from yuno_backend.volta.telephony import HumanHandoffAuthorityError
 
 from app.telephony.media import Pcm24ToMulawConverter, twilio_payload_to_pcm24
 from app.telephony.service import MediaBinding, TelephonyApplication
@@ -27,12 +28,8 @@ class MediaProtocolError(ValueError):
     pass
 
 
-def tool_idempotency_key(
-    binding: MediaBinding, event: RealtimeToolCallRequested
-) -> str:
-    digest = hashlib.sha256(
-        f"{binding.call_session_id}:{event.call_id}".encode()
-    ).hexdigest()
+def tool_idempotency_key(binding: MediaBinding, event: RealtimeToolCallRequested) -> str:
+    digest = hashlib.sha256(f"{binding.call_session_id}:{event.call_id}".encode()).hexdigest()
     return f"twilio-tool-{digest}"
 
 
@@ -139,8 +136,22 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                 converter = Pcm24ToMulawConverter()
                 async for event in realtime.events():
                     if isinstance(event, RealtimeAudioDelta):
+                        try:
+                            await application.ensure_ai_speech_allowed(binding.call_session_id)
+                        except HumanHandoffAuthorityError:
+                            await websocket.send_json({"event": "clear", "streamSid": stream_sid})
+                            continue
                         payload = converter.convert(event.audio)
                         if payload is not None:
+                            try:
+                                await application.ensure_ai_speech_allowed(
+                                    binding.call_session_id
+                                )
+                            except HumanHandoffAuthorityError:
+                                await websocket.send_json(
+                                    {"event": "clear", "streamSid": stream_sid}
+                                )
+                                continue
                             await websocket.send_json(
                                 {
                                     "event": "media",
@@ -162,9 +173,14 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                             )
                         )
 
+            async def authority_to_twilio() -> None:
+                await application.wait_for_ai_authority_revoked(binding.call_session_id)
+                await websocket.send_json({"event": "clear", "streamSid": stream_sid})
+
             tasks = {
                 asyncio.create_task(twilio_to_realtime()),
                 asyncio.create_task(realtime_to_twilio()),
+                asyncio.create_task(authority_to_twilio()),
             }
             done, pending = await asyncio.wait(
                 tasks,

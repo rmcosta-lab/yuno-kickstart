@@ -1,6 +1,21 @@
 """Provider-neutral outbound telephony application contract."""
 
 from yuno_backend.volta.telephony.errors import (
+    HumanHandoffActiveConflict,
+    HumanHandoffAuthenticationError,
+    HumanHandoffAuthorityError,
+    HumanHandoffCallNotLiveError,
+    HumanHandoffDestinationError,
+    HumanHandoffError,
+    HumanHandoffIdempotencyConflict,
+    HumanHandoffMissingContextError,
+    HumanHandoffNotFoundError,
+    HumanHandoffOutcomeUncertain,
+    HumanHandoffPermissionError,
+    HumanHandoffProviderError,
+    HumanHandoffRateLimitError,
+    HumanHandoffStaleCallError,
+    HumanHandoffTimeoutError,
     InvalidOutboundCallResponseError,
     OutboundCallAllowlistError,
     OutboundCallAuthenticationError,
@@ -12,8 +27,19 @@ from yuno_backend.volta.telephony.errors import (
     OutboundCallRateLimitError,
     OutboundCallTimeoutError,
 )
-from yuno_backend.volta.telephony.gateway import OutboundCallGateway
+from yuno_backend.volta.telephony.gateway import HumanHandoffGateway, OutboundCallGateway
+from yuno_backend.volta.telephony.memory import (
+    InMemoryAIAuthorityFence,
+    InMemoryHumanHandoffRepository,
+)
 from yuno_backend.volta.telephony.models import (
+    HumanHandoff,
+    HumanHandoffCommand,
+    HumanHandoffContext,
+    HumanHandoffReadiness,
+    HumanHandoffReservation,
+    HumanHandoffStatus,
+    HumanHandoffStatusEvent,
     OutboundCall,
     OutboundCallAttempt,
     OutboundCallAttemptReservation,
@@ -28,14 +54,51 @@ from yuno_backend.volta.telephony.models import (
     OutboundCallUncertainState,
     RecordingMode,
 )
-from yuno_backend.volta.telephony.repositories import OutboundCallAttemptStore
+from yuno_backend.volta.telephony.repositories import (
+    AIAuthorityFence,
+    HumanHandoffAudit,
+    HumanHandoffRepository,
+    OutboundCallAttemptStore,
+)
 from yuno_backend.volta.telephony.services import (
+    HumanHandoffService,
+    apply_handoff_status_event,
     apply_status_event,
+    human_handoff_request_fingerprint,
     outbound_call_request_fingerprint,
     transition_status,
 )
 
 __all__ = [
+    "AIAuthorityFence",
+    "HumanHandoff",
+    "HumanHandoffActiveConflict",
+    "HumanHandoffAudit",
+    "HumanHandoffAuthenticationError",
+    "HumanHandoffAuthorityError",
+    "HumanHandoffCallNotLiveError",
+    "HumanHandoffCommand",
+    "HumanHandoffContext",
+    "HumanHandoffDestinationError",
+    "HumanHandoffError",
+    "HumanHandoffGateway",
+    "HumanHandoffIdempotencyConflict",
+    "HumanHandoffMissingContextError",
+    "HumanHandoffNotFoundError",
+    "HumanHandoffOutcomeUncertain",
+    "HumanHandoffPermissionError",
+    "HumanHandoffProviderError",
+    "HumanHandoffRateLimitError",
+    "HumanHandoffRepository",
+    "HumanHandoffReadiness",
+    "HumanHandoffReservation",
+    "HumanHandoffService",
+    "HumanHandoffStaleCallError",
+    "HumanHandoffStatus",
+    "HumanHandoffStatusEvent",
+    "HumanHandoffTimeoutError",
+    "InMemoryAIAuthorityFence",
+    "InMemoryHumanHandoffRepository",
     "InvalidOutboundCallResponseError",
     "OutboundCall",
     "OutboundCallAllowlistError",
@@ -61,7 +124,9 @@ __all__ = [
     "OutboundCallUncertainReason",
     "OutboundCallUncertainState",
     "RecordingMode",
+    "apply_handoff_status_event",
     "apply_status_event",
+    "human_handoff_request_fingerprint",
     "outbound_call_request_fingerprint",
     "transition_status",
 ]

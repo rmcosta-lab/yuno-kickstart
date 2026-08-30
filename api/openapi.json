@@ -1239,6 +1239,135 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HumanHandoffContextResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "call_status": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Call Status",
+            "type": "string"
+          },
+          "eligible_quote_summaries": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Eligible Quote Summaries",
+            "type": "array"
+          },
+          "mandate_facts": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Mandate Facts",
+            "type": "array"
+          },
+          "mandate_version": {
+            "maximum": 9007199254740991.0,
+            "minimum": 1.0,
+            "title": "Mandate Version",
+            "type": "integer"
+          },
+          "structured_call_brief": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Structured Call Brief",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mandate_version",
+          "mandate_facts",
+          "eligible_quote_summaries",
+          "structured_call_brief",
+          "call_status"
+        ],
+        "title": "HumanHandoffContextResponse",
+        "type": "object"
+      },
+      "HumanHandoffReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "format": "uuid",
+            "title": "Call Id",
+            "type": "string"
+          },
+          "call_status_updated_at": {
+            "format": "date-time",
+            "title": "Call Status Updated At",
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/HumanHandoffContextResponse"
+          }
+        },
+        "required": [
+          "call_id",
+          "call_status_updated_at",
+          "context"
+        ],
+        "title": "HumanHandoffReadinessResponse",
+        "type": "object"
+      },
+      "HumanHandoffResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "call_id": {
+            "format": "uuid",
+            "title": "Call Id",
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/HumanHandoffContextResponse"
+          },
+          "handoff_id": {
+            "format": "uuid",
+            "title": "Handoff Id",
+            "type": "string"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "CONNECTING",
+              "JOINED",
+              "FAILED_SAFE",
+              "TIMED_OUT_SAFE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "status_updated_at": {
+            "format": "date-time",
+            "title": "Status Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handoff_id",
+          "call_id",
+          "status",
+          "requested_at",
+          "status_updated_at",
+          "context"
+        ],
+        "title": "HumanHandoffResponse",
+        "type": "object"
+      },
       "MandateResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2206,6 +2335,41 @@
           "approval_actor"
         ],
         "title": "ReplaceMandateRequest",
+        "type": "object"
+      },
+      "RequestHumanHandoffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "authorized_at": {
+            "format": "date-time",
+            "title": "Authorized At",
+            "type": "string"
+          },
+          "authorized_by": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Authorized By",
+            "type": "string"
+          },
+          "coordinator_destination_label": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Coordinator Destination Label",
+            "type": "string"
+          },
+          "expected_call_status_updated_at": {
+            "format": "date-time",
+            "title": "Expected Call Status Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinator_destination_label",
+          "authorized_by",
+          "authorized_at",
+          "expected_call_status_updated_at"
+        ],
+        "title": "RequestHumanHandoffRequest",
         "type": "object"
       },
       "RequestedLanguage": {
@@ -3410,6 +3574,501 @@
         "summary": "Attach Commitment Evidence",
         "tags": [
           "volta"
+        ]
+      }
+    },
+    "/v1/calls/{call_id}/handoff-readiness": {
+      "get": {
+        "operationId": "get_human_handoff_readiness",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanHandoffReadinessResponse"
+                }
+              }
+            },
+            "description": "The bounded context required to authorize a handoff."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The authenticated actor lacks authority.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The referenced resource was not found.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request conflicts with current state or idempotency history.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request does not satisfy the public contract.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The durable handoff context is temporarily unavailable."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Human Handoff Readiness",
+        "tags": [
+          "telephony"
+        ]
+      }
+    },
+    "/v1/calls/{call_id}/handoffs": {
+      "post": {
+        "operationId": "request_human_handoff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Printable ASCII key reused for one logical mutation.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "description": "Printable ASCII key reused for one logical mutation.",
+              "maxLength": 128,
+              "minLength": 8,
+              "pattern": "^[\\x20-\\x7E]+$",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestHumanHandoffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanHandoffResponse"
+                }
+              }
+            },
+            "description": "The handoff was accepted."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The authenticated actor lacks authority.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The referenced resource was not found.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request conflicts with current state or idempotency history.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request does not satisfy the public contract.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The configured demo traffic boundary was exceeded.",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds until the authorized mutation window can accept traffic.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Provider failure."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unavailable or uncertain outcome."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Provider timeout."
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Human Handoff",
+        "tags": [
+          "telephony"
+        ]
+      }
+    },
+    "/v1/calls/{call_id}/handoffs/{handoff_id}": {
+      "get": {
+        "operationId": "get_human_handoff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Call Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "handoff_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Handoff Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanHandoffResponse"
+                }
+              }
+            },
+            "description": "The durable handoff state."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication is missing or invalid.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The authenticated actor lacks authority.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The referenced resource was not found.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request does not satisfy the public contract.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Correlation identifier preserved or assigned by the API.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Human Handoff",
+        "tags": [
+          "telephony"
         ]
       }
     },

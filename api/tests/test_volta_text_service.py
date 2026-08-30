@@ -1017,7 +1017,7 @@ async def test_adapter_maps_allowlisted_errors_and_redacts_everything_else(
 
 @pytest.mark.asyncio
 async def test_default_wiring_is_lazy_and_missing_database_configuration_is_safe() -> None:
-    adapter = create_volta_text_contract_service(Settings(app_env="test"))
+    adapter = create_volta_text_contract_service(Settings(app_env="test", database_url=""))
 
     with pytest.raises(ContractServiceError) as captured:
         await adapter.execute(

@@ -48,8 +48,10 @@
 
 - Coordinator and sole phase owner: `rmcosta-lab`.
 - Backend/application contracts and persistence semantics land before adapter, API, or frontend work depends on them.
-- After contracts freeze, one backend/Twilio writer, one API/media writer, and one frontend writer may proceed on the non-overlapping paths listed in `requirements.md`; the coordinator remains the sole writer for the phase specs, generated artifacts, migration, manifests/lockfiles, and shared configuration.
-- The API writer owns the one OpenAPI generation checkpoint; the frontend writer consumes generated output and never hand-copies the Pydantic contract.
+- Implementation ownership exception recorded before delegation: the backend worker is the sole writer for `backend/**`; the API worker is the sole writer for `api/**`, including Pydantic schemas and generated `api/openapi.json`; the frontend worker is the sole writer for `frontend/**`, including generated Orval output. This operational split specializes the phase-start ownership table without changing its team owner.
+- The coordinator is the sole writer for this phase specification directory and any explicitly approved shared or integration file outside those three roots. No worker edits `validation.md`.
+- The API worker owns the OpenAPI source/export checkpoint. After API contract tests and `api/openapi.json` are ready, the coordinator notifies the frontend worker, which alone runs Orval and updates generated consumers; it never hand-copies the Pydantic contract.
+- No manifest or lockfile change is planned. Workers must stop and request coordinator ownership before touching `pyproject.toml`, `uv.lock`, `frontend/package.json`, or `pnpm-lock.yaml`; any demonstrably required manifest and its lockfile will have one coordinator-assigned writer.
 - Provider-specific fields never enter backend models or browser types. Frontend context uses bounded application projections, not a raw transcript or provider payload.
 - No shared mission, tech-stack, roadmap, or challenge-plan edit is planned. If implementation discovers a broad decision that another phase needs, pause the affected work and route it through `manage-shared-specs`.
 

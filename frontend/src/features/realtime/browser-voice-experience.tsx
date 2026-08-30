@@ -483,7 +483,7 @@ export function BrowserVoiceExperience({
         : `Voice connection ${state.kind.replaceAll("_", " ")}.`;
 
   return (
-    <Card>
+    <Card id="browser-voice-fallback">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-2">

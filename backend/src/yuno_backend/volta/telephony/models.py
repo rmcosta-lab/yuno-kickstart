@@ -12,6 +12,13 @@ from yuno_backend.volta.errors import InvalidDomainValue
 from yuno_backend.volta.idempotency import validate_idempotency_key
 
 __all__ = [
+    "HumanHandoff",
+    "HumanHandoffCommand",
+    "HumanHandoffContext",
+    "HumanHandoffReservation",
+    "HumanHandoffReadiness",
+    "HumanHandoffStatus",
+    "HumanHandoffStatusEvent",
     "OutboundCall",
     "OutboundCallAttempt",
     "OutboundCallAttemptReservation",
@@ -56,6 +63,207 @@ class RecordingMode(StrEnum):
 
     DISABLED = "DISABLED"
     AFTER_EXPLICIT_CONSENT = "AFTER_EXPLICIT_CONSENT"
+
+
+class HumanHandoffStatus(StrEnum):
+    """Truthful, provider-neutral state of one coordinator takeover."""
+
+    CONNECTING = "CONNECTING"
+    JOINED = "JOINED"
+    FAILED_SAFE = "FAILED_SAFE"
+    TIMED_OUT_SAFE = "TIMED_OUT_SAFE"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self is not HumanHandoffStatus.CONNECTING
+
+
+def _bounded_safe_texts(value: object, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, tuple):
+        value = tuple(value) if isinstance(value, list) else value
+    if (
+        not isinstance(value, tuple)
+        or len(value) > 20
+        or any(
+            not isinstance(item, str)
+            or not item.strip()
+            or len(item) > 300
+            for item in value
+        )
+    ):
+        raise InvalidDomainValue(field_name, "bounded_safe_texts_required")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoffContext:
+    """Bounded coordinator context; raw transcripts and provider data are forbidden."""
+
+    mandate_version: int
+    mandate_facts: tuple[str, ...]
+    eligible_quote_summaries: tuple[str, ...]
+    structured_call_brief: tuple[str, ...]
+    call_status: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.mandate_version, int)
+            or isinstance(self.mandate_version, bool)
+            or self.mandate_version < 1
+        ):
+            raise InvalidDomainValue("mandate_version", "positive_integer_required")
+        object.__setattr__(
+            self, "mandate_facts", _bounded_safe_texts(self.mandate_facts, "mandate_facts")
+        )
+        object.__setattr__(
+            self,
+            "eligible_quote_summaries",
+            _bounded_safe_texts(
+                self.eligible_quote_summaries, "eligible_quote_summaries"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "structured_call_brief",
+            _bounded_safe_texts(self.structured_call_brief, "structured_call_brief"),
+        )
+        _safe_identifier(self.call_status, "call_status")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoffCommand:
+    call_id: UUID
+    idempotency_key: str = field(repr=False)
+    coordinator_destination_label: str
+    authorized_by: str
+    authorized_at: datetime
+    expected_call_status_updated_at: datetime
+    correlation_id: UUID
+
+    def __post_init__(self) -> None:
+        _uuid(self.call_id, "call_id")
+        validate_idempotency_key(self.idempotency_key)
+        _safe_identifier(
+            self.coordinator_destination_label, "coordinator_destination_label"
+        )
+        _safe_identifier(self.authorized_by, "authorized_by")
+        _utc(self.authorized_at, "authorized_at")
+        _utc(self.expected_call_status_updated_at, "expected_call_status_updated_at")
+        _uuid(self.correlation_id, "correlation_id")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoff:
+    handoff_id: UUID
+    call_id: UUID
+    coordinator_destination_label: str
+    idempotency_key: str = field(repr=False)
+    request_fingerprint: str = field(repr=False)
+    status: HumanHandoffStatus
+    requested_at: datetime
+    status_updated_at: datetime
+    context: HumanHandoffContext
+    last_status_event_id: str | None = None
+    last_status_sequence_number: int | None = None
+    processed_status_event_ids: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _uuid(self.handoff_id, "handoff_id")
+        _uuid(self.call_id, "call_id")
+        _safe_identifier(
+            self.coordinator_destination_label, "coordinator_destination_label"
+        )
+        validate_idempotency_key(self.idempotency_key)
+        if _SHA256_HEX.fullmatch(self.request_fingerprint) is None:
+            raise InvalidDomainValue("request_fingerprint", "sha256_hex_required")
+        if not isinstance(self.status, HumanHandoffStatus):
+            raise InvalidDomainValue("status", "human_handoff_status_required")
+        _utc(self.requested_at, "requested_at")
+        _utc(self.status_updated_at, "status_updated_at")
+        if self.status_updated_at < self.requested_at:
+            raise InvalidDomainValue("status_updated_at", "must_not_precede_requested_at")
+        if not isinstance(self.context, HumanHandoffContext):
+            raise InvalidDomainValue("context", "human_handoff_context_required")
+        cursor = (self.last_status_event_id, self.last_status_sequence_number)
+        if (cursor[0] is None) != (cursor[1] is None):
+            raise InvalidDomainValue("status_event_cursor", "complete_cursor_required")
+        if self.last_status_event_id is not None:
+            _safe_identifier(self.last_status_event_id, "last_status_event_id")
+            _non_negative_integer(
+                self.last_status_sequence_number, "last_status_sequence_number"
+            )
+        if not isinstance(self.processed_status_event_ids, tuple):
+            object.__setattr__(
+                self, "processed_status_event_ids", tuple(self.processed_status_event_ids)
+            )
+        if (
+            len(self.processed_status_event_ids) > 128
+            or len(set(self.processed_status_event_ids))
+            != len(self.processed_status_event_ids)
+        ):
+            raise InvalidDomainValue(
+                "processed_status_event_ids", "unique_bounded_events_required"
+            )
+        for event_id in self.processed_status_event_ids:
+            _safe_identifier(event_id, "processed_status_event_ids")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoffReservation:
+    handoff: HumanHandoff
+    created: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.handoff, HumanHandoff):
+            raise InvalidDomainValue("handoff", "human_handoff_required")
+        if not isinstance(self.created, bool):
+            raise InvalidDomainValue("created", "boolean_required")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoffReadiness:
+    """Durable safe snapshot required before an explicit takeover request."""
+
+    call_id: UUID
+    call_status_updated_at: datetime
+    context: HumanHandoffContext
+
+    def __post_init__(self) -> None:
+        _uuid(self.call_id, "call_id")
+        _utc(self.call_status_updated_at, "call_status_updated_at")
+        if not isinstance(self.context, HumanHandoffContext):
+            raise InvalidDomainValue("context", "human_handoff_context_required")
+
+
+@dataclass(frozen=True, slots=True)
+class HumanHandoffStatusEvent:
+    provider_event_id: str
+    handoff_id: UUID
+    call_id: UUID
+    status: HumanHandoffStatus
+    sequence_number: int
+    observed_at: datetime
+    remote_participant_present: bool
+    coordinator_participant_present: bool
+
+    def __post_init__(self) -> None:
+        _safe_identifier(self.provider_event_id, "provider_event_id")
+        _uuid(self.handoff_id, "handoff_id")
+        _uuid(self.call_id, "call_id")
+        if not isinstance(self.status, HumanHandoffStatus):
+            raise InvalidDomainValue("status", "human_handoff_status_required")
+        _non_negative_integer(self.sequence_number, "sequence_number")
+        _utc(self.observed_at, "observed_at")
+        if not isinstance(self.remote_participant_present, bool) or not isinstance(
+            self.coordinator_participant_present, bool
+        ):
+            raise InvalidDomainValue("participant_evidence", "boolean_required")
+        if self.status is HumanHandoffStatus.JOINED and not (
+            self.remote_participant_present and self.coordinator_participant_present
+        ):
+            raise InvalidDomainValue(
+                "participant_evidence", "joined_requires_both_participants"
+            )
 
 
 class OutboundCallStatus(StrEnum):

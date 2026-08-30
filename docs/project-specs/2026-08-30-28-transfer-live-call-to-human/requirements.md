@@ -11,7 +11,7 @@
 
 - Provider-neutral handoff state, typed commands/results/events, atomic idempotent reservation, AI-authority suspension, durable status, and safe audit records in backend/core.
 - A Twilio adapter operation that redirects the existing live remote call into a bounded conference and adds one allowlisted coordinator participant, plus normalized provider errors and timeouts.
-- A demo-authorized, origin-checked, rate-limited `POST /v1/calls/{call_id}/handoffs` contract, a read contract for the resulting handoff, and signed Twilio conference/participant status ingress.
+- A demo-authorized, origin-checked, rate-limited `POST /v1/calls/{call_id}/handoffs` contract, a read-only readiness snapshot, a read contract for the resulting handoff, and signed Twilio conference/participant status ingress.
 - OpenAPI and Orval regeneration followed by a generated-client frontend action that shows the current structured context before confirmation and renders `CONNECTING`, `JOINED`, `FAILED_SAFE`, or `TIMED_OUT_SAFE` truthfully.
 - Media-bridge enforcement that stops model output and rejects commitment-producing tool actions once the handoff reservation succeeds; it does not infer human participation from a disconnected AI stream.
 - Focused backend, adapter, API, callback, generated-contract, frontend, browser, accessibility, idempotency, timeout, failure, duplicate, and redaction tests.
@@ -57,13 +57,17 @@
 6. Failure or timeout advances monotonically to `FAILED_SAFE` or `TIMED_OUT_SAFE`, leaves the remote leg and AI fence explicit, exposes a safe retry/terminate decision, and never records or renders human participation.
 7. A same-request replay returns the durable handoff without a second provider mutation. A changed payload under the same key or another active logical handoff returns a safe conflict. Duplicate/reordered callbacks are accepted at most once without status regression.
 8. After reservation, pending Realtime audio output is cleared or dropped, subsequent AI audio is suppressed, and commitment-producing tool actions fail through a safe typed authority error. Read-only context remains available to the coordinator.
-9. `POST /v1/calls/{call_id}/handoffs`, the handoff read route, and provider callback ingress enforce their declared auth, validation, idempotency, status, error, signature, and redaction semantics; OpenAPI and Orval are regenerated, not hand-edited.
+9. The readiness read, `POST /v1/calls/{call_id}/handoffs`, the handoff read route, and provider callback ingress enforce their declared auth, validation, idempotency, status, error, signature, and redaction semantics; OpenAPI and Orval are regenerated, not hand-edited.
 10. Focused tests, `make check`, generation review, browser console/network/accessibility checks, `git diff --check`, and secret/privacy scans pass. One separately authorized sandbox handoff proves continuity, coordinator join, AI silence/authority revocation, and audit evidence; otherwise the provider portion remains visibly incomplete.
 
 ## HTTP contract gate
 
 ### Public application routes
 
+- `GET /v1/calls/{call_id}/handoff-readiness`
+  - Security: demo bearer authorization and the explicit allowed-origin boundary; no provider I/O.
+  - Success: `200 OK` with `call_id`, the durable `call_status_updated_at` concurrency value required by the POST, and the same bounded safe context projection. No provider identifier, destination number, transcript, raw audio reference, signature, or credential is returned.
+  - Errors: the standard safe envelope for `401`, `403`, `404`, `409`, `422`, and `503` only.
 - `POST /v1/calls/{call_id}/handoffs`
   - Security: demo bearer authorization, explicit allowed origin, rate limit, request correlation, and required `Idempotency-Key`.
   - Request: `coordinator_destination_label`, `authorized_by`, `authorized_at`, and `expected_call_status_updated_at`. The call-session ID comes only from the path; provider identifiers and phone numbers never come from the browser.
@@ -81,10 +85,10 @@
 
 ## Application contract gate
 
-- Add provider-neutral public symbols under `yuno_backend.volta.telephony`: `HumanHandoffCommand`, `HumanHandoffContext`, `HumanHandoff`, `HumanHandoffStatus`, `HumanHandoffStatusEvent`, `HumanHandoffService`, `HumanHandoffGateway`, and `HumanHandoffRepository`.
+- Add provider-neutral public symbols under `yuno_backend.volta.telephony`: `HumanHandoffCommand`, `HumanHandoffContext`, `HumanHandoffReadiness`, `HumanHandoff`, `HumanHandoffStatus`, `HumanHandoffStatusEvent`, `HumanHandoffService`, `HumanHandoffGateway`, and `HumanHandoffRepository`.
 - `HumanHandoffService` is constructed with the handoff repository, provider gateway, existing operation/audit application boundaries, clock, and an AI-authority fence. FastAPI injects the service; no FastAPI/Pydantic/provider payload enters backend/core.
 - `request_handoff(command: HumanHandoffCommand) -> HumanHandoff` atomically reserves or replays the logical operation and persists the AI fence before calling the gateway. No database transaction remains open during provider I/O.
-- `get_handoff(call_id: UUID, handoff_id: UUID) -> HumanHandoff` returns the bounded durable projection without provider I/O. `observe_handoff(event: HumanHandoffStatusEvent) -> HumanHandoff` applies verified duplicate-safe monotonic evidence and appends the audit outcome.
+- `get_handoff_readiness(call_id: UUID) -> HumanHandoffReadiness` returns the current durable call-status timestamp and bounded context without provider I/O. `get_handoff(call_id: UUID, handoff_id: UUID) -> HumanHandoff` returns the bounded durable projection without provider I/O. `observe_handoff(event: HumanHandoffStatusEvent) -> HumanHandoff` applies verified duplicate-safe monotonic evidence and appends the audit outcome.
 - `HumanHandoffGateway.begin_handoff(handoff: HumanHandoff) -> None` receives only provider-neutral identifiers and the server-resolved coordinator destination label. The Twilio implementation owns Call update, conference/participant mapping, authentication, timeouts, and response redaction.
 - Typed safe exceptions cover call-not-live/stale state, missing context, unauthorized or unknown destination, active handoff, idempotency conflict, provider authentication/permission/rate limit/failure, timeout, and uncertain outcome. Browser/API errors never include phone numbers, provider identifiers, raw payloads, transcripts, credentials, or participant data.
 

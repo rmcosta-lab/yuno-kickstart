@@ -2,7 +2,17 @@
 
 from yuno_backend.integrations.twilio.config import (
     TwilioDestinationAllowlist,
+    TwilioHumanHandoffConfig,
     TwilioOutboundCallConfig,
+)
+from yuno_backend.integrations.twilio.handoff import (
+    InMemoryTwilioHandoffBindingStore,
+    SqlAlchemyTwilioExistingCallResolver,
+    SqlAlchemyTwilioHandoffBindingStore,
+    TwilioExistingCallResolver,
+    TwilioHandoffBindingStore,
+    TwilioHandoffStatusCallback,
+    TwilioHumanHandoffGateway,
 )
 from yuno_backend.integrations.twilio.outbound import (
     TwilioOutboundCallGateway,
@@ -10,7 +20,15 @@ from yuno_backend.integrations.twilio.outbound import (
 )
 
 __all__ = [
+    "InMemoryTwilioHandoffBindingStore",
+    "SqlAlchemyTwilioExistingCallResolver",
+    "SqlAlchemyTwilioHandoffBindingStore",
     "TwilioDestinationAllowlist",
+    "TwilioExistingCallResolver",
+    "TwilioHandoffBindingStore",
+    "TwilioHandoffStatusCallback",
+    "TwilioHumanHandoffConfig",
+    "TwilioHumanHandoffGateway",
     "TwilioOutboundCallConfig",
     "TwilioOutboundCallGateway",
     "map_twilio_call_status",

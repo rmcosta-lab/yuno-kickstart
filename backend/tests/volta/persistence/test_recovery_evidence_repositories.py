@@ -1229,6 +1229,7 @@ def test_phase25_downgrade_rejects_incompatible_durable_data_before_ddl(
 
     asyncio.run(seed_explicit_escalation())
     alembic_config = Config(str(persistence_conftest.ROOT / "backend" / "alembic.ini"))
+    command.downgrade(alembic_config, "20260830_25")
     with pytest.raises(RuntimeError, match="phase 25 downgrade refused"):
         command.downgrade(alembic_config, "-1")
     assert asyncio.run(current_revision()) == "20260830_25"

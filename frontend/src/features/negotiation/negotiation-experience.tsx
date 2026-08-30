@@ -44,6 +44,7 @@ import {
 import {
   ApiErrorCode,
   BrowserChannel,
+  type CarrierSessionResponse,
   type CommitmentEvidenceResponse,
   CommitmentDisposition,
   type AuditTimelineResponse,
@@ -64,7 +65,11 @@ import {
   RealtimeDiagnosticPreview,
   type AuthoritativeVoiceState,
 } from "../realtime";
-import { OutboundCallControl } from "../telephony";
+import {
+  HumanHandoffControl,
+  OutboundCallControl,
+  type HumanHandoffViewModel,
+} from "../telephony";
 import type {
   DemoScenarioId,
   NegotiationExperienceSnapshot,
@@ -1243,10 +1248,74 @@ function LiveOperation({
 }) {
   const [attachedEvidence, setAttachedEvidence] =
     useState<CommitmentEvidenceResponse | null>(null);
+  const handoffSession = (
+    operation.sessions ?? []
+  ).reduce<CarrierSessionResponse | null>(
+    (selected, candidate) =>
+      selected === null ||
+      candidate.carrier.deterministic_rank < selected.carrier.deterministic_rank
+        ? candidate
+        : selected,
+    null,
+  );
+  const handoffViewModel: HumanHandoffViewModel | null = handoffSession
+    ? {
+        callId: handoffSession.call_id,
+        callStatus: handoffSession.state,
+        coordinatorDestinationLabel: "Demo coordinator",
+        mandate: {
+          allowedConditions: operation.active_mandate.allowed_conditions ?? [],
+          currency: operation.active_mandate.currency,
+          escalationConditions:
+            operation.active_mandate.escalation_conditions ?? [],
+          maximumAmountMinor: operation.active_mandate.maximum_amount_minor,
+          pickupEnd: operation.active_mandate.pickup_window.end_date,
+          pickupStart: operation.active_mandate.pickup_window.start_date,
+          version: operation.active_mandate.version,
+        },
+        quotes: (operation.quotes ?? [])
+          .map((quote) => {
+            const session = operation.sessions?.find(
+              (candidate) => candidate.call_id === quote.call_id,
+            );
+            const comparison = audit?.quote_comparison.find(
+              (candidate) => candidate.quote_id === quote.quote_id,
+            );
+            return {
+              amountMinor: quote.terms.amount_minor,
+              carrierLabel:
+                session?.carrier.display_name ?? "Synthetic carrier",
+              conditions: quote.terms.conditions ?? [],
+              currency: quote.terms.currency,
+              eligibility: quote.eligibility,
+              rank: session?.carrier.deterministic_rank ?? 999,
+              selected: comparison?.selected ?? false,
+            };
+          })
+          .toSorted((left, right) => left.rank - right.rank),
+        brief: (() => {
+          const brief = audit?.briefs.find(
+            (candidate) => candidate.call_id === handoffSession.call_id,
+          );
+          return brief
+            ? {
+                changes: brief.changes ?? [],
+                facts: brief.facts ?? [],
+                objections: brief.objections ?? [],
+                unresolvedItems: brief.unresolved_items ?? [],
+              }
+            : null;
+        })(),
+      }
+    : null;
 
   return (
     <div className="space-y-6">
       <OutboundCallControl operation={operation} />
+
+      {handoffViewModel ? (
+        <HumanHandoffControl viewModel={handoffViewModel} />
+      ) : null}
 
       <BrowserVoiceExperience
         operation={operation}

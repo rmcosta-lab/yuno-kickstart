@@ -18,8 +18,8 @@ from yuno_backend.volta.telephony import (
 )
 
 
-def test_public_surface_matches_frozen_phase_contract() -> None:
-    assert set(telephony.__all__) == {
+def test_public_surface_retains_outbound_contract() -> None:
+    assert {
         "InvalidOutboundCallResponseError",
         "OutboundCall",
         "OutboundCallAllowlistError",
@@ -48,7 +48,21 @@ def test_public_surface_matches_frozen_phase_contract() -> None:
         "apply_status_event",
         "outbound_call_request_fingerprint",
         "transition_status",
-    }
+    }.issubset(telephony.__all__)
+
+
+def test_public_surface_exposes_human_handoff_contract() -> None:
+    assert {
+        "HumanHandoffCommand",
+        "HumanHandoffContext",
+        "HumanHandoff",
+        "HumanHandoffStatus",
+        "HumanHandoffStatusEvent",
+        "HumanHandoffService",
+        "HumanHandoffGateway",
+        "HumanHandoffRepository",
+        "HumanHandoffReadiness",
+    }.issubset(telephony.__all__)
 
 
 def test_provider_neutral_package_has_no_framework_provider_or_transport_imports() -> None:
