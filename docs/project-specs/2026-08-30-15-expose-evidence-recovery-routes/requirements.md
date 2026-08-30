@@ -6,7 +6,7 @@
 - Branch: `phase/15-expose-evidence-recovery-routes`.
 - Owner: `rmcosta-lab`.
 - Tracking Issue: none requested.
-- Depends on: Fases 12, 14, and 24, merged by pull requests #16, #14, and #18 with their gate evidence recorded.
+- Depends on: Fases 12, 14, 24, and 25. Fases 12, 14, and 24 were merged by pull requests #16, #14, and #18 with their gate evidence recorded; Fase 25 was added by merged specs pull request #19 and must complete before implementation resumes.
 - Conflicts with: none.
 - Roadmap gate: FastAPI implements the accepted P0 contracts for evidence, simulated recaps, briefs, notifications, inbound recovery simulations, mandate replacement, escalation, and audit retrieval; API tests cover authorization, idempotency, missing evidence, stale state, and safe errors without changing the committed contract or generated client.
 
@@ -74,7 +74,7 @@ The API adapter may translate validated transport values and project backend res
 | `yuno_backend.volta.recovery.errors`, `yuno_backend.volta.negotiations.errors`, `yuno_backend.volta.persistence.errors` | Safe missing-resource, stale-version, conflict, blocked-operation, already-recorded/resolved/acknowledged, and persistence exceptions | Central translation emits only the accepted public status/code/message and safe identifiers/current version; no exception string is returned directly. |
 | `yuno_backend.volta.persistence.unit_of_work` | `SqlAlchemyOperationUnitOfWork` | Constructed from the existing async session factory. It remains private to backend application/service construction; routers never access its repositories. |
 
-Before implementation proceeds beyond adapter construction, one backend-facing application facade must expose the complete durable operation/audit projection for recaps, briefs, recoveries, post-contact escalations, and notifications. Current `TextNegotiationApplication.get_operation_audit` exposes only events, quote comparison, negotiation, and commitment history. The API must not fill this gap with direct repository queries. If no existing public backend query boundary provides the remaining artifacts, implementation pauses and a supporting backend phase is added through `manage-shared-specs`; Fase 15 then refreshes from the merged prerequisite before continuing.
+Before implementation proceeds beyond adapter construction, one backend-facing application facade must expose the complete durable operation/audit projection for recaps, briefs, recoveries, post-contact escalations, and notifications. Current `TextNegotiationApplication.get_operation_audit` exposes only events, quote comparison, negotiation, and commitment history. The API must not fill this gap with direct repository queries. The implementation audit confirmed this public boundary is absent, so merged specs pull request #19 added Fase 25 as the supporting backend prerequisite. Fase 15 remains paused until Fase 25 completes and merges, then refreshes from the resulting `origin/main` before continuing.
 
 ## Browser/server, AI, and provider handoff
 
@@ -94,7 +94,7 @@ The browser handoff remains the already generated Orval client over HTTPS/JSON. 
 
 ## Assumptions, risks, and fallback
 
-- Assumption: the Fase 04 HTTP contract remains accepted and Fases 12, 14, and 24 remain the merged baseline.
+- Assumption: the Fase 04 HTTP contract remains accepted; Fases 12, 14, and 24 remain merged; and Fase 25 will supply the required backend facade without changing that HTTP contract.
 - Risk: standalone backend mutation services are wired directly while durable replay/projection is incomplete. Mitigation: use one application facade and a unit-of-work factory; do not put repository access or transition logic in FastAPI.
 - Risk: Fase 14 recap/brief values do not by themselves expose every accepted response field. Mitigation: prove a durable backend projection before wiring; do not synthesize or retain request-only success in API memory.
 - Risk: error translation leaks bounded-but-sensitive escalation context or recording references. Mitigation: explicit exception allowlist and safe constant public messages.

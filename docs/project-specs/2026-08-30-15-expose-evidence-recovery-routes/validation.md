@@ -4,7 +4,7 @@
 
 - [x] Fases 12, 14, and 24 remain merged with their gate evidence recorded.
 - [x] No conflicting phase or competing remote `phase/15-expose-evidence-recovery-routes` claim exists.
-- [ ] The temporary application/query projection checkpoint is resolved before implementation proceeds past the integration map. Blocked: specs pull request #19 must merge, then Fase 25 must complete and merge.
+- [ ] The temporary application/query projection checkpoint is resolved before implementation proceeds past the integration map. Blocked: Fase 25 must start, complete its backend gate, and merge.
 
 ## API behavior
 
@@ -72,4 +72,4 @@
 - Two independent read-only subagents inspected the API contract and backend application/persistence boundary. Both concluded that the Fase 15 gate cannot be satisfied safely in `api/**` alone.
 - Confirmed blockers: missing durable recap/brief/recovery response facts; missing complete operation/audit projection and list queries; missing atomic fingerprinted idempotency/replay for six mutations; incompatible automatic-escalation and recovery-evidence projections; and no backend facade for the required mappings.
 - `attach_commitment_evidence` is already integrated with durable replay and remains unchanged. The other dependent operations retain the honest `501 CONTRACT_NOT_IMPLEMENTED` fallback.
-- The user approved a supporting backend phase. Specs pull request #19 adds Fase 25 and the dependency from Fase 15. No implementation, provider call, deployment, production access, remote migration, financial operation, contract change, generated-file edit, or force-push occurred.
+- The user approved a supporting backend phase. Specs pull request #19 merged, adding Fase 25 and the dependency from Fase 15; this branch then refreshed from the updated `origin/main`. No implementation, provider call, deployment, production access, remote migration, financial operation, contract change, generated-file edit, or force-push occurred.
