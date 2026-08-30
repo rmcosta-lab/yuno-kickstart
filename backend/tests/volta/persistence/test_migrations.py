@@ -72,7 +72,11 @@ PRE_PHASE18_TABLES = PHASE14_TABLES | {
     "volta_evidence_reservations",
     "volta_text_mutation_idempotency",
 }
-PRE_PHASE28_TABLES = PRE_PHASE18_TABLES | {"volta_outbound_call_attempts"}
+PRE_PHASE28_TABLES = PRE_PHASE18_TABLES | {
+    "volta_outbound_call_attempts",
+    "volta_inbound_caller_correlations",
+    "volta_inbound_call_attempts",
+}
 EXPECTED_TABLES = PRE_PHASE28_TABLES | {
     "volta_human_handoffs",
     "volta_ai_authority_fences",
@@ -290,6 +294,25 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_outbound_call_attempts_failure_status",
         "ck_volta_outbound_call_attempts_call_timestamps",
         "ck_volta_outbound_call_attempts_timestamps",
+    },
+    "volta_inbound_caller_correlations": {
+        "pk_volta_inbound_caller_correlations",
+        "fk_volta_inbound_caller_correlations_operation",
+        "uq_volta_inbound_caller_correlations_caller_operation",
+        "ck_volta_inbound_caller_correlations_label",
+    },
+    "volta_inbound_call_attempts": {
+        "pk_volta_inbound_call_attempts",
+        "uq_volta_inbound_call_attempts_provider_call",
+        "fk_volta_inbound_attempt_operation",
+        "fk_volta_inbound_attempt_commitment",
+        "fk_volta_inbound_attempt_result_commitment",
+        "fk_volta_inbound_attempt_result_evidence",
+        "fk_volta_inbound_attempt_result_brief",
+        "fk_volta_inbound_attempt_recovery",
+        "ck_volta_inbound_attempt_status",
+        "ck_volta_inbound_attempt_identifiers",
+        "ck_volta_inbound_attempt_payload",
     },
     "volta_human_handoffs": {
         "pk_volta_human_handoffs",
@@ -539,6 +562,14 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
     assert indexes["volta_outbound_call_attempts"] == {  # type: ignore[index]
         "ix_volta_outbound_call_attempts_operation",
         "uq_volta_outbound_call_attempts_provider_call",
+    }
+    assert indexes["volta_inbound_caller_correlations"] == {  # type: ignore[index]
+        "ix_volta_inbound_caller_correlations_label",
+        "uq_volta_inbound_caller_correlations_caller_operation",
+    }
+    assert indexes["volta_inbound_call_attempts"] == {  # type: ignore[index]
+        "uq_volta_inbound_attempt_one_active_operation",
+        "uq_volta_inbound_call_attempts_provider_call",
     }
     assert indexes["volta_human_handoffs"] == {  # type: ignore[index]
         "ix_volta_handoffs_call",

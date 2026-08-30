@@ -1,7 +1,7 @@
 """Add durable human-handoff reservation, callback state, and AI fence.
 
 Revision ID: 20260830_28
-Revises: 20260830_26
+Revises: 20260830_27
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20260830_28"
-down_revision: str | None = "20260830_26"
+down_revision: str | None = "20260830_27"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -56,7 +56,9 @@ def upgrade() -> None:
         "'ESCALATION_RESUMED', 'MANDATE_REPLACED', 'ESCALATION_RESOLVED', "
         "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED', "
         "'HANDOFF_REQUESTED', 'HANDOFF_JOINED', 'HANDOFF_FAILED_SAFE', "
-        "'HANDOFF_TIMED_OUT_SAFE') AND metadata = '{}'::jsonb)",
+        "'HANDOFF_TIMED_OUT_SAFE', 'INBOUND_CALL_ACCEPTED', "
+        "'INBOUND_CONSENT_RECORDED', 'INBOUND_RECOVERY_COMPLETED') "
+        "AND metadata = '{}'::jsonb)",
     )
     op.create_table(
         "volta_human_handoffs",
@@ -201,6 +203,8 @@ def downgrade() -> None:
         "'COMMITMENT_SUPERSEDED', 'EVIDENCE_RECORDED', 'BRIEF_GENERATED', "
         "'RECAP_GENERATED', 'RECOVERY_REPLACEMENT_APPLIED', 'POST_CONTACT_ESCALATED', "
         "'ESCALATION_RESUMED', 'MANDATE_REPLACED', 'ESCALATION_RESOLVED', "
-        "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED') "
+        "'EXPLICIT_ESCALATION_CREATED', 'NOTIFICATION_ACKNOWLEDGED', "
+        "'INBOUND_CALL_ACCEPTED', 'INBOUND_CONSENT_RECORDED', "
+        "'INBOUND_RECOVERY_COMPLETED') "
         "AND metadata = '{}'::jsonb)",
     )

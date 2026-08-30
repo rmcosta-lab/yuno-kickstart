@@ -1,20 +1,38 @@
 """Bounded Twilio request-signature verification."""
 
-import base64
-import hashlib
-import hmac
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
+
+from twilio.request_validator import RequestValidator
 
 type TwilioParameters = Mapping[str, str] | Sequence[tuple[str, str]]
 
 
-def twilio_signature(url: str, parameters: TwilioParameters, auth_token: str) -> str:
-    """Produce Twilio's HMAC-SHA1 signature for form-encoded callbacks."""
+class _TwilioMultiDict:
+    """Preserve every form pair for Twilio's supported validator."""
 
-    items = list(parameters.items()) if isinstance(parameters, Mapping) else list(parameters)
-    message = url + "".join(f"{name}{value}" for name, value in sorted(items))
-    digest = hmac.new(auth_token.encode(), message.encode(), hashlib.sha1).digest()
-    return base64.b64encode(digest).decode("ascii")
+    def __init__(self, pairs: Sequence[tuple[str, str]]) -> None:
+        self._values: defaultdict[str, list[str]] = defaultdict(list)
+        for name, value in pairs:
+            self._values[name].append(value)
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        return iter(self._values)
+
+    def getall(self, name: str) -> list[str]:
+        return self._values.get(name, [])
+
+
+def _parameters(parameters: TwilioParameters) -> Mapping[str, str] | _TwilioMultiDict:
+    if isinstance(parameters, Mapping):
+        return parameters
+    return _TwilioMultiDict(parameters)
+
+
+def twilio_signature(url: str, parameters: TwilioParameters, auth_token: str) -> str:
+    """Produce a test signature through Twilio's supported SDK validator."""
+
+    return RequestValidator(auth_token).compute_signature(url, _parameters(parameters))
 
 
 def verify_twilio_signature(
@@ -25,5 +43,4 @@ def verify_twilio_signature(
 ) -> bool:
     if not signature or not auth_token:
         return False
-    expected = twilio_signature(url, parameters, auth_token)
-    return hmac.compare_digest(signature.encode(), expected.encode())
+    return RequestValidator(auth_token).validate(url, _parameters(parameters), signature)

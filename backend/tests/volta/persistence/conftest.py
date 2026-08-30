@@ -80,9 +80,10 @@ def isolated_database_url() -> Iterator[str]:
                 command.downgrade(alembic_config, "base")
             except RuntimeError as error:
                 if not any(
-                    message in str(error)
-                    for message in (
+                    marker in str(error)
+                    for marker in (
                         "phase 25 downgrade refused",
+                        "phase 27 downgrade refused",
                         "phase 28 downgrade refused",
                     )
                 ):

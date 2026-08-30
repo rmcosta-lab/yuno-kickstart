@@ -23,6 +23,13 @@ __all__ = [
     "HumanHandoffRateLimitError",
     "HumanHandoffStaleCallError",
     "HumanHandoffTimeoutError",
+    "InboundCallError",
+    "InboundCallerNotAllowed",
+    "InboundCorrelationNotFound",
+    "InboundCorrelationAmbiguous",
+    "InboundCallReplayConflict",
+    "InboundConsentRequired",
+    "InboundCallStateConflict",
     "InvalidOutboundCallResponseError",
     "OutboundCallAllowlistError",
     "OutboundCallAuthenticationError",
@@ -34,6 +41,39 @@ __all__ = [
     "OutboundCallRateLimitError",
     "OutboundCallTimeoutError",
 ]
+
+
+class InboundCallError(RuntimeError):
+    """Safe inbound failure without provider, caller, or database details."""
+
+    code = "inbound_call_error"
+
+    def __init__(self) -> None:
+        super().__init__(self.code)
+
+
+class InboundCallerNotAllowed(InboundCallError):
+    code = "inbound_caller_not_allowed"
+
+
+class InboundCorrelationNotFound(InboundCallError):
+    code = "inbound_correlation_not_found"
+
+
+class InboundCorrelationAmbiguous(InboundCallError):
+    code = "inbound_correlation_ambiguous"
+
+
+class InboundCallReplayConflict(InboundCallError):
+    code = "inbound_call_replay_conflict"
+
+
+class InboundConsentRequired(InboundCallError):
+    code = "inbound_consent_required"
+
+
+class InboundCallStateConflict(InboundCallError):
+    code = "inbound_call_state_conflict"
 
 _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 

@@ -1,12 +1,14 @@
 # Coordinate drayage negotiations with Volta
 
-This decision record defines the provisional Nauta challenge, the first prototype, and the evidence required for the hackathon submission. The team will build Volta, a real-time voice agent that coordinates ground transport, while keeping the first demo inside a browser-based simulator.
+This decision record defines the selected Nauta challenge, the first prototype, and the evidence required for the hackathon submission. Volta coordinates ground transport through a real-time voice-agent design while keeping the reproducible P0 demo inside a browser-based simulator.
 
 ## Decision status and known gap
 
-The team has provisionally selected the drayage voice-agent case. Volta will turn a coordinator's natural-language request into an approved structured mandate, select up to three eligible carriers from a pre-registered list, negotiate with them, record candidate agreements, and update an operation after inbound and outbound conversations.
+The team selected the drayage voice-agent case. Volta turns a coordinator's natural-language request into an approved structured mandate, selects up to three eligible carriers from a pre-registered list, negotiates with them, records candidate agreements, and updates an operation after inbound and outbound conversations.
 
-The current P0 prototype simulates calls in the frontend. Browser audio and text remain useful development surfaces, but the team must not present them as equivalent to telephony. The accepted P0.1 evolution adds Twilio inbound and outbound calls over the public switched telephone network (PSTN), overlapping carrier calls, and human takeover without disconnecting the remote participant.
+The current P0 prototype simulates calls in the frontend. Its deterministic browser and text journey passed, and Fase 17 merged with a visible Realtime waiver: the qualitative voice checks and complete two-tool provider roundtrip remain unproved. Browser audio and text remain useful development surfaces, but the team must not present them as equivalent to telephony.
+
+The accepted P0.1 evolution adds Twilio inbound and outbound calls over the public switched telephone network (PSTN), overlapping carrier calls, and human takeover without disconnecting the remote participant. The consent-gated outbound control and Twilio/FastAPI media bridge are implemented and merged. The control passed credential-free browser checks, but no call occurred and the live Twilio journey is not proven. The overlapping-call, inbound-recovery, and human-takeover outcomes remain final-trial work.
 
 This decision leaves four explicit challenge gaps:
 

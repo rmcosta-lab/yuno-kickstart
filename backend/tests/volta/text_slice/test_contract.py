@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yuno_backend.volta.text_slice as text_slice
 from yuno_backend.volta.intake import ExtractionRequest
+from yuno_backend.volta.mandates.models import Route
 from yuno_backend.volta.text_slice import CreateOperationDraftInput
 
 ROOT = Path(__file__).parents[4]
@@ -76,6 +77,38 @@ def test_demo_presets_own_cargo_and_carrier_ranking() -> None:
         "Ruta Norte Intermodal de Occidente",
         "Altamar Logistica Portuaria del Pacifico",
     ]
+
+
+@pytest.mark.parametrize(
+    ("origin", "destination"),
+    [
+        ("port of Manzanillo", "warehouse in Guadalajara"),
+        ("Manzanillo port, Mexico", "Guadalajara distribution center"),
+        ("PUERTO DE MANZANILLO", "ZONA INDUSTRIAL, GUADALAJARA"),
+    ],
+)
+def test_demo_catalog_accepts_bounded_canonical_route_wording(
+    origin: str, destination: str
+) -> None:
+    carriers = text_slice.create_demo_carrier_catalog().select(Route(origin, destination))
+
+    assert [carrier.priority for carrier in carriers] == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    ("origin", "destination"),
+    [
+        ("Puerto de Veracruz", "warehouse in Guadalajara"),
+        ("port of Manzanillo", "Puebla distribution center"),
+        ("Guadalajara", "Manzanillo"),
+    ],
+)
+def test_demo_catalog_still_rejects_different_or_reversed_routes(
+    origin: str, destination: str
+) -> None:
+    carriers = text_slice.create_demo_carrier_catalog().select(Route(origin, destination))
+
+    assert carriers == ()
 
 
 @pytest.mark.asyncio
