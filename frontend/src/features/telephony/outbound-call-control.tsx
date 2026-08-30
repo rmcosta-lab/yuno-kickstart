@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCreateOutboundCall } from "@/lib/api/generated/api";
+import { ApiErrorCode } from "@/lib/api/generated/models/apiErrorCode";
 import type { CarrierSessionResponse } from "@/lib/api/generated/models/carrierSessionResponse";
 import type { CreateOutboundCallRequest } from "@/lib/api/generated/models/createOutboundCallRequest";
 import type { OperationResponse } from "@/lib/api/generated/models/operationResponse";
@@ -29,7 +30,7 @@ type MutationAttempt = {
   signature: string;
 };
 
-const DESTINATION_LABEL = "synthetic-carrier-one";
+const DESTINATION_LABEL = "coordinator-1";
 const AUTHORIZED_BY = "coordinator-demo";
 const UNCERTAIN_HTTP_STATUSES = new Set([429, 500, 502, 503, 504]);
 
@@ -100,6 +101,25 @@ function isUncertainFailure(error: unknown) {
   );
 }
 
+function safeCallErrorMessage(error: unknown) {
+  if (!(error instanceof ApiHttpError)) {
+    return "The call request did not complete. Check the local API and try again.";
+  }
+
+  switch (error.data.code) {
+    case ApiErrorCode.TELEPHONY_UNAVAILABLE:
+      return "Telephony could not start. Check the destination allowlist and public callback URLs, then try again.";
+    case ApiErrorCode.TELEPHONY_OUTCOME_UNCERTAIN:
+      return "The provider outcome is uncertain. Retry this same attempt before starting another call.";
+    case ApiErrorCode.ACTION_NOT_AUTHORIZED:
+      return "This destination is not authorized for demo calls. Check the server allowlist.";
+    case ApiErrorCode.RATE_LIMITED:
+      return "Too many call attempts were made. Wait briefly, then try again.";
+    default:
+      return "The call provider did not accept the request. Check the local telephony configuration and try again.";
+  }
+}
+
 export function OutboundCallControl({
   operation,
 }: {
@@ -113,6 +133,8 @@ export function OutboundCallControl({
   const submitGuardRef = useRef(false);
   const mutation = useCreateOutboundCall();
   const presentation = STATE_PRESENTATION[presentationState];
+  const errorDetails =
+    mutation.error instanceof ApiHttpError ? mutation.error.data : null;
 
   const startCall = () => {
     if (!selectedSession || !authorized || submitGuardRef.current) return;
@@ -170,28 +192,31 @@ export function OutboundCallControl({
   const disabled = unavailable || !authorized || mutation.isPending;
 
   return (
-    <Card data-testid="outbound-call-control">
+    <Card
+      data-testid="outbound-call-control"
+      className="border-primary/15 bg-gradient-to-br from-card via-card to-primary/[0.035]"
+    >
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-2">
             <PhoneCall aria-hidden="true" className="size-5" />
-            Authorized demo call
+            Call Selected Carrier
           </span>
           <StatusBadge tone={presentation.tone} label={presentation.label} />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Start one server-authorized call to the selected synthetic carrier.
-          The server owns the AI disclosure and press-1 continuation flow;
-          recording is disabled.
-        </p>
-
-        <div className="rounded-md border border-border p-3 text-sm">
-          <p className="font-medium text-foreground">Selected carrier</p>
-          <p className="mt-1 break-words text-muted-foreground">
+        <div className="rounded-lg border border-primary/20 bg-background/75 p-4">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Best Route Match
+          </p>
+          <p className="mt-1 break-words font-heading text-lg font-semibold text-foreground">
             {selectedSession?.carrier.display_name ??
               "No live operation session available"}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Volta will identify itself as AI and ask the participant to press 1
+            before continuing. Recording stays off.
           </p>
         </div>
 
@@ -206,15 +231,20 @@ export function OutboundCallControl({
             disabled={unavailable || mutation.isPending}
           />
           <span>
-            I confirm the demo participant is authorized and the call will use
-            AI disclosure with press-1 continuation.
+            I confirm this participant agreed to receive this AI-assisted demo
+            call.
           </span>
         </label>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" onClick={startCall} disabled={disabled}>
+        <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <Button
+            type="button"
+            onClick={startCall}
+            disabled={disabled}
+            className="w-full sm:w-auto"
+          >
             <ShieldCheck aria-hidden="true" data-icon="inline-start" />
-            {mutation.isPending ? "Starting demo call…" : "Start demo call"}
+            {mutation.isPending ? "Starting Call…" : "Start Authorized Call"}
           </Button>
           {disabled && !mutation.isPending ? (
             <p className="text-sm text-muted-foreground">
@@ -225,10 +255,6 @@ export function OutboundCallControl({
           ) : null}
         </div>
 
-        <p className="text-sm text-muted-foreground">
-          Status is the latest accepted create-call result only. This control
-          does not poll or observe later provider activity.
-        </p>
         <p className="sr-only" role="status" aria-live="polite">
           {presentation.announcement}
         </p>
@@ -236,9 +262,14 @@ export function OutboundCallControl({
         {presentationState === "failed" ? (
           <Alert variant="destructive" role="alert">
             <AlertTitle>Demo call failed</AlertTitle>
-            <AlertDescription>
-              No provider diagnostics are shown. Try the authorized action
-              again, or continue with browser voice and typed text below.
+            <AlertDescription className="space-y-2">
+              <p>{safeCallErrorMessage(mutation.error)}</p>
+              {errorDetails ? (
+                <p className="font-mono text-xs">
+                  {errorDetails.code.replaceAll("_", " ")} · request{" "}
+                  {errorDetails.request_id}
+                </p>
+              ) : null}
             </AlertDescription>
           </Alert>
         ) : null}

@@ -1248,6 +1248,7 @@ function LiveOperation({
 }) {
   const [attachedEvidence, setAttachedEvidence] =
     useState<CommitmentEvidenceResponse | null>(null);
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const handoffSession = (
     operation.sessions ?? []
   ).reduce<CarrierSessionResponse | null>(
@@ -1309,6 +1310,64 @@ function LiveOperation({
       }
     : null;
 
+  if (surface === "sessions") {
+    return (
+      <div className="space-y-5">
+        <OutboundCallControl operation={operation} />
+
+        <details
+          className="group rounded-xl border border-border bg-card"
+          onToggle={(event) => setAdvancedToolsOpen(event.currentTarget.open)}
+        >
+          <summary className="cursor-pointer list-none px-4 py-3 font-heading text-sm font-medium text-foreground marker:content-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center justify-between gap-3">
+              More Session Tools
+              <span
+                aria-hidden="true"
+                className="text-muted-foreground transition-transform group-open:rotate-45 motion-reduce:transition-none"
+              >
+                +
+              </span>
+            </span>
+          </summary>
+          {advancedToolsOpen ? (
+            <div className="space-y-6 border-t border-border p-4">
+              <p className="text-sm text-muted-foreground">
+                Use these tools only when you need browser voice, typed
+                negotiation, handoff controls, or detailed session evidence.
+              </p>
+
+              {handoffViewModel ? (
+                <HumanHandoffControl viewModel={handoffViewModel} />
+              ) : null}
+
+              <BrowserVoiceExperience
+                operation={operation}
+                audit={audit}
+                attachedEvidence={attachedEvidence}
+                refreshAuthoritativeState={onStateChanged}
+              />
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <StartNegotiationControl
+                  operation={operation}
+                  onStateChanged={onStateChanged}
+                />
+                <QuoteControl
+                  key={operation.operation_version}
+                  operation={operation}
+                  onStateChanged={onStateChanged}
+                />
+              </div>
+
+              <SessionsView operation={operation} />
+            </div>
+          ) : null}
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <OutboundCallControl operation={operation} />
@@ -1336,22 +1395,18 @@ function LiveOperation({
         />
       </div>
 
-      {surface === "sessions" ? (
-        <SessionsView operation={operation} />
-      ) : (
-        <div className="space-y-6">
-          <ComparisonView operation={operation} />
-          <CommitmentTerminal
-            audit={audit}
-            auditError={auditError}
-            auditPending={auditPending}
-            onRetryAudit={onRetryAudit}
-            onEvidenceAttached={setAttachedEvidence}
-            onStateChanged={onStateChanged}
-            operation={operation}
-          />
-        </div>
-      )}
+      <div className="space-y-6">
+        <ComparisonView operation={operation} />
+        <CommitmentTerminal
+          audit={audit}
+          auditError={auditError}
+          auditPending={auditPending}
+          onRetryAudit={onRetryAudit}
+          onEvidenceAttached={setAttachedEvidence}
+          onStateChanged={onStateChanged}
+          operation={operation}
+        />
+      </div>
     </div>
   );
 }

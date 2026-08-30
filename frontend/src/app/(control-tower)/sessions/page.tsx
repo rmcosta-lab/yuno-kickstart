@@ -6,8 +6,8 @@ export default function SessionsPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         eyebrow="Volta control tower"
-        title="Carrier sessions"
-        description="Inspect one to three synthetic text sessions, their server-owned ranking evidence, quote changes, and mandate outcomes. No carrier is contacted."
+        title="Contact the selected carrier"
+        description="Review Volta's best route match, confirm participant authorization, and start the demo call."
       />
       <NegotiationExperience
         surface="sessions"

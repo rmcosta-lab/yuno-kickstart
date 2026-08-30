@@ -99,8 +99,10 @@ warehouse in Guadalajara for at most MXN 9,000. One 40-foot dry container,
 standard handling conditions.
 ```
 
-The Next.js server authenticates demo API requests through its same-origin proxy. Configure the
-same `VOLTA_DEMO_BEARER_TOKEN` for Next.js and FastAPI; the browser never receives or stores it.
+The Next.js server authenticates demo API requests through its same-origin proxy. The local
+frontend command reads `VOLTA_DEMO_BEARER_TOKEN` from the root `.env`, so FastAPI and Next.js use
+the same value without copying it into `frontend/.env.local`. The browser never receives or stores
+the token.
 
 1. Open **Intake**, choose **Use canonical prompt**, and submit the request
 2. Open **Mandate** and approve the Thursday, MXN 9,000 authority boundary
