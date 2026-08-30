@@ -51,7 +51,6 @@ databases:
   - name: volta-postgres
     region: virginia
     plan: free
-    diskSizeGB: 1
     postgresMajorVersion: "17"
     databaseName: volta
     user: volta
