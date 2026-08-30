@@ -15,8 +15,8 @@ efêmero e não sobrevivem a reinícios ou redeploys.
    - `VOLTA_DEMO_BEARER_TOKEN`: gere uma senha aleatória longa, guarde-a no
      gerenciador de segredos e nunca a salve no repositório;
    - `OPENAI_API_KEY`: chave server-side usada pela extração e pelo Realtime.
-4. Crie os recursos. O pre-deploy executa as migrações Alembic antes de iniciar
-   o Uvicorn.
+4. Crie os recursos. No plano Free, o comando de inicialização executa as
+   migrações Alembic antes de iniciar o Uvicorn.
 5. Aguarde `GET https://SEU-SERVICO.onrender.com/health` retornar
    `{"status":"ok"}`.
 

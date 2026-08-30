@@ -7,9 +7,9 @@ services:
     plan: free
     numInstances: 1
     buildCommand: uv sync --frozen --all-packages --no-dev
-    preDeployCommand: uv run --no-sync alembic -c backend/alembic.ini upgrade head
     startCommand: >-
-      uv run --no-sync --package yuno-api uvicorn app.main:app
+      uv run --no-sync alembic -c backend/alembic.ini upgrade head &&
+      exec uv run --no-sync --package yuno-api uvicorn app.main:app
       --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     autoDeployTrigger: checksPass
