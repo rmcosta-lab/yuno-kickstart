@@ -140,6 +140,26 @@ def test_extraction_policy_is_server_selected_and_returned_for_audit() -> None:
     assert response.extraction_policy_version == "intake-v1"
 
 
+def test_draft_response_retains_missing_route_endpoints_for_correction() -> None:
+    fixture = response_for("create_operation_draft")
+    fixture["proposed_route"] = {"origin": "", "destination": ""}
+    fixture["validation_issues"] = [
+        {"field": "route.origin", "message": "required"},
+        {"field": "route.destination", "message": "required"},
+    ]
+    fixture["approval_eligible"] = False
+
+    response = OperationDraftResponse.model_validate(fixture)
+
+    assert response.proposed_route.origin == ""
+    assert response.proposed_route.destination == ""
+
+    operation = response_for("get_operation")
+    operation["route"] = {"origin": "", "destination": ""}
+    with pytest.raises(ValidationError):
+        OperationResponse.model_validate(operation)
+
+
 def _replace_nested_value(
     fixture: dict[str, Any],
     path: tuple[str | int, ...],

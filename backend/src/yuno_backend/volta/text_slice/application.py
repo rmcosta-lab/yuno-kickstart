@@ -154,6 +154,7 @@ class TextNegotiationApplication:
                 source_prompt=command.source_prompt,
                 requested_language=command.requested_language,
                 extraction_policy_version=self._policy_version,
+                reference_date=self._clock.now().date(),
             )
         )
         draft, replayed = await CreateIntakeDraftService(

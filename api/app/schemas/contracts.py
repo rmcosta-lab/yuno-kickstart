@@ -44,6 +44,13 @@ class ValidationIssue(ResponseModel):
     message: ShortText
 
 
+class DraftRouteDetails(ResponseModel):
+    """A proposed route may retain missing endpoints for coordinator correction."""
+
+    origin: str = Field(max_length=500)
+    destination: str = Field(max_length=500)
+
+
 class ProposedMandate(ResponseModel):
     maximum_amount_minor: MinorAmount
     currency: CurrencyCode
@@ -62,7 +69,7 @@ class OperationDraftResponse(ResponseModel):
     source_prompt: LongText
     requested_language: RequestedLanguage
     extraction_policy_version: SafeIdentifier
-    proposed_route: RouteDetails
+    proposed_route: DraftRouteDetails
     proposed_pickup_date: date
     proposed_mandate: ProposedMandate
     validation_issues: list[ValidationIssue] = Field(default_factory=list, max_length=50)

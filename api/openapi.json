@@ -1076,6 +1076,28 @@
         "title": "CreateSimulatedRecapRequest",
         "type": "object"
       },
+      "DraftRouteDetails": {
+        "additionalProperties": false,
+        "description": "A proposed route may retain missing endpoints for coordinator correction.",
+        "properties": {
+          "destination": {
+            "maxLength": 500,
+            "title": "Destination",
+            "type": "string"
+          },
+          "origin": {
+            "maxLength": 500,
+            "title": "Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "destination"
+        ],
+        "title": "DraftRouteDetails",
+        "type": "object"
+      },
       "EscalationResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1451,7 +1473,7 @@
             "type": "string"
           },
           "proposed_route": {
-            "$ref": "#/components/schemas/RouteDetails"
+            "$ref": "#/components/schemas/DraftRouteDetails"
           },
           "requested_language": {
             "$ref": "#/components/schemas/RequestedLanguage"

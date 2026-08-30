@@ -52,6 +52,10 @@ WATCHPACK_POLLING=true make dev-frontend
 
 Open `http://localhost:3000` for the app and `http://localhost:8000/docs` for the API documentation.
 
+Para publicar a demonstracao, use o fluxo documentado em
+[Deploy do Volta para o hackathon](docs/deployment.md): frontend Next.js na
+Vercel e API/core, PostgreSQL e evidencia sintetica privada no Render.
+
 ## Entenda as abas da torre de controle
 
 A torre de controle organiza a jornada do Volta, desde a solicitação de transporte até o histórico auditável da operação. O protótipo usa transportadoras, cotações e conversas sintéticas: ele não contata nem contrata transportadoras reais.

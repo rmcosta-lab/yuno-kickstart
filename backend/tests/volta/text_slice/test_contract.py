@@ -1,8 +1,11 @@
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 import yuno_backend.volta.text_slice as text_slice
 from yuno_backend.volta.intake import ExtractionRequest
+from yuno_backend.volta.text_slice import CreateOperationDraftInput
 
 ROOT = Path(__file__).parents[4]
 
@@ -73,3 +76,39 @@ def test_demo_presets_own_cargo_and_carrier_ranking() -> None:
         "Ruta Norte Intermodal de Occidente",
         "Altamar Logistica Portuaria del Pacifico",
     ]
+
+
+@pytest.mark.asyncio
+async def test_application_supplies_clock_date_to_intake_extraction() -> None:
+    class ExtractionCaptured(Exception):
+        pass
+
+    class CapturingExtractor:
+        request: ExtractionRequest | None = None
+
+        async def extract(self, request: ExtractionRequest) -> None:
+            self.request = request
+            raise ExtractionCaptured
+
+    class FixedClock:
+        def now(self) -> datetime:
+            return datetime(2026, 8, 30, 12, tzinfo=UTC)
+
+    extractor = CapturingExtractor()
+    application = text_slice.TextNegotiationApplication(
+        unit_of_work_factory=lambda: object(),  # type: ignore[arg-type,return-value]
+        extractor=extractor,  # type: ignore[arg-type]
+        carrier_catalog=object(),  # type: ignore[arg-type]
+        clock=FixedClock(),
+        id_generator=object(),  # type: ignore[arg-type]
+        evidence_storage=object(),  # type: ignore[arg-type]
+        extraction_policy_version="intake-v1",
+    )
+
+    with pytest.raises(ExtractionCaptured):
+        await application.create_operation_draft(
+            CreateOperationDraftInput("synthetic prompt", "EN_US", "draft-key-0001")
+        )
+
+    assert extractor.request is not None
+    assert extractor.request.reference_date.isoformat() == "2026-08-30"
