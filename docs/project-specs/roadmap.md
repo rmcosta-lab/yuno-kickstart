@@ -184,7 +184,7 @@ This phase records the selected private evidence-storage mechanism, access rules
 
 Slug: expose-evidence-recovery-routes
 
-Depends on: 12, 14, 24
+Depends on: 12, 14, 24, 25
 
 Conflicts with: none
 
@@ -299,3 +299,15 @@ Conflicts with: none
 Gate: Backend-only tests prove three outcomes: mandate replacement resolves its post-contact escalation and creates an immutable mandate version; explicit escalation preserves safe structured context without changing a commitment; notification acknowledgement records the actor and timestamp idempotently. PostgreSQL round trips, stale-version handling, audit events, and rollback preserve consistent state. The backend imports no FastAPI types and changes no HTTP contract.
 
 This supporting backend phase defines the typed commands, services, results, and safe exceptions required by the accepted mandate-replacement, escalation-creation, and notification-acknowledgement contracts. It extends the Fase 14 persistence boundary. It does not implement routes, change Pydantic models, regenerate OpenAPI or Orval, or add frontend behavior.
+
+### Fase 25 — Complete the evidence and recovery application facade
+
+Slug: complete-evidence-recovery-application
+
+Depends on: 10, 24
+
+Conflicts with: none
+
+Gate: Backend-only tests expose one provider-neutral application facade for the accepted recap, brief, inbound-recovery, mandate-replacement, escalation, notification-acknowledgement, operation, and audit behaviors; every mutation has atomic fingerprinted idempotency and durable replay, PostgreSQL persists every accepted response fact, complete bounded projections round-trip in deterministic order, and missing evidence, stale state, rollback, and safe exceptions pass without importing FastAPI or changing the HTTP contract.
+
+This supporting backend phase closes the application and persistence gap discovered when Fase 15 began integration. It persists the accepted structured recap and brief facts, owns the deterministic good and bad recovery scripts, resolves the evidence semantics for a replacement commitment, and publishes complete operation and audit projections for recaps, briefs, recoveries, post-contact escalations, and notifications. It may add the smallest reversible migration and backend repository/query extensions required by those outcomes. It does not implement FastAPI routes, change Pydantic models, regenerate OpenAPI or Orval, add frontend behavior, call a provider, or perform a remote migration.
