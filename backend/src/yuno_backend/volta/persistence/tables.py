@@ -33,6 +33,7 @@ _intake_drafts = Table(
     Column("extraction_policy_version", Text, nullable=False),
     Column("route_origin", Text, nullable=False),
     Column("route_destination", Text, nullable=False),
+    Column("cargo_label", Text, nullable=False),
     Column("pickup_date", Date, nullable=False),
     Column("maximum_amount", Numeric, nullable=False),
     Column("currency", Text, nullable=False),
@@ -47,6 +48,10 @@ _intake_drafts = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("id", name="pk_volta_intake_drafts"),
     CheckConstraint("version > 0", name="ck_volta_intake_drafts_version_positive"),
+    CheckConstraint(
+        "char_length(cargo_label) <= 500",
+        name="ck_volta_intake_drafts_cargo_label",
+    ),
     CheckConstraint(
         "maximum_amount > '-Infinity'::numeric AND maximum_amount < 'Infinity'::numeric",
         name="ck_volta_intake_drafts_amount_finite",
@@ -78,11 +83,16 @@ _operations = Table(
     Column("source_draft_version", Integer, nullable=False),
     Column("route_origin", Text, nullable=False),
     Column("route_destination", Text, nullable=False),
+    Column("cargo_label", Text, nullable=False),
     Column("pickup_date", Date, nullable=False),
     Column("active_mandate_id", UUID(as_uuid=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("id", name="pk_volta_operations"),
     CheckConstraint("version > 0", name="ck_volta_operations_version_positive"),
+    CheckConstraint(
+        "char_length(btrim(cargo_label)) BETWEEN 1 AND 500",
+        name="ck_volta_operations_cargo_label",
+    ),
     CheckConstraint(
         "source_draft_version > 0",
         name="ck_volta_operations_source_draft_version_positive",
@@ -437,6 +447,7 @@ _mutation_idempotency = Table(
     Column("negotiation_id", UUID(as_uuid=True), nullable=True),
     Column("quote_id", UUID(as_uuid=True), nullable=True),
     Column("commitment_id", UUID(as_uuid=True), nullable=True),
+    Column("evidence_reservation_id", UUID(as_uuid=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     PrimaryKeyConstraint("operation_name", "idempotency_key", name="pk_volta_mutation_idempotency"),
     UniqueConstraint(
@@ -450,16 +461,19 @@ _mutation_idempotency = Table(
         ["operation_id"], ["volta_operations.id"], name="fk_volta_mutation_idempotency_operation"
     ),
     CheckConstraint(
-        "operation_name IN ('start_negotiation', 'record_quote', 'create_commitment')",
+        "operation_name IN ('start_negotiation', 'record_quote', 'create_commitment', "
+        "'attach_commitment_evidence')",
         name="ck_volta_mutation_idempotency_operation_name",
     ),
     CheckConstraint(
         "(operation_name = 'start_negotiation' AND negotiation_id IS NOT NULL AND "
-        "quote_id IS NULL AND commitment_id IS NULL) OR "
+        "quote_id IS NULL AND commitment_id IS NULL AND evidence_reservation_id IS NULL) OR "
         "(operation_name = 'record_quote' AND negotiation_id IS NULL AND "
-        "quote_id IS NOT NULL AND commitment_id IS NULL) OR "
+        "quote_id IS NOT NULL AND commitment_id IS NULL AND evidence_reservation_id IS NULL) OR "
         "(operation_name = 'create_commitment' AND negotiation_id IS NULL AND "
-        "quote_id IS NULL AND commitment_id IS NOT NULL)",
+        "quote_id IS NULL AND commitment_id IS NOT NULL AND evidence_reservation_id IS NULL) OR "
+        "(operation_name = 'attach_commitment_evidence' AND negotiation_id IS NULL AND "
+        "quote_id IS NULL AND commitment_id IS NULL AND evidence_reservation_id IS NOT NULL)",
         name="ck_volta_mutation_idempotency_result_mapping",
     ),
     ForeignKeyConstraint(
@@ -483,6 +497,52 @@ _mutation_idempotency = Table(
     ),
     CheckConstraint(
         "fingerprint ~ '^[0-9a-f]{64}$'", name="ck_volta_mutation_idempotency_fingerprint"
+    ),
+)
+
+_text_mutation_idempotency = Table(
+    "volta_text_mutation_idempotency",
+    _metadata,
+    Column("operation_name", Text, nullable=False),
+    Column("idempotency_key", Text, nullable=False),
+    Column("fingerprint", Text, nullable=False),
+    Column("draft_id", UUID(as_uuid=True), nullable=True),
+    Column("operation_id", UUID(as_uuid=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    PrimaryKeyConstraint(
+        "operation_name",
+        "idempotency_key",
+        name="pk_volta_text_mutation_idempotency",
+    ),
+    ForeignKeyConstraint(
+        ["draft_id"],
+        ["volta_intake_drafts.id"],
+        name="fk_volta_text_idempotency_draft",
+    ),
+    ForeignKeyConstraint(
+        ["operation_id"],
+        ["volta_operations.id"],
+        name="fk_volta_text_idempotency_operation",
+    ),
+    CheckConstraint(
+        "operation_name IN ('create_operation_draft', 'approve_operation')",
+        name="ck_volta_text_idempotency_operation_name",
+    ),
+    CheckConstraint(
+        "(operation_name = 'create_operation_draft' AND draft_id IS NOT NULL "
+        "AND operation_id IS NULL) OR "
+        "(operation_name = 'approve_operation' AND draft_id IS NULL "
+        "AND operation_id IS NOT NULL)",
+        name="ck_volta_text_idempotency_result_mapping",
+    ),
+    CheckConstraint(
+        "char_length(idempotency_key) BETWEEN 8 AND 128 "
+        "AND idempotency_key ~ '^[ -~]+$'",
+        name="ck_volta_text_idempotency_key",
+    ),
+    CheckConstraint(
+        "fingerprint ~ '^[0-9a-f]{64}$'",
+        name="ck_volta_text_idempotency_fingerprint",
     ),
 )
 
@@ -510,6 +570,16 @@ Index(
     postgresql_where=_commitments.c.disposition == "ACTIVE",
 )
 Index("ix_volta_mutation_idempotency_operation", _mutation_idempotency.c.operation_id)
+Index(
+    "ix_volta_text_idempotency_draft",
+    _text_mutation_idempotency.c.draft_id,
+    postgresql_where=_text_mutation_idempotency.c.draft_id.is_not(None),
+)
+Index(
+    "ix_volta_text_idempotency_operation",
+    _text_mutation_idempotency.c.operation_id,
+    postgresql_where=_text_mutation_idempotency.c.operation_id.is_not(None),
+)
 Index(
     "ix_volta_mutation_idempotency_negotiation",
     _mutation_idempotency.c.negotiation_id,
@@ -553,6 +623,45 @@ _agreement_evidence = Table(
     ),
     CheckConstraint(
         "char_length(event_id) BETWEEN 1 AND 200", name="ck_volta_agreement_evidence_event_id"
+    ),
+)
+
+_evidence_reservations = Table(
+    "volta_evidence_reservations",
+    _metadata,
+    Column("id", UUID(as_uuid=True), nullable=False),
+    Column("operation_id", UUID(as_uuid=True), nullable=False),
+    Column("call_id", UUID(as_uuid=True), nullable=False),
+    Column("quote_id", UUID(as_uuid=True), nullable=False),
+    Column("recording_reference", Text, nullable=False),
+    Column("audio_start_ms", Integer, nullable=False),
+    Column("item_id", Text, nullable=False),
+    Column("event_id", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("consumed_by_commitment_id", UUID(as_uuid=True), nullable=True),
+    PrimaryKeyConstraint("id", name="pk_volta_evidence_reservations"),
+    UniqueConstraint("quote_id", name="uq_volta_evidence_reservations_quote"),
+    UniqueConstraint(
+        "consumed_by_commitment_id", name="uq_volta_evidence_reservations_consumed_commitment"
+    ),
+    ForeignKeyConstraint(
+        ["quote_id", "operation_id"],
+        ["volta_quotes.id", "volta_quotes.operation_id"],
+        name="fk_volta_evidence_reservations_quote_operation",
+    ),
+    ForeignKeyConstraint(
+        ["consumed_by_commitment_id", "operation_id"],
+        ["volta_commitments.id", "volta_commitments.operation_id"],
+        name="fk_volta_evidence_reservations_commitment_operation",
+    ),
+    CheckConstraint("audio_start_ms >= 0", name="ck_volta_evidence_reservations_offset"),
+    CheckConstraint(
+        "char_length(recording_reference) BETWEEN 1 AND 200",
+        name="ck_volta_evidence_reservations_reference",
+    ),
+    CheckConstraint(
+        "char_length(item_id) BETWEEN 1 AND 200 AND char_length(event_id) BETWEEN 1 AND 200",
+        name="ck_volta_evidence_reservations_event_ids",
     ),
 )
 

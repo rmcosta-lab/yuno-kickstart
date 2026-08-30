@@ -35,6 +35,7 @@ def extraction_value() -> dict[str, object]:
     return {
         "origin": "Manzanillo",
         "destination": "Guadalajara",
+        "cargo_label": "Synthetic 40ft dry container",
         "pickup_date": "2026-09-03",
         "pickup_window": {"start_date": "2026-09-03", "end_date": "2026-09-03"},
         "maximum_amount": {"amount": "9000.00", "currency": "MXN"},
@@ -100,6 +101,7 @@ async def test_maps_exact_responses_request_and_parses_domain_proposal() -> None
         proposal = await extractor.extract(REQUEST)
         assert proposal.route.origin == "Manzanillo"
         assert proposal.route.destination == "Guadalajara"
+        assert proposal.cargo_label == "Synthetic 40ft dry container"
         assert proposal.pickup_date == date(2026, 9, 3)
         assert proposal.mandate.maximum_amount.amount == Decimal("9000.00")
         assert proposal.mandate.maximum_amount.currency == "MXN"

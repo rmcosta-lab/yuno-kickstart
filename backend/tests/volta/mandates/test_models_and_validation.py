@@ -70,6 +70,7 @@ def test_validation_returns_every_issue_in_stable_safe_order() -> None:
     proposal = OperationProposal(
         route=Route(origin=" submitted-origin ", destination=" "),
         pickup_date=date(2026, 9, 5),
+        cargo_label="",
         mandate=MandateProposal(
             maximum_amount=Money(amount=Decimal("-0.01"), currency="USD-SECRET"),
             pickup_window=PickupWindow(
@@ -85,6 +86,7 @@ def test_validation_returns_every_issue_in_stable_safe_order() -> None:
 
     assert [(issue.field, issue.reason_code) for issue in issues] == [
         ("route.destination", "required"),
+        ("cargo_label", "required"),
         ("mandate.pickup_window", "invalid_order"),
         ("pickup_date", "outside_mandate_window"),
         ("mandate.maximum_amount", "must_be_non_negative"),
@@ -123,6 +125,7 @@ async def test_invalid_draft_is_saved_without_creating_authority(
     invalid = OperationProposal(
         route=proposal.route,
         pickup_date=proposal.pickup_date,
+        cargo_label=proposal.cargo_label,
         mandate=MandateProposal(
             maximum_amount=Money(Decimal("-1"), "MXN"),
             pickup_window=proposal.mandate.pickup_window,
@@ -195,6 +198,7 @@ async def test_proposal_and_operation_reject_datetime_pickup_dates(
         OperationProposal(  # type: ignore[arg-type]
             route=proposal.route,
             pickup_date=pickup_datetime,
+            cargo_label=proposal.cargo_label,
             mandate=proposal.mandate,
         )
 

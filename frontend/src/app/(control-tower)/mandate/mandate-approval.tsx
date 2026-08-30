@@ -1,37 +1,21 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
 import { ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useApproveOperation } from "@/lib/api/generated/api";
-import {
-  ApiErrorCode,
-  type ApiErrorResponse,
-  type OperationResponse,
-} from "@/lib/api/generated/models";
-import {
-  approveOperationFixture,
-  INTAKE_TEST_BOUNDARY_ENABLED,
-  type ApprovalScenario,
-} from "@/lib/api/intake-test-boundary";
+import { ApiErrorCode } from "@/lib/api/generated/models";
 import { ApiHttpError } from "@/lib/api/volta-fetch";
+import { DemoAuthControl, useDemoAuth } from "@/lib/demo-auth";
+import { saveCurrentOperationId } from "@/lib/live-operation-handoff";
 import {
   clearApprovalEligibleDraft,
   useApprovalEligibleDraft,
 } from "@/lib/operation-draft-handoff";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/control-tower/empty-state";
 import { ErrorState } from "@/components/control-tower/error-state";
@@ -39,15 +23,6 @@ import { LoadingState } from "@/components/control-tower/loading-state";
 import { StatusBadge } from "@/components/control-tower/status-badge";
 
 const DEMO_APPROVAL_ACTOR = "demo-coordinator@volta.dev";
-
-const SCENARIO_OPTIONS: { value: ApprovalScenario; label: string }[] = [
-  { value: "approved", label: "Approve successfully" },
-  { value: "stale_draft_version", label: "Stale draft version (409)" },
-  { value: "mandate_conflict", label: "Mandate conflict (409)" },
-];
-
-const scenarioLabel = (value: ApprovalScenario) =>
-  SCENARIO_OPTIONS.find((option) => option.value === value)?.label ?? value;
 
 const moneyLabel = (amountMinor: number, currency: string) =>
   new Intl.NumberFormat("en-US", {
@@ -58,45 +33,22 @@ const moneyLabel = (amountMinor: number, currency: string) =>
 
 export function MandateApproval() {
   const router = useRouter();
+  const auth = useDemoAuth();
   const draft = useApprovalEligibleDraft();
-  const [scenario, setScenario] = useState<ApprovalScenario>("approved");
   const [idempotencyKey, setIdempotencyKey] = useState<{
     draftId: string;
     key: string;
   } | null>(null);
 
   const generatedMutation = useApproveOperation();
-  const boundaryMutation = useMutation<
-    OperationResponse,
-    ApiHttpError<ApiErrorResponse>,
-    { draft_id: string; expected_draft_version: number }
-  >({
-    mutationFn: (variables) =>
-      approveOperationFixture(
-        {
-          approval_actor: DEMO_APPROVAL_ACTOR,
-          draft_id: variables.draft_id,
-          expected_draft_version: variables.expected_draft_version,
-        },
-        scenario,
-      ),
-  });
-
-  const isPending = INTAKE_TEST_BOUNDARY_ENABLED
-    ? boundaryMutation.isPending
-    : generatedMutation.isPending;
-  const isError = INTAKE_TEST_BOUNDARY_ENABLED
-    ? boundaryMutation.isError
-    : generatedMutation.isError;
-  const isSuccess = INTAKE_TEST_BOUNDARY_ENABLED
-    ? boundaryMutation.isSuccess
-    : generatedMutation.isSuccess;
-  const apiError = INTAKE_TEST_BOUNDARY_ENABLED
-    ? boundaryMutation.error
-    : generatedMutation.error;
-  const operation: OperationResponse | undefined = INTAKE_TEST_BOUNDARY_ENABLED
-    ? boundaryMutation.data
-    : generatedMutation.data?.data;
+  const {
+    data,
+    error: apiError,
+    isError,
+    isPending,
+    isSuccess,
+  } = generatedMutation;
+  const operation = data?.data;
 
   const isConflict =
     apiError instanceof ApiHttpError &&
@@ -104,24 +56,13 @@ export function MandateApproval() {
       apiError.data.code === ApiErrorCode.MANDATE_CONFLICT);
 
   const approve = () => {
-    if (!draft) return;
+    if (!draft || !auth.connected) return;
     const keyEntry =
       idempotencyKey?.draftId === draft.draft_id
         ? idempotencyKey
         : { draftId: draft.draft_id, key: crypto.randomUUID() };
     if (keyEntry !== idempotencyKey) {
       setIdempotencyKey(keyEntry);
-    }
-
-    if (INTAKE_TEST_BOUNDARY_ENABLED) {
-      boundaryMutation.mutate(
-        {
-          draft_id: draft.draft_id,
-          expected_draft_version: draft.draft_version,
-        },
-        { onSuccess: () => clearApprovalEligibleDraft() },
-      );
-      return;
     }
 
     generatedMutation.mutate(
@@ -133,7 +74,12 @@ export function MandateApproval() {
         },
         headers: { "Idempotency-Key": keyEntry.key },
       },
-      { onSuccess: () => clearApprovalEligibleDraft() },
+      {
+        onSuccess: (response) => {
+          saveCurrentOperationId(response.data.operation_id);
+          clearApprovalEligibleDraft();
+        },
+      },
     );
   };
 
@@ -144,52 +90,73 @@ export function MandateApproval() {
 
   if (!draft && !isSuccess) {
     return (
-      <EmptyState
-        icon={ClipboardList}
-        title="No approval-eligible draft"
-        description="Submit and complete an intake draft first — an approval-eligible draft appears here for review once /intake produces one."
-      />
+      <div className="space-y-6">
+        <DemoAuthControl />
+        <EmptyState
+          icon={ClipboardList}
+          title="No approval-eligible draft"
+          description="Submit and complete an intake draft first — an approval-eligible draft appears here for review once /intake produces one."
+        />
+      </div>
     );
   }
 
   if (isSuccess && operation) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-mono text-sm">{operation.operation_id}</span>
-            <StatusBadge tone="success" label={operation.status} />
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="font-medium text-foreground">Mandate version</dt>
-              <dd className="text-muted-foreground">
-                v{operation.active_mandate.version}
-              </dd>
+      <div className="space-y-6">
+        <DemoAuthControl />
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-sm">
+                {operation.operation_id}
+              </span>
+              <StatusBadge tone="success" label={operation.status} />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.headers.get("Idempotency-Replayed")?.toLowerCase() ===
+            "true" ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                The server replayed the original approval result without
+                creating another operation or mandate.
+              </p>
+            ) : null}
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="font-medium text-foreground">Mandate version</dt>
+                <dd className="text-muted-foreground">
+                  v{operation.active_mandate.version}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-medium text-foreground">Approved by</dt>
+                <dd className="text-muted-foreground">
+                  {operation.active_mandate.approval_actor}
+                </dd>
+              </div>
+            </dl>
+            <p className="font-mono text-xs text-muted-foreground">
+              {DEMO_APPROVAL_ACTOR} is a demo identity placeholder, not a login
+              system.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <Link href="/sessions" className={buttonVariants()}>
+                Open carrier sessions
+              </Link>
+              <Button variant="outline" onClick={startOver}>
+                Start a new intake
+              </Button>
             </div>
-            <div>
-              <dt className="font-medium text-foreground">Approved by</dt>
-              <dd className="text-muted-foreground">
-                {operation.active_mandate.approval_actor}
-              </dd>
-            </div>
-          </dl>
-          <p className="font-mono text-xs text-muted-foreground">
-            {DEMO_APPROVAL_ACTOR} is a demo identity placeholder, not a login
-            system.
-          </p>
-          <Button variant="outline" onClick={startOver}>
-            Start a new intake
-          </Button>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   return (
     <div className="space-y-4">
+      <DemoAuthControl />
       <Card>
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center justify-between gap-2">
@@ -258,31 +225,6 @@ export function MandateApproval() {
         </CardContent>
       </Card>
 
-      {INTAKE_TEST_BOUNDARY_ENABLED ? (
-        <div className="space-y-1.5 rounded-lg border border-dashed border-border p-3">
-          <Label htmlFor="approval-scenario">
-            Test boundary scenario (no live backend yet)
-          </Label>
-          <Select
-            value={scenario}
-            onValueChange={(value) => setScenario(value as ApprovalScenario)}
-          >
-            <SelectTrigger id="approval-scenario" className="w-full">
-              <SelectValue>
-                {(value: ApprovalScenario) => scenarioLabel(value)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {SCENARIO_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
-
       {isPending ? <LoadingState label="Approving operation" /> : null}
 
       {!isPending && isError ? (
@@ -307,7 +249,17 @@ export function MandateApproval() {
         </div>
       ) : null}
 
-      {!isPending ? <Button onClick={approve}>Approve mandate</Button> : null}
+      {!isPending ? (
+        <Button onClick={approve} disabled={!auth.connected}>
+          Approve mandate
+        </Button>
+      ) : null}
+
+      {!auth.connected ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Connect the live demo API before approving.
+        </p>
+      ) : null}
 
       <p className="text-sm text-muted-foreground">
         Approving creates the operation and its first immutable mandate version.

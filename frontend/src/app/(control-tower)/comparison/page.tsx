@@ -7,7 +7,7 @@ export default function ComparisonPage() {
       <PageHeader
         eyebrow="Volta control tower"
         title="Quote comparison"
-        description="Compare every recorded synthetic quote without hiding rejected or earlier terms. A winner appears only from the server-declared active commitment."
+        description="Compare server-recorded synthetic quotes, use only the audit-selected option, and inspect the evidence-backed active winner returned by the backend."
       />
       <NegotiationExperience
         surface="comparison"

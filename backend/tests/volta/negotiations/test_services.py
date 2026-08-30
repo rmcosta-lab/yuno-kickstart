@@ -217,6 +217,7 @@ def operation() -> Operation:
         1,
         Route("Port A", "Depot B"),
         date(2026, 9, 2),
+        "Synthetic sealed container",
         mandate,
         OperationStatus.READY,
         (status,),

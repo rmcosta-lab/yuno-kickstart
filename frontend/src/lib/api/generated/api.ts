@@ -1815,11 +1815,6 @@ export type getOperationResponse422 = {
   status: 422;
 };
 
-export type getOperationResponse429 = {
-  data: ApiErrorResponse;
-  status: 429;
-};
-
 export type getOperationResponse500 = {
   data: ApiErrorResponse;
   status: 500;
@@ -1838,7 +1833,6 @@ export type getOperationResponseError = (
   | getOperationResponse403
   | getOperationResponse404
   | getOperationResponse422
-  | getOperationResponse429
   | getOperationResponse500
   | getOperationResponse501
 ) & {
@@ -2024,11 +2018,6 @@ export type getOperationAuditResponse422 = {
   status: 422;
 };
 
-export type getOperationAuditResponse429 = {
-  data: ApiErrorResponse;
-  status: 429;
-};
-
 export type getOperationAuditResponse500 = {
   data: ApiErrorResponse;
   status: 500;
@@ -2047,7 +2036,6 @@ export type getOperationAuditResponseError = (
   | getOperationAuditResponse403
   | getOperationAuditResponse404
   | getOperationAuditResponse422
-  | getOperationAuditResponse429
   | getOperationAuditResponse500
   | getOperationAuditResponse501
 ) & {

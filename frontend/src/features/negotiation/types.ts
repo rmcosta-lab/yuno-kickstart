@@ -12,7 +12,6 @@ export type DemoScenarioId =
   | "reconnecting"
   | "retryable-error"
   | "no-eligible"
-  | "terminal-success"
   | "terminal-failure";
 
 export type NegotiationDataSnapshot = {

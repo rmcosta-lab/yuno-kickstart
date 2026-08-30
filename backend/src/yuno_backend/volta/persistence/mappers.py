@@ -14,6 +14,7 @@ from yuno_backend.volta.evidence.models import (
     Recap,
     RecapDisclosureState,
 )
+from yuno_backend.volta.idempotency import TextMutationIdempotency
 from yuno_backend.volta.mandates.models import (
     DraftValidationIssue,
     IntakeDraft,
@@ -66,6 +67,7 @@ def _draft_to_values(draft: IntakeDraft) -> dict[str, Any]:
         "extraction_policy_version": draft.extraction_policy_version,
         "route_origin": proposal.route.origin,
         "route_destination": proposal.route.destination,
+        "cargo_label": proposal.cargo_label,
         "pickup_date": proposal.pickup_date,
         "maximum_amount": mandate.maximum_amount.amount,
         "currency": mandate.maximum_amount.currency,
@@ -88,6 +90,7 @@ def _draft_from_row(row: Mapping[str, Any]) -> IntakeDraft:
     proposal = OperationProposal(
         route=Route(origin=row["route_origin"], destination=row["route_destination"]),
         pickup_date=row["pickup_date"],
+        cargo_label=row["cargo_label"],
         mandate=MandateProposal(
             maximum_amount=Money(
                 amount=Decimal(row["maximum_amount"]),
@@ -126,6 +129,7 @@ def _operation_to_values(operation: Operation) -> dict[str, Any]:
         "source_draft_version": operation.source_draft_version,
         "route_origin": operation.route.origin,
         "route_destination": operation.route.destination,
+        "cargo_label": operation.cargo_label,
         "pickup_date": operation.pickup_date,
         "active_mandate_id": operation.mandate.id,
         "created_at": operation.created_at,
@@ -204,6 +208,7 @@ def _operation_from_rows(
             destination=operation_row["route_destination"],
         ),
         pickup_date=operation_row["pickup_date"],
+        cargo_label=operation_row["cargo_label"],
         mandate=mandate,
         status=history[-1].status,
         status_history=history,
@@ -405,6 +410,7 @@ def _idempotency_to_values(value: MutationIdempotency) -> dict[str, Any]:
         "start_negotiation": "negotiation_id",
         "record_quote": "quote_id",
         "create_commitment": "commitment_id",
+        "attach_commitment_evidence": "evidence_reservation_id",
     }[value.operation_name]
     return {
         "operation_name": value.operation_name,
@@ -414,12 +420,20 @@ def _idempotency_to_values(value: MutationIdempotency) -> dict[str, Any]:
         "negotiation_id": value.result_id if result_column == "negotiation_id" else None,
         "quote_id": value.result_id if result_column == "quote_id" else None,
         "commitment_id": value.result_id if result_column == "commitment_id" else None,
+        "evidence_reservation_id": (
+            value.result_id if result_column == "evidence_reservation_id" else None
+        ),
         "created_at": value.created_at,
     }
 
 
 def _idempotency_from_row(row: Mapping[str, Any]) -> MutationIdempotency:
-    result_id = row["negotiation_id"] or row["quote_id"] or row["commitment_id"]
+    result_id = (
+        row["negotiation_id"]
+        or row["quote_id"]
+        or row["commitment_id"]
+        or row["evidence_reservation_id"]
+    )
     return MutationIdempotency(
         row["operation_id"],
         row["operation_name"],
@@ -438,6 +452,17 @@ def _evidence_to_values(value: AgreementEvidence) -> dict[str, Any]:
         "audio_start_ms": value.audio_start_ms,
         "item_id": value.item_id,
         "event_id": value.event_id,
+        "created_at": value.created_at,
+    }
+
+
+def _text_idempotency_to_values(value: TextMutationIdempotency) -> dict[str, Any]:
+    return {
+        "operation_name": value.operation_name,
+        "idempotency_key": value.key,
+        "fingerprint": value.fingerprint,
+        "draft_id": value.result_id if value.operation_name == "create_operation_draft" else None,
+        "operation_id": value.result_id if value.operation_name == "approve_operation" else None,
         "created_at": value.created_at,
     }
 
@@ -573,5 +598,15 @@ def _notification_from_row(row: Mapping[str, Any]) -> Notification:
         row["operation_id"],
         row["commitment_id"],
         row["reason_code"],
+        _utc(row["created_at"]),
+    )
+
+
+def _text_idempotency_from_row(row: Mapping[str, Any]) -> TextMutationIdempotency:
+    return TextMutationIdempotency(
+        row["operation_name"],
+        row["idempotency_key"],
+        row["fingerprint"],
+        row["draft_id"] or row["operation_id"],
         _utc(row["created_at"]),
     )

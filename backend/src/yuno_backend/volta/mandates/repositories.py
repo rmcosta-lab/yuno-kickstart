@@ -6,6 +6,7 @@ from typing import Protocol, Self, runtime_checkable
 from uuid import UUID
 
 from yuno_backend.volta.audit.repositories import AuditEventRepository
+from yuno_backend.volta.idempotency import TextMutationIdempotency
 from yuno_backend.volta.mandates.models import IntakeDraft, Operation
 
 __all__ = [
@@ -29,6 +30,16 @@ class OperationRepository(Protocol):
     async def get_by_draft_id(self, draft_id: UUID) -> Operation | None: ...
 
     async def add(self, operation: Operation) -> None: ...
+
+@runtime_checkable
+class TextMutationIdempotencyRepository(Protocol):
+    async def lock(self, operation_name: str, key: str) -> None: ...
+
+    async def get(
+        self, operation_name: str, key: str
+    ) -> TextMutationIdempotency | None: ...
+
+    async def add(self, record: TextMutationIdempotency) -> None: ...
 
 
 @runtime_checkable

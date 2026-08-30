@@ -11,6 +11,7 @@ from yuno_backend.volta.persistence.repositories import (
     SqlAlchemyBriefRepository,
     SqlAlchemyCommitmentRepository,
     SqlAlchemyEvidenceRepository,
+    SqlAlchemyEvidenceReservationRepository,
     SqlAlchemyIdempotencyRepository,
     SqlAlchemyIntakeDraftRepository,
     SqlAlchemyNegotiationRepository,
@@ -20,6 +21,7 @@ from yuno_backend.volta.persistence.repositories import (
     SqlAlchemyQuoteRepository,
     SqlAlchemyRecapRepository,
     SqlAlchemyRecoveryAttemptRepository,
+    SqlAlchemyTextMutationIdempotencyRepository,
 )
 
 __all__ = ["SqlAlchemyOperationUnitOfWork"]
@@ -37,11 +39,13 @@ class SqlAlchemyOperationUnitOfWork:
         self.commitments: SqlAlchemyCommitmentRepository
         self.idempotency: SqlAlchemyIdempotencyRepository
         self.evidence: SqlAlchemyEvidenceRepository
+        self.evidence_reservations: SqlAlchemyEvidenceReservationRepository
         self.briefs: SqlAlchemyBriefRepository
         self.recaps: SqlAlchemyRecapRepository
         self.recovery_attempts: SqlAlchemyRecoveryAttemptRepository
         self.post_contact_escalations: SqlAlchemyPostContactEscalationRepository
         self.notifications: SqlAlchemyNotificationRepository
+        self.text_idempotency: SqlAlchemyTextMutationIdempotencyRepository
 
     async def __aenter__(self) -> "SqlAlchemyOperationUnitOfWork":
         if self._session is not None:
@@ -61,11 +65,13 @@ class SqlAlchemyOperationUnitOfWork:
         self.commitments = SqlAlchemyCommitmentRepository(self._session)
         self.idempotency = SqlAlchemyIdempotencyRepository(self._session)
         self.evidence = SqlAlchemyEvidenceRepository(self._session)
+        self.evidence_reservations = SqlAlchemyEvidenceReservationRepository(self._session)
         self.briefs = SqlAlchemyBriefRepository(self._session)
         self.recaps = SqlAlchemyRecapRepository(self._session)
         self.recovery_attempts = SqlAlchemyRecoveryAttemptRepository(self._session)
         self.post_contact_escalations = SqlAlchemyPostContactEscalationRepository(self._session)
         self.notifications = SqlAlchemyNotificationRepository(self._session)
+        self.text_idempotency = SqlAlchemyTextMutationIdempotencyRepository(self._session)
         return self
 
     async def __aexit__(
@@ -89,11 +95,13 @@ class SqlAlchemyOperationUnitOfWork:
             del self.commitments
             del self.idempotency
             del self.evidence
+            del self.evidence_reservations
             del self.briefs
             del self.recaps
             del self.recovery_attempts
             del self.post_contact_escalations
             del self.notifications
+            del self.text_idempotency
 
     async def commit(self) -> None:
         session = self._require_session()

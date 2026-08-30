@@ -2,6 +2,8 @@
 
 from uuid import UUID
 
+from yuno_backend.volta.idempotency import IdempotencyConflict
+
 __all__ = [
     "CallSessionNotFound",
     "CarrierSessionMismatch",
@@ -123,12 +125,3 @@ class InvalidNegotiationTransition(_SafeNegotiationError):
         self.operation_id = operation_id
         self.reason_code = reason_code
         super().__init__(f"invalid negotiation transition: {operation_id} ({reason_code})")
-
-
-class IdempotencyConflict(_SafeNegotiationError):
-    code = "idempotency_conflict"
-
-    def __init__(self, operation_id: UUID, operation_name: str, key: str) -> None:
-        self.operation_id = operation_id
-        self.operation_name = operation_name
-        super().__init__(f"idempotency conflict: {operation_id} operation={operation_name}")

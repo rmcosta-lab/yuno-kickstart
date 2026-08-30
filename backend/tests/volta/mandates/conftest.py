@@ -134,6 +134,7 @@ def proposal() -> OperationProposal:
     return OperationProposal(
         route=Route(origin="Synthetic Port", destination="Synthetic Inland Depot"),
         pickup_date=date(2026, 9, 2),
+        cargo_label="Synthetic sealed container",
         mandate=MandateProposal(
             maximum_amount=Money(amount=Decimal("1500.00"), currency="MXN"),
             pickup_window=PickupWindow(

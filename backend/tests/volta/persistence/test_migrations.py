@@ -20,13 +20,17 @@ PHASE08_TABLES = {
     "volta_commitments",
     "volta_mutation_idempotency",
 }
-EXPECTED_TABLES = PHASE08_TABLES | {
+PHASE14_TABLES = PHASE08_TABLES | {
     "volta_agreement_evidence",
     "volta_call_briefs",
     "volta_recaps",
     "volta_post_contact_escalations",
     "volta_recovery_attempts",
     "volta_notifications",
+}
+EXPECTED_TABLES = PHASE14_TABLES | {
+    "volta_evidence_reservations",
+    "volta_text_mutation_idempotency",
 }
 PHASE06_TABLES = {
     "volta_audit_events",
@@ -42,6 +46,7 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_intake_drafts_amount_finite",
         "ck_volta_intake_drafts_validation_issues_array",
         "ck_volta_intake_drafts_approval_eligibility",
+        "ck_volta_intake_drafts_cargo_label",
     },
     "volta_operations": {
         "pk_volta_operations",
@@ -50,6 +55,7 @@ EXPECTED_CONSTRAINTS = {
         "uq_volta_operations_source_draft_id",
         "ck_volta_operations_version_positive",
         "ck_volta_operations_source_draft_version_positive",
+        "ck_volta_operations_cargo_label",
     },
     "volta_mandates": {
         "pk_volta_mandates",
@@ -152,6 +158,16 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_agreement_evidence_item_id",
         "ck_volta_agreement_evidence_event_id",
     },
+    "volta_evidence_reservations": {
+        "pk_volta_evidence_reservations",
+        "uq_volta_evidence_reservations_quote",
+        "uq_volta_evidence_reservations_consumed_commitment",
+        "fk_volta_evidence_reservations_quote_operation",
+        "fk_volta_evidence_reservations_commitment_operation",
+        "ck_volta_evidence_reservations_offset",
+        "ck_volta_evidence_reservations_reference",
+        "ck_volta_evidence_reservations_event_ids",
+    },
     "volta_call_briefs": {
         "pk_volta_call_briefs",
         "uq_volta_call_briefs_commitment",
@@ -183,6 +199,15 @@ EXPECTED_CONSTRAINTS = {
     "volta_notifications": {
         "pk_volta_notifications",
         "fk_volta_notifications_commitment_operation",
+    },
+    "volta_text_mutation_idempotency": {
+        "pk_volta_text_mutation_idempotency",
+        "fk_volta_text_idempotency_draft",
+        "fk_volta_text_idempotency_operation",
+        "ck_volta_text_idempotency_operation_name",
+        "ck_volta_text_idempotency_result_mapping",
+        "ck_volta_text_idempotency_key",
+        "ck_volta_text_idempotency_fingerprint",
     },
 }
 
@@ -282,11 +307,13 @@ async def _insert_phase06_sentinel(database_url: str) -> None:
                     "INSERT INTO volta_intake_drafts "
                     "(id, source_prompt, requested_language, extraction_policy_version, "
                     "route_origin, route_destination, pickup_date, maximum_amount, currency, "
+                    "cargo_label, "
                     "pickup_window_start_date, pickup_window_end_date, allowed_conditions, "
                     "escalation_conditions, validation_issues, approval_eligible, version, "
                     "created_at, updated_at) VALUES "
                     "('00000000-0000-0000-0000-00000000f006', 'synthetic', 'EN_US', "
-                    "'intake-v1', 'A', 'B', '2026-09-01', 1, 'MXN', '2026-09-01', "
+                    "'intake-v1', 'A', 'B', '2026-09-01', 1, 'MXN', "
+                    "'Synthetic drayage cargo', '2026-09-01', "
                     "'2026-09-01', ARRAY[]::text[], ARRAY[]::text[], '[]'::jsonb, true, 1, "
                     "'2026-09-01T12:00:00Z', '2026-09-01T12:00:00Z')"
                 )
@@ -389,13 +416,17 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "ix_volta_recovery_attempts_operation"
     }
     assert indexes["volta_notifications"] == {"ix_volta_notifications_operation"}  # type: ignore[index]
+    assert indexes["volta_text_mutation_idempotency"] == {  # type: ignore[index]
+        "ix_volta_text_idempotency_draft",
+        "ix_volta_text_idempotency_operation",
+    }
 
     command.downgrade(alembic_config, "-1")
     tables_after_one_downgrade, _ = asyncio.run(_volta_tables_and_function(isolated_database_url))
-    assert tables_after_one_downgrade == PHASE08_TABLES
-    _, phase08_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
-    assert "COMMITMENT_SUPERSEDED" in phase08_audit_definition
-    assert "EVIDENCE_RECORDED" not in phase08_audit_definition
+    assert tables_after_one_downgrade == PHASE14_TABLES
+    _, phase14_audit_definition = asyncio.run(_phase06_preservation(isolated_database_url))
+    assert "COMMITMENT_SUPERSEDED" in phase14_audit_definition
+    assert "EVIDENCE_RECORDED" in phase14_audit_definition
 
     command.upgrade(alembic_config, "head")
     assert asyncio.run(_schema_evidence(isolated_database_url))["tables"] == EXPECTED_TABLES
@@ -411,3 +442,72 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
 
     command.upgrade(alembic_config, "head")
     assert asyncio.run(_schema_evidence(isolated_database_url))["tables"] == EXPECTED_TABLES
+
+
+def test_text_slice_migration_backfills_existing_synthetic_draft(
+    isolated_database_url: str,
+    alembic_config: Config,
+) -> None:
+    command.downgrade(alembic_config, "20260829_08")
+
+    async def insert_sentinel() -> None:
+        engine = create_async_engine(isolated_database_url, hide_parameters=True)
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(
+                    text(
+                        "INSERT INTO volta_intake_drafts "
+                        "(id, source_prompt, requested_language, extraction_policy_version, "
+                        "route_origin, route_destination, pickup_date, maximum_amount, currency, "
+                        "pickup_window_start_date, pickup_window_end_date, allowed_conditions, "
+                        "escalation_conditions, validation_issues, approval_eligible, version, "
+                        "created_at, updated_at) VALUES "
+                        "('00000000-0000-0000-0000-00000000f010', "
+                        "'Move one 40-foot container', 'EN_US', 'intake-v1', 'A', 'B', "
+                        "'2026-09-03', 9000, 'MXN', '2026-09-03', '2026-09-03', "
+                        "ARRAY[]::text[], ARRAY[]::text[], '[]'::jsonb, true, 1, "
+                        "'2026-09-01T12:00:00Z', '2026-09-01T12:00:00Z')"
+                    )
+                )
+                await connection.execute(
+                    text(
+                        "INSERT INTO volta_intake_drafts "
+                        "(id, source_prompt, requested_language, extraction_policy_version, "
+                        "route_origin, route_destination, pickup_date, maximum_amount, currency, "
+                        "pickup_window_start_date, pickup_window_end_date, allowed_conditions, "
+                        "escalation_conditions, validation_issues, approval_eligible, version, "
+                        "created_at, updated_at) VALUES "
+                        "('00000000-0000-0000-0000-00000000f011', "
+                        "'Move one refrigerated container', 'EN_US', 'intake-v1', 'A', 'B', "
+                        "'2026-09-03', 9000, 'MXN', '2026-09-03', '2026-09-03', "
+                        "ARRAY[]::text[], ARRAY[]::text[], '[]'::jsonb, true, 1, "
+                        "'2026-09-01T12:00:00Z', '2026-09-01T12:00:00Z')"
+                    )
+                )
+        finally:
+            await engine.dispose()
+
+    async def read_labels() -> tuple[str, str]:
+        engine = create_async_engine(isolated_database_url, hide_parameters=True)
+        try:
+            async with engine.connect() as connection:
+                rows = (
+                    await connection.execute(
+                        text(
+                            "SELECT cargo_label FROM volta_intake_drafts "
+                            "WHERE id IN "
+                            "('00000000-0000-0000-0000-00000000f010', "
+                            "'00000000-0000-0000-0000-00000000f011') ORDER BY id"
+                        )
+                    )
+                ).scalars()
+                return tuple(rows)  # type: ignore[return-value]
+        finally:
+            await engine.dispose()
+
+    asyncio.run(insert_sentinel())
+    command.upgrade(alembic_config, "head")
+    assert asyncio.run(read_labels()) == (
+        "40ft dry container",
+        "Synthetic drayage cargo (migrated)",
+    )

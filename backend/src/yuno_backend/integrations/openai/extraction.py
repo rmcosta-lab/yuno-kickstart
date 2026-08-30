@@ -51,6 +51,7 @@ EXTRACTION_SCHEMA: dict[str, Any] = {
     "properties": {
         "origin": _NULLABLE_STRING,
         "destination": _NULLABLE_STRING,
+        "cargo_label": _NULLABLE_STRING,
         "pickup_date": {
             "type": ["string", "null"],
             "pattern": r"^\d{4}-\d{2}-\d{2}$",
@@ -100,6 +101,7 @@ EXTRACTION_SCHEMA: dict[str, Any] = {
     "required": [
         "origin",
         "destination",
+        "cargo_label",
         "pickup_date",
         "pickup_window",
         "maximum_amount",
@@ -349,6 +351,7 @@ def _operation_proposal(value: object) -> OperationProposal:
         {
             "origin",
             "destination",
+            "cargo_label",
             "pickup_date",
             "pickup_window",
             "maximum_amount",
@@ -365,6 +368,7 @@ def _operation_proposal(value: object) -> OperationProposal:
             destination=_bounded_string(root["destination"]),
         ),
         pickup_date=_date(root["pickup_date"]),
+        cargo_label=_bounded_string(root["cargo_label"]),
         mandate=MandateProposal(
             maximum_amount=Money(
                 amount=amount,

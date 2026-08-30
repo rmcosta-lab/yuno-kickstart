@@ -1,7 +1,9 @@
-"""Injectable transport-to-application boundary used by contract-only routes."""
+"""Injectable transport-to-application boundary used by contract routes."""
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Annotated, Protocol
+
+from fastapi import Depends, Request
 
 from app.schemas.errors import ApiErrorCode, FieldIssue
 
@@ -63,8 +65,15 @@ class UnimplementedContractService:
         )
 
 
-_default_service = UnimplementedContractService()
+def get_contract_service(request: Request) -> ContractService:
+    """Return the application-scoped adapter, constructing it lazily when needed."""
+    service = getattr(request.app.state, "contract_service", None)
+    if service is None:
+        from app.volta_text_service import create_volta_text_contract_service
+
+        service = create_volta_text_contract_service(request.app.state.settings)
+        request.app.state.contract_service = service
+    return service
 
 
-def get_contract_service() -> ContractService:
-    return _default_service
+ContractServiceDep = Annotated[ContractService, Depends(get_contract_service)]

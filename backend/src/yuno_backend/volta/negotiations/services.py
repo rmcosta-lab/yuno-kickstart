@@ -8,6 +8,7 @@ from dataclasses import asdict, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
+from typing import Protocol, TypeVar, cast
 from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
@@ -61,6 +62,29 @@ __all__ = [
     "RecordQuoteService",
     "StartNegotiationService",
 ]
+
+class _EvidenceRepository(Protocol):
+    async def get_by_commitment(self, commitment_id: UUID) -> object | None: ...
+    async def add(self, evidence: object) -> None: ...
+
+
+class _EvidenceReservationRepository(Protocol):
+    async def consume(
+        self, evidence_id: UUID, commitment_id: UUID, call_id: UUID, quote_id: UUID
+    ) -> None: ...
+
+
+class _EvidenceCapableUnitOfWork(Protocol):
+    evidence: _EvidenceRepository
+    evidence_reservations: _EvidenceReservationRepository
+
+
+class _PreparedEvidence(Protocol):
+    id: UUID
+    commitment_id: UUID
+
+
+_EvidenceT = TypeVar("_EvidenceT", bound=_PreparedEvidence)
 
 
 def _canonical(value: object) -> object:
@@ -185,6 +209,12 @@ class StartNegotiationService:
         self._ids = id_generator
 
     async def start(self, command: StartNegotiationCommand) -> Negotiation:
+        result, _ = await self.start_with_replay(command)
+        return result
+
+    async def start_with_replay(
+        self, command: StartNegotiationCommand
+    ) -> tuple[Negotiation, bool]:
         _validate_idempotency_key(command.idempotency_key)
         fingerprint = _fingerprint(command)
         async with self._uow:
@@ -193,13 +223,13 @@ class StartNegotiationService:
                     self._uow, "start_negotiation", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, True
                 operation = await _operation(self._uow, command.operation_id)
                 replay = await _replay_record(
                     self._uow, "start_negotiation", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, True
                 _versions(operation, command.expected_operation_version, command.mandate_version)
                 existing = await self._uow.negotiations.get_by_operation(operation.id)
                 if existing is not None:
@@ -278,7 +308,7 @@ class StartNegotiationService:
                     )
                 )
                 await self._uow.commit()
-                return negotiation
+                return negotiation, False
             except Exception:
                 await self._uow.rollback()
                 raise
@@ -298,6 +328,10 @@ class RecordQuoteService:
         self._ids = id_generator
 
     async def record(self, command: RecordQuoteCommand) -> Quote:
+        result, _ = await self.record_with_replay(command)
+        return result
+
+    async def record_with_replay(self, command: RecordQuoteCommand) -> tuple[Quote, bool]:
         _validate_idempotency_key(command.idempotency_key)
         fingerprint = _fingerprint(command)
         async with self._uow:
@@ -306,7 +340,7 @@ class RecordQuoteService:
                     self._uow, "record_quote", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, True
                 negotiation = await self._uow.negotiations.get_by_call(command.call_id)
                 if negotiation is None:
                     raise CallSessionNotFound(command.call_id)
@@ -315,7 +349,7 @@ class RecordQuoteService:
                     self._uow, "record_quote", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, True
                 _versions(operation, command.expected_operation_version, command.mandate_version)
                 if operation.status not in (OperationStatus.NEGOTIATING, OperationStatus.COMMITTED):
                     raise InvalidNegotiationTransition(operation.id, "quotes_not_accepted")
@@ -365,7 +399,7 @@ class RecordQuoteService:
                     )
                 )
                 await self._uow.commit()
-                return quote
+                return quote, False
             except Exception:
                 await self._uow.rollback()
                 raise
@@ -439,6 +473,39 @@ class CreateCommitmentService:
         self._ids = id_generator
 
     async def create(self, command: CreateCommitmentCommand) -> Commitment:
+        result, _ = await self.create_with_replay(command)
+        return result
+
+    async def create_with_replay(
+        self, command: CreateCommitmentCommand
+    ) -> tuple[Commitment, bool]:
+        commitment, _, replayed = await self._create_with_optional_evidence(command, None)
+        return commitment, replayed
+
+    async def create_with_evidence_with_replay(
+        self,
+        command: CreateCommitmentCommand,
+        evidence: _EvidenceT,
+    ) -> tuple[tuple[Commitment, _EvidenceT], bool]:
+        """Atomically persist prepared evidence with its winning commitment.
+
+        Callers store the referenced bytes before entering this method, so the
+        unit of work is never held open during private-storage I/O.
+        """
+        commitment, persisted, replayed = await self._create_with_optional_evidence(
+            command, evidence
+        )
+        if persisted is None:
+            raise InvalidNegotiationTransition(
+                commitment.operation_id, "commitment_evidence_missing"
+            )
+        return (commitment, cast(_EvidenceT, persisted)), replayed
+
+    async def _create_with_optional_evidence(
+        self,
+        command: CreateCommitmentCommand,
+        evidence: _PreparedEvidence | None,
+    ) -> tuple[Commitment, object | None, bool]:
         _validate_idempotency_key(command.idempotency_key)
         fingerprint = _fingerprint(command)
         async with self._uow:
@@ -447,7 +514,7 @@ class CreateCommitmentService:
                     self._uow, "create_commitment", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, await self._replayed_evidence(replay, evidence), True
                 negotiation = await self._uow.negotiations.get_by_call(command.call_id)
                 if negotiation is None:
                     raise CallSessionNotFound(command.call_id)
@@ -456,7 +523,7 @@ class CreateCommitmentService:
                     self._uow, "create_commitment", command.idempotency_key, fingerprint
                 )
                 if replay is not None:
-                    return replay
+                    return replay, await self._replayed_evidence(replay, evidence), True
                 _versions(operation, command.expected_operation_version, command.mandate_version)
                 if operation.status not in (OperationStatus.NEGOTIATING, OperationStatus.COMMITTED):
                     raise InvalidNegotiationTransition(operation.id, "commitment_not_allowed")
@@ -486,7 +553,11 @@ class CreateCommitmentService:
                     raise QuoteNotBestCandidate(quote.id, comparison.selected_quote_id)
                 await self._uow.commitments.lock_winner_scope(operation.id)
                 active = await self._uow.commitments.get_active(operation.id)
-                commitment_id = self._ids.new_id()
+                commitment_id = (
+                    self._ids.new_id()
+                    if evidence is None
+                    else evidence.commitment_id
+                )
                 commitment = Commitment(
                     commitment_id,
                     operation.id,
@@ -511,6 +582,16 @@ class CreateCommitmentService:
                     )
                     await self._uow.commitments.update(superseded)
                 await self._uow.commitments.add(commitment)
+                if evidence is not None:
+                    if evidence.id != command.evidence_id:
+                        from yuno_backend.volta.errors import InvalidDomainValue
+
+                        raise InvalidDomainValue("evidence_id", "must_match_commitment_reservation")
+                    evidence_uow = cast(_EvidenceCapableUnitOfWork, self._uow)
+                    await evidence_uow.evidence_reservations.consume(
+                        evidence.id, commitment.id, command.call_id, command.quote_id
+                    )
+                    await evidence_uow.evidence.add(evidence)
                 updated = _transition(operation, OperationStatus.COMMITTED, now, self._ids.new_id())
                 await self._uow.operations.update(updated)
                 if active is not None:
@@ -533,7 +614,23 @@ class CreateCommitmentService:
                     )
                 )
                 await self._uow.commit()
-                return commitment
+                return commitment, evidence, False
             except Exception:
                 await self._uow.rollback()
                 raise
+
+    async def _replayed_evidence(
+        self,
+        commitment: Commitment,
+        requested: _PreparedEvidence | None,
+    ) -> object | None:
+        if requested is None:
+            return None
+        persisted = await cast(
+            _EvidenceCapableUnitOfWork, self._uow
+        ).evidence.get_by_commitment(commitment.id)
+        if persisted is None:
+            raise InvalidNegotiationTransition(
+                commitment.operation_id, "commitment_evidence_missing"
+            )
+        return persisted

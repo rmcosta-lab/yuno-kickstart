@@ -1,10 +1,21 @@
 # Fase 10 — Implementation plan
 
-## Gate and temporary wait
+## Gate and cleared prerequisite
 
 The roadmap gate remains unchanged: the generated client must complete the canonical prompt-to-winner text journey against PostgreSQL, with the listed negative paths, API tests, `make generate`, `make check`, and browser console/network inspection passing. Starting the phase does not make an incomplete response acceptable.
 
-`WAITING_ON_PHASE_14`: Fase 08 persists only an opaque `evidence_id`, while the accepted `CommitmentResponse`, operation/audit projections, and terminal winner require real `CommitmentEvidenceResponse` fields. Work through persisted quote comparison may proceed now. Commitment serialization, evidence-bearing audit output, and terminal prompt-to-winner validation must wait until Fase 14 merges its typed evidence application contract and persistence. No fake recording reference, `audio_start_ms`, item/event ID, lifecycle, recap, or other placeholder may cross the API.
+`PHASE_14_CLEARED`: the branch was refreshed from `origin/main` after Fase 14 merged. The post-prerequisite slice consumes its typed evidence repository and private filesystem-storage adapter, persists response-complete commitment evidence, and completes the terminal prompt-to-winner gate without adding recap, recovery, provider, voice, or telephony scope. No fake recording reference, `audio_start_ms`, item/event ID, lifecycle, recap, or other placeholder crosses the API.
+
+## Post-review remediation checkpoint
+
+The explicit deep review found that the first terminal implementation generated evidence metadata during commitment creation instead of consuming Fase 14 evidence. That implementation is superseded by the following frozen correction:
+
+- `POST /v1/calls/{call_id}/evidence` validates an already stored private artifact, correlates the supplied exact offset/item/event metadata to the server-selected quote, and persists a server-generated evidence reservation with durable replay semantics.
+- `POST /v1/calls/{call_id}/commitments` accepts only an unconsumed reservation for the same call and quote, then consumes it atomically with `AgreementEvidence` persistence and the winner transition. It never derives evidence from `quote_id` or generates audio/metadata.
+- Evidence-pending recovery commitments remain readable but are omitted from response shapes that require complete nested evidence until Fase 14 evidence is attached.
+- The API enforces a bounded mutation rate limit with `429`, the local storage adapter forces `0700` directories and `0600` files, the cargo backfill no longer infers 40 feet from generic container text, and the terminal announces progress/success and focuses the resulting winner heading.
+
+The user explicitly requested implementation and validation without another deep-review pass. The three layer writers retain the ownership boundaries below; the coordinator alone integrates generated artifacts and validation evidence.
 
 ## Task groups in dependency order
 
@@ -58,7 +69,7 @@ Contract decisions in task group 1 complete before the three implementation writ
 | --- | --- | --- | --- |
 | Backend integration and persistence | Fase 10 backend writer | `backend/src/yuno_backend/volta/{intake,mandates,negotiations,persistence}/**`, any new provider-neutral integration/query package, `backend/migrations/**`, `backend/tests/volta/**` | After task group 1; evidence-dependent paths only after Fase 14 refresh. |
 | API wiring and contract generation | Fase 10 API writer | `api/app/**`, `api/tests/**`, `api/openapi.json`, `frontend/src/lib/api/generated/**` | After task group 1 and each backend public contract checkpoint. |
-| Frontend live journey | Fase 10 frontend writer | `frontend/src/app/(control-tower)/{intake,mandate,sessions,comparison}/**`, `frontend/src/features/negotiation/**`, `frontend/src/lib/api/volta-fetch.ts`, auth/handoff helpers, focused frontend checks | After the API mapping is frozen; terminal winner only after generated post-Fase-14 handoff. |
+| Frontend live journey | Fase 10 frontend writer | `frontend/src/app/(control-tower)/{intake,mandate,sessions,comparison}/**`, `frontend/src/app/(control-tower)/layout.tsx`, `frontend/src/features/negotiation/**`, `frontend/src/lib/api/volta-fetch.ts`, auth/handoff helpers, focused frontend checks | After the API mapping is frozen; the layout exception updates the stale fixture-only footer; terminal winner only after generated post-Fase-14 handoff. |
 | Phase coordination | Phase coordinator | `docs/project-specs/2026-08-29-10-pass-text-negotiation/**`, `.env.example` if the obsolete fixture flag changes, final integration/diff review | Throughout. |
 | Shared roadmap clarification | `manage-shared-specs` owner on its dedicated branch | `docs/project-specs/roadmap.md` and directly required coordination notes only | Independently, followed by owner notification and branch refresh. |
 | Manifests and lockfiles | Phase coordinator only if unavoidable | `pyproject.toml` with `uv.lock`; `frontend/package.json` with `pnpm-lock.yaml` | No dependency is planned; revise the plan before writing. |

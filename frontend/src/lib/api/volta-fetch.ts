@@ -1,4 +1,5 @@
 import type { ApiErrorResponse } from "./generated/models";
+import { getDemoBearerToken } from "../demo-auth";
 
 export type ApiHttpResponse<TData> = {
   data: TData;
@@ -63,7 +64,15 @@ export const voltaFetch = async <TResponse>(
   url: string,
   options?: RequestInit,
 ): Promise<TResponse> => {
-  const response = await fetch(url, options);
+  const headers = new Headers(options?.headers);
+  headers.delete("Authorization");
+
+  const bearerToken = getDemoBearerToken();
+  if (bearerToken) {
+    headers.set("Authorization", `Bearer ${bearerToken}`);
+  }
+
+  const response = await fetch(url, { ...options, headers });
   const result: ApiHttpResponse<unknown> = {
     data: await parseResponseBody(response),
     headers: response.headers,

@@ -64,6 +64,7 @@ def _proposal() -> OperationProposal:
     return OperationProposal(
         route=Route("Synthetic Port", "Synthetic Inland Depot"),
         pickup_date=date(2026, 9, 2),
+        cargo_label="Synthetic sealed container",
         mandate=MandateProposal(
             maximum_amount=Money(Decimal("1500.125"), "MXN"),
             pickup_window=PickupWindow(date(2026, 9, 1), date(2026, 9, 3)),
@@ -208,6 +209,7 @@ async def test_invalid_draft_round_trip_preserves_ordered_validation_issues(
     invalid_proposal = OperationProposal(
         route=Route("", ""),
         pickup_date=date(2026, 9, 5),
+        cargo_label="",
         mandate=MandateProposal(
             maximum_amount=Money(Decimal("-1.25"), "USD"),
             pickup_window=PickupWindow(date(2026, 9, 4), date(2026, 9, 3)),
@@ -230,9 +232,10 @@ async def test_invalid_draft_round_trip_preserves_ordered_validation_issues(
         assert loaded == draft
         assert not loaded.approval_eligible  # type: ignore[union-attr]
         assert tuple(issue.reason_code for issue in loaded.validation_issues) == (  # type: ignore[union-attr]
-            "required",
-            "required",
-            "invalid_order",
+                "required",
+                "required",
+                "required",
+                "invalid_order",
             "outside_mandate_window",
             "must_be_non_negative",
             "unsupported",

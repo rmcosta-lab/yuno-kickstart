@@ -6,7 +6,6 @@ import {
   History,
   MessageSquareText,
   ShieldAlert,
-  Trophy,
 } from "lucide-react";
 
 import { StatusBadge } from "@/components/control-tower/status-badge";
@@ -20,11 +19,9 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { CarrierSessionResponse } from "@/lib/api/generated/models/carrierSessionResponse";
-import type { CommitmentResponse } from "@/lib/api/generated/models/commitmentResponse";
 import type { EscalationResponse } from "@/lib/api/generated/models/escalationResponse";
 import type { OperationResponse } from "@/lib/api/generated/models/operationResponse";
 import type { QuoteResponse } from "@/lib/api/generated/models/quoteResponse";
-import { cn } from "@/lib/utils";
 
 const MONEY_FORMATTER = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -76,7 +73,7 @@ function quoteStatusTone(eligibility: QuoteResponse["eligibility"]) {
 function OperationStrip({ operation }: { operation: OperationResponse }) {
   return (
     <section
-      aria-label="Simulated operation context"
+      aria-label="Operation context"
       className="grid gap-4 border-y border-border py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
     >
       <div className="min-w-0">
@@ -316,8 +313,8 @@ function SessionPanel({
                   No quote recorded
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Session state is {session.state.toLowerCase()}; the demo does
-                  not fabricate carrier terms.
+                  Session state is {session.state.toLowerCase()}; no carrier
+                  terms are fabricated in the browser.
                 </p>
               </div>
             )}
@@ -369,43 +366,22 @@ export function SessionsView({ operation }: { operation: OperationResponse }) {
 function ComparisonPanel({
   quote,
   session,
-  commitment,
   recordLabel,
 }: {
   quote: QuoteResponse;
   session?: CarrierSessionResponse;
-  commitment?: CommitmentResponse | null;
   recordLabel: string;
 }) {
-  const isActiveWinner =
-    commitment?.disposition === "ACTIVE" &&
-    commitment.quote_id === quote.quote_id;
-
   return (
     <li>
-      <Card
-        aria-current={isActiveWinner ? "true" : undefined}
-        className={cn(
-          "h-full overflow-hidden",
-          isActiveWinner && "ring-2 ring-primary",
-        )}
-      >
-        <CardHeader
-          className={cn(
-            "border-b border-border",
-            isActiveWinner
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted/35",
-          )}
-        >
+      <Card className="h-full overflow-hidden">
+        <CardHeader className="border-b border-border bg-muted/35">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <CardTitle className="wrap-break-word">
                 {session?.carrier.display_name ?? quote.carrier_id}
               </CardTitle>
-              <CardDescription
-                className={cn(isActiveWinner && "text-primary-foreground/80")}
-              >
+              <CardDescription>
                 {recordLabel} ·{" "}
                 {session
                   ? `Rank ${session.carrier.deterministic_rank} · ${humanize(session.channel)}`
@@ -415,15 +391,8 @@ function ComparisonPanel({
             <StatusBadge
               tone={quoteStatusTone(quote.eligibility)}
               label={quote.eligibility}
-              className={cn(isActiveWinner && "bg-background text-foreground")}
             />
           </div>
-          {isActiveWinner ? (
-            <p className="mt-3 flex items-center gap-2 text-sm font-semibold">
-              <Trophy aria-hidden="true" />
-              Active winner · server-declared commitment
-            </p>
-          ) : null}
         </CardHeader>
         <CardContent className="flex flex-col gap-5 pt-5">
           <div>
@@ -477,11 +446,12 @@ function ComparisonPanel({
                 ))}
               </ul>
             </div>
-          ) : !isActiveWinner ? (
+          ) : (
             <p className="text-sm text-muted-foreground">
-              Eligible option · no active commitment declared for this quote.
+              Eligible option returned by the server. No winner is inferred in
+              this comparison checkpoint.
             </p>
-          ) : null}
+          )}
         </CardContent>
       </Card>
     </li>
@@ -523,7 +493,6 @@ export function ComparisonView({
               session={sessions.find(
                 (session) => session.call_id === quote.call_id,
               )}
-              commitment={operation.active_commitment}
               recordLabel={
                 latestQuoteBySession.get(quote.call_id)?.quote_id ===
                 quote.quote_id

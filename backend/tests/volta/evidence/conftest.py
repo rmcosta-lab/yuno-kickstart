@@ -200,6 +200,7 @@ def operation(
         1,
         Route("Port A", "Depot B"),
         date(2026, 9, 2),
+        "Synthetic evidence cargo",
         mandate,
         status if version > 1 else OperationStatus.READY,
         tuple(history),
