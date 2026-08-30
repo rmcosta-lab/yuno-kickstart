@@ -1,5 +1,6 @@
 """Persistence-neutral ports for evidence application services."""
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -22,6 +23,10 @@ class EvidenceRepository(Protocol):
 class BriefRepository(Protocol):
     async def get(self, brief_id: UUID) -> CallBrief | None: ...
     async def get_by_commitment(self, commitment_id: UUID) -> CallBrief | None: ...
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[CallBrief, ...]: ...
     async def add(self, brief: CallBrief) -> None: ...
 
 
@@ -29,6 +34,10 @@ class BriefRepository(Protocol):
 class RecapRepository(Protocol):
     async def get(self, recap_id: UUID) -> Recap | None: ...
     async def get_by_commitment(self, commitment_id: UUID) -> Recap | None: ...
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[Recap, ...]: ...
     async def add(self, recap: Recap) -> None: ...
 
 

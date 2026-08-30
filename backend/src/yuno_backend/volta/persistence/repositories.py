@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import insert, select, text, update
+from sqlalchemy import insert, select, text, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,6 +104,24 @@ def _mapping(row: Any) -> Mapping[str, Any]:
     return row._mapping  # noqa: SLF001 - SQLAlchemy's documented Row mapping view
 
 
+def _ordered_page(
+    statement: Any,
+    timestamp_column: Any,
+    id_column: Any,
+    *,
+    after: tuple[datetime, UUID] | None,
+    inclusive: bool,
+    limit: int | None,
+) -> Any:
+    if after is not None:
+        boundary = tuple_(timestamp_column, id_column)
+        statement = statement.where(
+            boundary >= after if inclusive else boundary > after
+        )
+    statement = statement.order_by(timestamp_column, id_column)
+    return statement if limit is None else statement.limit(limit)
+
+
 class SqlAlchemyIntakeDraftRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -167,6 +186,7 @@ class SqlAlchemyOperationRepository:
                         _operation_status_history.c.occurred_at,
                         _operation_status_history.c.id,
                     )
+                    .limit(101)
                 )
             ).all()
         except DBAPIError:
@@ -175,6 +195,10 @@ class SqlAlchemyOperationRepository:
         if mandate_row is None:
             raise PersistenceUnavailable(
                 "invalid_stored_state", "operation", operation_id
+            ) from None
+        if len(status_rows) > 100:
+            raise PersistenceUnavailable(
+                "aggregate_overflow", "operation_status_history", operation_id
             ) from None
         try:
             return _operation_from_rows(
@@ -287,13 +311,27 @@ class SqlAlchemyAuditEventRepository:
         except DBAPIError:
             raise PersistenceUnavailable("write_failed", "audit_event", event.event_id) from None
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[AuditEvent, ...]:
+    async def list_by_operation(
+        self,
+        operation_id: UUID,
+        *,
+        after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False,
+        limit: int | None = None,
+    ) -> tuple[AuditEvent, ...]:
         try:
             rows = (
                 await self._session.execute(
-                    select(_audit_events)
-                    .where(_audit_events.c.operation_id == operation_id)
-                    .order_by(_audit_events.c.occurred_at, _audit_events.c.event_id)
+                    _ordered_page(
+                        select(_audit_events).where(
+                            _audit_events.c.operation_id == operation_id
+                        ),
+                        _audit_events.c.occurred_at,
+                        _audit_events.c.event_id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
                 )
             ).all()
         except DBAPIError:
@@ -404,13 +442,21 @@ class SqlAlchemyQuoteRepository:
         except (InvalidDomainValue, KeyError, TypeError, ValueError):
             raise PersistenceUnavailable("invalid_stored_state", "quote", quote_id) from None
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[Quote, ...]:
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[Quote, ...]:
         try:
             rows = (
                 await self._session.execute(
-                    select(_quotes)
-                    .where(_quotes.c.operation_id == operation_id)
-                    .order_by(_quotes.c.created_at, _quotes.c.id)
+                    _ordered_page(
+                        select(_quotes).where(_quotes.c.operation_id == operation_id),
+                        _quotes.c.created_at,
+                        _quotes.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
                 )
             ).all()
             return tuple(_quote_from_row(_mapping(row)) for row in rows)
@@ -449,13 +495,23 @@ class SqlAlchemyCommitmentRepository:
         except (InvalidDomainValue, KeyError, TypeError, ValueError):
             raise PersistenceUnavailable("invalid_stored_state", "commitment") from None
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[Commitment, ...]:
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[Commitment, ...]:
         try:
             rows = (
                 await self._session.execute(
-                    select(_commitments)
-                    .where(_commitments.c.operation_id == operation_id)
-                    .order_by(_commitments.c.created_at, _commitments.c.id)
+                    _ordered_page(
+                        select(_commitments).where(
+                            _commitments.c.operation_id == operation_id
+                        ),
+                        _commitments.c.created_at,
+                        _commitments.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
                 )
             ).all()
             return tuple(_commitment_from_row(_mapping(row)) for row in rows)
@@ -682,6 +738,29 @@ class SqlAlchemyBriefRepository:
     async def get_by_commitment(self, commitment_id: UUID) -> CallBrief | None:
         return await self._get_by(_call_briefs.c.commitment_id == commitment_id)
 
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[CallBrief, ...]:
+        try:
+            rows = (
+                await self._session.execute(
+                    _ordered_page(
+                        select(_call_briefs).where(
+                            _call_briefs.c.operation_id == operation_id
+                        ),
+                        _call_briefs.c.generated_at,
+                        _call_briefs.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
+                )
+            ).all()
+            return tuple(_brief_from_row(_mapping(row)) for row in rows)
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "call_brief", operation_id) from None
+
     async def _get_by(self, criterion: Any) -> CallBrief | None:
         try:
             row = (await self._session.execute(select(_call_briefs).where(criterion))).first()
@@ -709,6 +788,27 @@ class SqlAlchemyRecapRepository:
 
     async def get_by_commitment(self, commitment_id: UUID) -> Recap | None:
         return await self._get_by(_recaps.c.commitment_id == commitment_id)
+
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[Recap, ...]:
+        try:
+            rows = (
+                await self._session.execute(
+                    _ordered_page(
+                        select(_recaps).where(_recaps.c.operation_id == operation_id),
+                        _recaps.c.generated_at,
+                        _recaps.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
+                )
+            ).all()
+            return tuple(_recap_from_row(_mapping(row)) for row in rows)
+        except DBAPIError:
+            raise PersistenceUnavailable("read_failed", "recap", operation_id) from None
 
     async def _get_by(self, criterion: Any) -> Recap | None:
         try:
@@ -740,6 +840,31 @@ class SqlAlchemyPostContactEscalationRepository:
             (_post_contact_escalations.c.operation_id == operation_id)
             & (_post_contact_escalations.c.resolved.is_(False))
         )
+
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[PostContactEscalation, ...]:
+        try:
+            rows = (
+                await self._session.execute(
+                    _ordered_page(
+                        select(_post_contact_escalations).where(
+                            _post_contact_escalations.c.operation_id == operation_id
+                        ),
+                        _post_contact_escalations.c.created_at,
+                        _post_contact_escalations.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
+                )
+            ).all()
+            return tuple(_post_contact_escalation_from_row(_mapping(row)) for row in rows)
+        except DBAPIError:
+            raise PersistenceUnavailable(
+                "read_failed", "post_contact_escalation", operation_id
+            ) from None
 
     async def _get_by(self, criterion: Any) -> PostContactEscalation | None:
         try:
@@ -809,13 +934,23 @@ class SqlAlchemyRecoveryAttemptRepository:
         except (InvalidDomainValue, KeyError, TypeError, ValueError):
             raise PersistenceUnavailable("invalid_stored_state", "recovery_attempt") from None
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[RecoveryAttempt, ...]:
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[RecoveryAttempt, ...]:
         try:
             rows = (
                 await self._session.execute(
-                    select(_recovery_attempts)
-                    .where(_recovery_attempts.c.operation_id == operation_id)
-                    .order_by(_recovery_attempts.c.created_at, _recovery_attempts.c.id)
+                    _ordered_page(
+                        select(_recovery_attempts).where(
+                            _recovery_attempts.c.operation_id == operation_id
+                        ),
+                        _recovery_attempts.c.created_at,
+                        _recovery_attempts.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
                 )
             ).all()
             return tuple(_recovery_attempt_from_row(_mapping(row)) for row in rows)
@@ -855,13 +990,23 @@ class SqlAlchemyNotificationRepository:
         except (InvalidDomainValue, KeyError, TypeError, ValueError):
             raise PersistenceUnavailable("invalid_stored_state", "notification") from None
 
-    async def list_by_operation(self, operation_id: UUID) -> tuple[Notification, ...]:
+    async def list_by_operation(
+        self, operation_id: UUID, *, after: tuple[datetime, UUID] | None = None,
+        inclusive: bool = False, limit: int | None = None
+    ) -> tuple[Notification, ...]:
         try:
             rows = (
                 await self._session.execute(
-                    select(_notifications)
-                    .where(_notifications.c.operation_id == operation_id)
-                    .order_by(_notifications.c.created_at, _notifications.c.id)
+                    _ordered_page(
+                        select(_notifications).where(
+                            _notifications.c.operation_id == operation_id
+                        ),
+                        _notifications.c.created_at,
+                        _notifications.c.id,
+                        after=after,
+                        inclusive=inclusive,
+                        limit=limit,
+                    )
                 )
             ).all()
             return tuple(_notification_from_row(_mapping(row)) for row in rows)

@@ -1,3 +1,4 @@
+from hashlib import sha256
 from uuid import UUID
 
 import pytest
@@ -110,16 +111,19 @@ async def test_record_evidence_rejects_unknown_operation() -> None:
         await service.record(_record_command(operation_id=UUID(int=999)))
 
 
-async def test_generate_brief_builds_bounded_summary_and_is_idempotent() -> None:
+async def test_generate_brief_builds_bounded_summary_and_rejects_duplicate() -> None:
     active = commitment()
     uow = Uow(operation(), {active.id: active})
     service = GenerateBriefService(uow, Clock(), Ids())
-    command = GenerateBriefCommand(OPERATION_ID, 2, active.id, UUID(int=900))
+    command = GenerateBriefCommand(
+        OPERATION_ID, active.call_id, 2, active.id,
+        ("fact",), ("objection",), ("change",), (), UUID(int=900)
+    )
 
     brief = await service.generate(command)
-    replay = await service.generate(command)
+    with pytest.raises(EvidenceAlreadyRecorded):
+        await service.generate(command)
 
-    assert replay == brief
     assert brief.carrier_id == active.carrier_id
     assert brief.agreed_terms_reference == active.quote_id
     assert brief.route.origin == "Port A"
@@ -127,15 +131,30 @@ async def test_generate_brief_builds_bounded_summary_and_is_idempotent() -> None
     assert uow.commits == 1
 
 
-async def test_generate_recap_is_always_simulated_and_idempotent() -> None:
+async def test_generate_recap_is_always_simulated_and_rejects_duplicate() -> None:
     active = commitment()
     uow = Uow(operation(), {active.id: active})
     service = GenerateRecapService(uow, Clock(), Ids())
-    command = GenerateRecapCommand(OPERATION_ID, 2, active.id, UUID(int=900))
+    command = GenerateRecapCommand(
+        OPERATION_ID, active.call_id, 2, active.id, "Confirmed terms", UUID(int=900)
+    )
 
     recap = await service.generate(command)
-    replay = await service.generate(command)
+    with pytest.raises(EvidenceAlreadyRecorded):
+        await service.generate(command)
 
-    assert replay == recap
     assert recap.disclosure_state is RecapDisclosureState.SIMULATED
+    assert recap.content_hash == sha256(b"Confirmed terms").hexdigest()
     assert len(uow.recaps.values) == 1
+
+
+async def test_generate_recap_hashes_exact_utf8_bytes() -> None:
+    active = commitment()
+    uow = Uow(operation(), {active.id: active})
+    content = "Confirmação\nPreço: R$ 8.750 — São Paulo"
+    recap = await GenerateRecapService(uow, Clock(), Ids()).generate(
+        GenerateRecapCommand(
+            OPERATION_ID, active.call_id, 2, active.id, content, UUID(int=901)
+        )
+    )
+    assert recap.content_hash == sha256(content.encode("utf-8")).hexdigest()

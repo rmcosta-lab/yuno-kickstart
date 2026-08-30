@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -9,6 +11,8 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from yuno_backend.volta.evidence.commands import RecordEvidenceCommand
+from yuno_backend.volta.evidence.services import RecordEvidenceService
 from yuno_backend.volta.negotiations import (
     IdempotencyConflict,
     QuoteEligibility,
@@ -16,15 +20,31 @@ from yuno_backend.volta.negotiations import (
 )
 from yuno_backend.volta.negotiations.models import QuoteTerms
 from yuno_backend.volta.persistence import SqlAlchemyOperationUnitOfWork
+from yuno_backend.volta.recovery.commands import ReplacementEvidence
+from yuno_backend.volta.recovery.fixtures import (
+    DeterministicRecoveryFixtureCatalog,
+    RecoveryFixture,
+)
+from yuno_backend.volta.recovery.models import (
+    EscalationContext,
+    RecoveryScenario,
+)
 from yuno_backend.volta.text_slice import (
+    AcknowledgeNotificationInput,
     ApproveOperationInput,
     AttachCommitmentEvidenceInput,
     BrowserChannel,
+    CommitmentEvidenceNotFound,
+    CreateCallBriefInput,
     CreateCommitmentInput,
+    CreateEscalationInput,
     CreateOperationDraftInput,
+    CreateSimulatedRecapInput,
     EvidenceArtifactUnavailable,
     EvidenceReservationNotFound,
     RecordQuoteInput,
+    ReplaceMandateInput,
+    StartInboundRecoveryInput,
     StartNegotiationInput,
     TextNegotiationApplication,
     create_demo_carrier_catalog,
@@ -59,14 +79,21 @@ def application(
     *,
     ids: Ids | None = None,
     evidence_dir: Path | None = None,
+    recovery_catalog: DeterministicRecoveryFixtureCatalog | None = None,
+    unit_of_work_factory: Callable[[], SqlAlchemyOperationUnitOfWork] | None = None,
 ) -> TextNegotiationApplication:
     return TextNegotiationApplication(
-        unit_of_work_factory=lambda: SqlAlchemyOperationUnitOfWork(factory),
+        unit_of_work_factory=(
+            (lambda: SqlAlchemyOperationUnitOfWork(factory))
+            if unit_of_work_factory is None
+            else unit_of_work_factory
+        ),
         extractor=create_demo_text_extractor(),
         carrier_catalog=create_demo_carrier_catalog(),
         clock=Clock(),
         id_generator=ids or Ids(),
         evidence_storage=create_demo_evidence_storage(evidence_dir),
+        recovery_fixture_catalog=recovery_catalog,
         extraction_policy_version="volta-text-v1",
     )
 
@@ -75,22 +102,193 @@ async def artifact_count(path: Path) -> int:
     return await asyncio.to_thread(lambda: len(tuple(path.rglob("*.wav"))))
 
 
-async def test_read_projections_represent_commitment_pending_phase14_evidence(
+async def test_phase25_facade_persists_exact_replay_and_complete_recovery(
+    isolated_database_url: str,
+    tmp_path: Path,
+) -> None:
+    engine = create_async_engine(isolated_database_url, hide_parameters=True)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        operation_id, commitment = await _seed_winner(factory, 101000)
+        await RecordEvidenceService(
+            SqlAlchemyOperationUnitOfWork(factory), Clock(), Ids()
+        ).record(
+            RecordEvidenceCommand(
+                operation_id,
+                4,
+                commitment.id,
+                "original.webm",
+                50,
+                "original-item",
+                "original-event",
+                UUID(int=101100),
+            )
+        )
+        storage = create_demo_evidence_storage(tmp_path)
+        reference = await storage.store(
+            UUID(int=101101), b"RIFF\x00\x00\x00\x00WAVErecovery-evidence"
+        )
+        safe_terms = replace(commitment.agreed_terms, amount=Decimal("900"))
+        bad_terms = replace(commitment.agreed_terms, amount=Decimal("999999"))
+        catalog = DeterministicRecoveryFixtureCatalog(
+            (
+                RecoveryFixture(
+                    RecoveryScenario.MANDATE_SAFE,
+                    safe_terms,
+                    "MANDATE_SAFE_REPLACEMENT",
+                    ReplacementEvidence(reference, 250, "safe-item", "safe-event"),
+                    None,
+                ),
+                RecoveryFixture(
+                    RecoveryScenario.OUT_OF_MANDATE,
+                    bad_terms,
+                    "OUT_OF_MANDATE",
+                    None,
+                    EscalationContext(
+                        "Replacement exceeds mandate.",
+                        ("Keep active commitment",),
+                        "Review the mandate.",
+                    ),
+                ),
+            )
+        )
+        app = application(factory, evidence_dir=tmp_path, recovery_catalog=catalog)
+
+        recap_input = CreateSimulatedRecapInput(
+            commitment.call_id,
+            4,
+            commitment.id,
+            "Confirmed terms\nSimulated recap",
+            "recap-phase25-0001",
+            UUID(int=101102),
+        )
+        recap = await app.create_simulated_recap(recap_input)
+        recap_replay = await application(
+            factory, evidence_dir=tmp_path, recovery_catalog=catalog
+        ).create_simulated_recap(replace(recap_input, correlation_id=UUID(int=101103)))
+        assert recap_replay.idempotency_replayed and recap_replay.value == recap.value
+
+        brief_input = CreateCallBriefInput(
+            commitment.call_id,
+            4,
+            ("Terms reconfirmed",),
+            (),
+            ("Rate reduced",),
+            (),
+            "brief-phase25-0001",
+            UUID(int=101104),
+        )
+        brief = await app.create_call_brief(brief_input)
+        brief_replay = await app.create_call_brief(
+            replace(brief_input, correlation_id=UUID(int=101105))
+        )
+        assert brief_replay.idempotency_replayed and brief_replay.value == brief.value
+
+        safe_input = StartInboundRecoveryInput(
+            operation_id,
+            4,
+            RecoveryScenario.MANDATE_SAFE,
+            commitment.id,
+            "recovery-phase25-0001",
+            UUID(int=101106),
+        )
+        safe = await app.start_inbound_simulation(safe_input)
+        assert safe.value.active_commitment is not None
+        await storage.delete(reference)
+        safe_replay = await application(
+            factory, evidence_dir=tmp_path, recovery_catalog=catalog
+        ).start_inbound_simulation(replace(safe_input, correlation_id=UUID(int=101107)))
+        assert safe_replay.idempotency_replayed and safe_replay.value == safe.value
+
+        bad_input = StartInboundRecoveryInput(
+            operation_id,
+            5,
+            RecoveryScenario.OUT_OF_MANDATE,
+            safe.value.active_commitment.commitment.id,
+            "recovery-phase25-0002",
+            UUID(int=101108),
+        )
+        bad = await app.start_inbound_simulation(bad_input)
+        assert bad.value.escalation is not None
+        projection_after_bad = await app.get_operation(operation_id)
+        assert projection_after_bad.open_escalation == bad.value.escalation
+        assert len(projection_after_bad.notifications) == 1
+
+        mandate = projection_after_bad.operation.mandate
+        replace_input = ReplaceMandateInput(
+            operation_id,
+            6,
+            bad.value.escalation.id,
+            mandate.maximum_amount,
+            mandate.pickup_window,
+            mandate.allowed_conditions,
+            mandate.escalation_conditions,
+            "synthetic-coordinator",
+            "mandate-phase25-0001",
+            UUID(int=101109),
+        )
+        replaced = await app.replace_mandate(replace_input)
+        assert replaced.value.open_escalation is None
+
+        escalation_input = CreateEscalationInput(
+            commitment.call_id,
+            7,
+            "Coordinator review requested.",
+            ("Keep active commitment",),
+            "Review current carrier terms.",
+            "escalation-phase25-0001",
+            UUID(int=101110),
+        )
+        explicit = await app.create_escalation(escalation_input)
+        explicit_replay = await app.create_escalation(
+            replace(escalation_input, correlation_id=UUID(int=101111))
+        )
+        assert explicit_replay.idempotency_replayed and explicit_replay.value == explicit.value
+
+        replaced_replay = await app.replace_mandate(
+            replace(replace_input, correlation_id=UUID(int=101112))
+        )
+        assert replaced_replay.idempotency_replayed
+        assert replaced_replay.value == replaced.value
+        assert replaced_replay.value.open_escalation is None
+
+        notification = projection_after_bad.notifications[0]
+        acknowledge_input = AcknowledgeNotificationInput(
+            notification.id,
+            8,
+            "synthetic-coordinator",
+            "notification-phase25-0001",
+            UUID(int=101113),
+        )
+        acknowledged = await app.acknowledge_notification(acknowledge_input)
+        acknowledge_replay = await app.acknowledge_notification(
+            replace(acknowledge_input, correlation_id=UUID(int=101114))
+        )
+        assert acknowledge_replay.idempotency_replayed
+        assert acknowledge_replay.value == acknowledged.value
+
+        projection = await app.get_operation(operation_id)
+        assert projection.open_escalation == explicit.value
+        assert projection.notifications[0].acknowledged
+        audit = await app.get_operation_audit(operation_id)
+        assert audit.recaps == (recap.value,)
+        assert audit.briefs == (brief.value,)
+        assert len(audit.recoveries) == 2
+        assert len(audit.escalations) == 2
+        assert len(audit.notifications) == 1
+    finally:
+        await engine.dispose()
+
+
+async def test_read_projections_reject_commitment_missing_durable_evidence(
     isolated_database_url: str,
 ) -> None:
     engine = create_async_engine(isolated_database_url, hide_parameters=True)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         operation_id, commitment = await _seed_winner(factory, 99000)
-        projection = await application(factory).get_operation(operation_id)
-        assert projection.active_commitment is not None
-        assert projection.active_commitment.commitment == commitment
-        assert projection.active_commitment.evidence is None
-
-        audit = await application(factory).get_operation_audit(operation_id)
-        assert len(audit.commitment_history) == 1
-        assert audit.commitment_history[0].commitment == commitment
-        assert audit.commitment_history[0].evidence is None
+        with pytest.raises(CommitmentEvidenceNotFound):
+            await application(factory).get_operation(operation_id)
     finally:
         await engine.dispose()
 
@@ -221,13 +419,20 @@ async def test_text_slice_replays_and_reloads_prompt_through_quote_comparison(
         assert reloaded.quote_comparison.selected_quote_id == first_quote.value.id
 
         audit = await application(factory).get_operation_audit(operation_id)
+        # Quote comparison is a ranked business projection: eligible quotes keep
+        # QuoteComparisonService order and rejected quotes follow afterwards.
+        # It must never inherit the UUID order used only as a timeline tie-break.
         assert tuple(row.quote.id for row in audit.quote_comparison) == (
             first_quote.value.id,
             rejected.value.id,
         )
-        assert audit.quote_comparison[0].selected
-        assert not audit.quote_comparison[1].selected
-        assert audit.quote_comparison[0].carrier_display_name == first.carrier_display_label
+        comparison_by_id = {row.quote.id: row for row in audit.quote_comparison}
+        assert comparison_by_id[first_quote.value.id].selected
+        assert not comparison_by_id[rejected.value.id].selected
+        assert (
+            comparison_by_id[first_quote.value.id].carrier_display_name
+            == first.carrier_display_label
+        )
 
         with pytest.raises(EvidenceArtifactUnavailable):
             await app.attach_commitment_evidence(
@@ -400,13 +605,18 @@ async def test_text_slice_replays_and_reloads_prompt_through_quote_comparison(
         superseded_audit = await application(
             factory, evidence_dir=tmp_path
         ).get_operation_audit(operation_id)
-        assert [
-            item.commitment.disposition.value
-            for item in superseded_audit.commitment_history
-        ] == ["SUPERSEDED", "ACTIVE"]
-        assert superseded_audit.commitment_history[0].commitment.replaced_by_commitment_id == (
+        history_by_id = {
+            item.commitment.id: item for item in superseded_audit.commitment_history
+        }
+        assert history_by_id[
+            committed.value.commitment.id
+        ].commitment.disposition.value == "SUPERSEDED"
+        assert history_by_id[
             replacement.value.commitment.id
-        )
+        ].commitment.disposition.value == "ACTIVE"
+        assert history_by_id[
+            committed.value.commitment.id
+        ].commitment.replaced_by_commitment_id == replacement.value.commitment.id
         assert replacement.value.commitment.replaces_commitment_id == committed.value.commitment.id
 
         async with factory() as session:
@@ -421,13 +631,20 @@ async def test_text_slice_replays_and_reloads_prompt_through_quote_comparison(
                 )
             ).one()
             evidence_count = await session.scalar(
-                text("SELECT count(*) FROM volta_agreement_evidence")
+                text(
+                    "SELECT count(*) FROM volta_agreement_evidence e "
+                    "JOIN volta_commitments c ON c.id = e.commitment_id "
+                    "WHERE c.operation_id = :operation_id"
+                ),
+                {"operation_id": operation_id},
             )
             consumed_reservation_count = await session.scalar(
                 text(
                     "SELECT count(*) FROM volta_evidence_reservations "
-                    "WHERE consumed_by_commitment_id IS NOT NULL"
-                )
+                    "WHERE operation_id = :operation_id "
+                    "AND consumed_by_commitment_id IS NOT NULL"
+                ),
+                {"operation_id": operation_id},
             )
         assert counts == (2, 1)
         assert evidence_count == 2

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha256
 from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditActorKind, AuditEvent
@@ -54,6 +55,11 @@ async def _owned_commitment(
     if commitment is None or commitment.operation_id != operation.id:
         raise CommitmentNotFound(commitment_id)
     return commitment
+
+
+def _require_call(commitment: Commitment, call_id: UUID) -> None:
+    if commitment.call_id != call_id:
+        raise CommitmentNotFound(commitment.id)
 
 
 def _audit(
@@ -116,7 +122,7 @@ class RecordEvidenceService:
 
                 now = self._clock.now()
                 evidence = AgreementEvidence(
-                    id=self._ids.new_id(),
+                    id=commitment.evidence_id,
                     commitment_id=commitment.id,
                     recording_reference=command.recording_reference,
                     audio_start_ms=command.audio_start_ms,
@@ -149,35 +155,42 @@ class GenerateBriefService:
     async def generate(self, command: GenerateBriefCommand) -> CallBrief:
         async with self._uow:
             try:
-                operation = await _locked_operation(self._uow, command.operation_id)
-                _check_version(operation, command.expected_operation_version)
-                commitment = await _owned_commitment(self._uow, operation, command.commitment_id)
-
-                existing = await self._uow.briefs.get_by_commitment(commitment.id)
-                if existing is not None:
-                    await self._uow.rollback()
-                    return existing
-
-                now = self._clock.now()
-                brief = CallBrief(
-                    id=self._ids.new_id(),
-                    commitment_id=commitment.id,
-                    operation_id=operation.id,
-                    route=operation.route,
-                    carrier_id=commitment.carrier_id,
-                    agreed_terms_reference=commitment.quote_id,
-                    mandate_version=commitment.mandate_version,
-                    generated_at=now,
-                )
-                await self._uow.briefs.add(brief)
-                await self._uow.audit_events.add(
-                    _audit(self._ids, operation, "BRIEF_GENERATED", now, command.correlation_id)
-                )
+                brief = await self.generate_in_transaction(command)
                 await self._uow.commit()
                 return brief
             except Exception:
                 await self._uow.rollback()
                 raise
+
+    async def generate_in_transaction(self, command: GenerateBriefCommand) -> CallBrief:
+        operation = await _locked_operation(self._uow, command.operation_id)
+        _check_version(operation, command.expected_operation_version)
+        commitment = await _owned_commitment(self._uow, operation, command.commitment_id)
+        _require_call(commitment, command.call_id)
+        existing = await self._uow.briefs.get_by_commitment(commitment.id)
+        if existing is not None:
+            raise EvidenceAlreadyRecorded(commitment.id)
+        now = self._clock.now()
+        brief = CallBrief(
+            id=self._ids.new_id(),
+            commitment_id=commitment.id,
+            operation_id=operation.id,
+            call_id=command.call_id,
+            route=operation.route,
+            carrier_id=commitment.carrier_id,
+            agreed_terms_reference=commitment.quote_id,
+            mandate_version=commitment.mandate_version,
+            facts=command.facts,
+            objections=command.objections,
+            changes=command.changes,
+            unresolved_items=command.unresolved_items,
+            generated_at=now,
+        )
+        await self._uow.briefs.add(brief)
+        await self._uow.audit_events.add(
+            _audit(self._ids, operation, "BRIEF_GENERATED", now, command.correlation_id)
+        )
+        return brief
 
 
 class GenerateRecapService:
@@ -194,29 +207,34 @@ class GenerateRecapService:
     async def generate(self, command: GenerateRecapCommand) -> Recap:
         async with self._uow:
             try:
-                operation = await _locked_operation(self._uow, command.operation_id)
-                _check_version(operation, command.expected_operation_version)
-                commitment = await _owned_commitment(self._uow, operation, command.commitment_id)
-
-                existing = await self._uow.recaps.get_by_commitment(commitment.id)
-                if existing is not None:
-                    await self._uow.rollback()
-                    return existing
-
-                now = self._clock.now()
-                recap = Recap(
-                    id=self._ids.new_id(),
-                    commitment_id=commitment.id,
-                    operation_id=operation.id,
-                    disclosure_state=RecapDisclosureState.SIMULATED,
-                    generated_at=now,
-                )
-                await self._uow.recaps.add(recap)
-                await self._uow.audit_events.add(
-                    _audit(self._ids, operation, "RECAP_GENERATED", now, command.correlation_id)
-                )
+                recap = await self.generate_in_transaction(command)
                 await self._uow.commit()
                 return recap
             except Exception:
                 await self._uow.rollback()
                 raise
+
+    async def generate_in_transaction(self, command: GenerateRecapCommand) -> Recap:
+        operation = await _locked_operation(self._uow, command.operation_id)
+        _check_version(operation, command.expected_operation_version)
+        commitment = await _owned_commitment(self._uow, operation, command.commitment_id)
+        _require_call(commitment, command.call_id)
+        existing = await self._uow.recaps.get_by_commitment(commitment.id)
+        if existing is not None:
+            raise EvidenceAlreadyRecorded(commitment.id)
+        now = self._clock.now()
+        recap = Recap(
+            id=self._ids.new_id(),
+            commitment_id=commitment.id,
+            operation_id=operation.id,
+            call_id=command.call_id,
+            disclosure_state=RecapDisclosureState.SIMULATED,
+            content_hash=sha256(command.rendered_content.encode("utf-8")).hexdigest(),
+            rendered_content=command.rendered_content,
+            generated_at=now,
+        )
+        await self._uow.recaps.add(recap)
+        await self._uow.audit_events.add(
+            _audit(self._ids, operation, "RECAP_GENERATED", now, command.correlation_id)
+        )
+        return recap

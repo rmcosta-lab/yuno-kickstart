@@ -52,6 +52,7 @@ from yuno_backend.volta.recovery.models import (
     RecoveryDecision,
     RecoveryDecisionState,
     RecoveryOutcome,
+    RecoveryScenario,
 )
 
 __all__: list[str] = []
@@ -467,8 +468,19 @@ def _text_idempotency_to_values(value: TextMutationIdempotency) -> dict[str, Any
         "fingerprint": value.fingerprint,
         "draft_id": value.result_id if value.operation_name == "create_operation_draft" else None,
         "operation_id": value.result_id if value.operation_name == "approve_operation" else None,
+        "result_id": value.result_id,
+        "result_kind": value.result_kind,
+        "result_snapshot": _snapshot_to_json(value.result_snapshot),
         "created_at": value.created_at,
     }
+
+
+def _snapshot_to_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(key): _snapshot_to_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_snapshot_to_json(item) for item in value]
+    return value
 
 
 def _evidence_from_row(row: Mapping[str, Any]) -> AgreementEvidence:
@@ -488,11 +500,16 @@ def _brief_to_values(value: CallBrief) -> dict[str, Any]:
         "id": value.id,
         "commitment_id": value.commitment_id,
         "operation_id": value.operation_id,
+        "call_id": value.call_id,
         "route_origin": value.route.origin,
         "route_destination": value.route.destination,
         "carrier_id": value.carrier_id,
         "agreed_terms_reference": value.agreed_terms_reference,
         "mandate_version": value.mandate_version,
+        "facts": list(value.facts),
+        "objections": list(value.objections),
+        "changes": list(value.changes),
+        "unresolved_items": list(value.unresolved_items),
         "generated_at": value.generated_at,
     }
 
@@ -502,10 +519,15 @@ def _brief_from_row(row: Mapping[str, Any]) -> CallBrief:
         row["id"],
         row["commitment_id"],
         row["operation_id"],
+        row["call_id"],
         Route(row["route_origin"], row["route_destination"]),
         row["carrier_id"],
         row["agreed_terms_reference"],
         row["mandate_version"],
+        tuple(row["facts"]),
+        tuple(row["objections"]),
+        tuple(row["changes"]),
+        tuple(row["unresolved_items"]),
         _utc(row["generated_at"]),
     )
 
@@ -515,7 +537,10 @@ def _recap_to_values(value: Recap) -> dict[str, Any]:
         "id": value.id,
         "commitment_id": value.commitment_id,
         "operation_id": value.operation_id,
+        "call_id": value.call_id,
         "disclosure_state": value.disclosure_state.value,
+        "content_hash": value.content_hash,
+        "rendered_content": value.rendered_content,
         "generated_at": value.generated_at,
     }
 
@@ -525,7 +550,10 @@ def _recap_from_row(row: Mapping[str, Any]) -> Recap:
         row["id"],
         row["commitment_id"],
         row["operation_id"],
+        row["call_id"],
         RecapDisclosureState(row["disclosure_state"]),
+        row["content_hash"],
+        row["rendered_content"],
         _utc(row["generated_at"]),
     )
 
@@ -584,8 +612,13 @@ def _recovery_attempt_to_values(value: RecoveryAttempt) -> dict[str, Any]:
         "id": value.id,
         "operation_id": value.operation_id,
         "commitment_id": value.commitment_id,
+        "scenario": value.scenario.value,
+        "before_operation_version": value.before_operation_version,
+        "after_operation_version": value.after_operation_version,
+        "decision_reason": value.decision_reason,
         "outcome": value.outcome.value,
         "resulting_commitment_id": value.resulting_commitment_id,
+        "resulting_evidence_id": value.resulting_evidence_id,
         "escalation_id": value.escalation_id,
         "correlation_id": value.correlation_id,
         "created_at": value.created_at,
@@ -597,11 +630,16 @@ def _recovery_attempt_from_row(row: Mapping[str, Any]) -> RecoveryAttempt:
         row["id"],
         row["operation_id"],
         row["commitment_id"],
+        RecoveryScenario(row["scenario"]),
+        row["before_operation_version"],
+        row["after_operation_version"],
+        row["decision_reason"],
         RecoveryOutcome(row["outcome"]),
         row["resulting_commitment_id"],
         row["escalation_id"],
         row["correlation_id"],
         _utc(row["created_at"]),
+        row["resulting_evidence_id"],
     )
 
 
@@ -711,6 +749,8 @@ def _text_idempotency_from_row(row: Mapping[str, Any]) -> TextMutationIdempotenc
         row["operation_name"],
         row["idempotency_key"],
         row["fingerprint"],
-        row["draft_id"] or row["operation_id"],
+        row["result_id"],
         _utc(row["created_at"]),
+        row["result_kind"],
+        row["result_snapshot"],
     )

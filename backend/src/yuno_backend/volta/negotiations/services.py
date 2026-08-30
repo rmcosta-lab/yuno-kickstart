@@ -541,10 +541,17 @@ class CreateCommitmentService:
                     raise QuoteNotEligible(quote.id, quote.rejection_reasons)
                 if quote.valid_until <= now:
                     raise QuoteExpired(quote.id)
+                comparison_quotes = await self._uow.quotes.list_by_operation(
+                    operation.id, limit=101
+                )
+                if len(comparison_quotes) > 100:
+                    raise InvalidNegotiationTransition(
+                        operation.id, "quote_comparison_overflow"
+                    )
                 comparison = QuoteComparisonService(self._clock).compare(
                     operation.id,
                     operation.mandate.version,
-                    await self._uow.quotes.list_by_operation(operation.id),
+                    comparison_quotes,
                     at=now,
                 )
                 if comparison.selected_quote_id != quote.id:

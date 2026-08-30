@@ -1,11 +1,51 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from collections.abc import Iterator
+from uuid import uuid4
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from . import conftest as persistence_conftest
+
+
+@pytest.fixture(scope="module")
+def isolated_database_url() -> Iterator[str]:
+    """Keep reversible migration tests independent from durable F25 facts."""
+    configured_url = os.environ.get("TEST_DATABASE_URL")
+    if not configured_url:
+        pytest.skip("TEST_DATABASE_URL is required for isolated PostgreSQL tests")
+    parsed = make_url(configured_url)
+    if parsed.drivername != "postgresql+asyncpg" or parsed.host not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        pytest.skip("isolated PostgreSQL tests require asyncpg on loopback")
+
+    database_name = f"volta_migrations_{uuid4().hex}"
+    test_url = parsed.set(database=database_name)
+    rendered_admin_url = persistence_conftest._render_url(parsed)
+    rendered_test_url = persistence_conftest._render_url(test_url)
+    asyncio.run(persistence_conftest._create_database(rendered_admin_url, database_name))
+    previous_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = rendered_test_url
+    config = Config(str(persistence_conftest.ROOT / "backend" / "alembic.ini"))
+    try:
+        command.upgrade(config, "head")
+        yield rendered_test_url
+    finally:
+        if previous_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_url
+        asyncio.run(persistence_conftest._drop_database(rendered_admin_url, database_name))
 
 PHASE08_TABLES = {
     "volta_audit_events",
@@ -123,6 +163,8 @@ EXPECTED_CONSTRAINTS = {
     "volta_commitments": {
         "pk_volta_commitments",
         "uq_volta_commitments_id_operation",
+        "uq_volta_commitments_id_operation_call",
+        "uq_volta_commitments_id_evidence",
         "uq_volta_commitments_quote",
         "fk_volta_commitments_quote_scope",
         "fk_volta_commitments_replaces_operation",
@@ -153,7 +195,9 @@ EXPECTED_CONSTRAINTS = {
     "volta_agreement_evidence": {
         "pk_volta_agreement_evidence",
         "uq_volta_agreement_evidence_commitment",
+        "uq_volta_agreement_evidence_id_commitment",
         "fk_volta_agreement_evidence_commitment",
+        "fk_volta_agreement_evidence_commitment_artifact",
         "ck_volta_agreement_evidence_audio_start_ms",
         "ck_volta_agreement_evidence_recording_reference",
         "ck_volta_agreement_evidence_item_id",
@@ -172,14 +216,18 @@ EXPECTED_CONSTRAINTS = {
     "volta_call_briefs": {
         "pk_volta_call_briefs",
         "uq_volta_call_briefs_commitment",
-        "fk_volta_call_briefs_commitment_operation",
+        "fk_volta_call_briefs_commitment_operation_call",
+        "fk_volta_call_briefs_call_operation",
         "ck_volta_call_briefs_mandate_version",
+        "ck_volta_call_briefs_structured_fields",
     },
     "volta_recaps": {
         "pk_volta_recaps",
         "uq_volta_recaps_commitment",
-        "fk_volta_recaps_commitment_operation",
+        "fk_volta_recaps_commitment_operation_call",
+        "fk_volta_recaps_call_operation",
         "ck_volta_recaps_disclosure_state",
+        "ck_volta_recaps_content",
     },
     "volta_post_contact_escalations": {
         "pk_volta_post_contact_escalations",
@@ -195,9 +243,12 @@ EXPECTED_CONSTRAINTS = {
         "pk_volta_recovery_attempts",
         "fk_volta_recovery_attempts_commitment_operation",
         "fk_volta_recovery_attempts_resulting_commitment_operation",
+        "fk_volta_recovery_attempts_resulting_evidence_commitment",
         "fk_volta_recovery_attempts_escalation_operation",
         "ck_volta_recovery_attempts_outcome",
         "ck_volta_recovery_attempts_outcome_state",
+        "ck_volta_recovery_attempts_complete_decision",
+        "ck_volta_recovery_attempts_scenario_outcome",
     },
     "volta_notifications": {
         "pk_volta_notifications",
@@ -213,6 +264,8 @@ EXPECTED_CONSTRAINTS = {
         "ck_volta_text_idempotency_result_mapping",
         "ck_volta_text_idempotency_key",
         "ck_volta_text_idempotency_fingerprint",
+        "ck_volta_text_idempotency_result_kind",
+        "ck_volta_text_idempotency_result_snapshot",
     },
 }
 
@@ -392,6 +445,8 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "uq_volta_commitments_one_active",
         "uq_volta_commitments_quote",
         "uq_volta_commitments_id_operation",
+        "uq_volta_commitments_id_operation_call",
+        "uq_volta_commitments_id_evidence",
     }
     assert indexes["volta_mutation_idempotency"] == {  # type: ignore[index]
         "ix_volta_mutation_idempotency_operation",
@@ -403,19 +458,20 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "uq_volta_mutation_idempotency_commitment",
     }
     assert indexes["volta_agreement_evidence"] == {  # type: ignore[index]
-        "uq_volta_agreement_evidence_commitment"
+        "uq_volta_agreement_evidence_commitment",
+        "uq_volta_agreement_evidence_id_commitment",
     }
     assert indexes["volta_call_briefs"] == {  # type: ignore[index]
-        "ix_volta_call_briefs_operation",
+        "ix_volta_call_briefs_operation_order",
         "uq_volta_call_briefs_commitment",
     }
     assert indexes["volta_recaps"] == {  # type: ignore[index]
-        "ix_volta_recaps_operation",
+        "ix_volta_recaps_operation_order",
         "uq_volta_recaps_commitment",
     }
     assert indexes["volta_post_contact_escalations"] == {  # type: ignore[index]
         "ix_volta_post_contact_escalations_call",
-        "ix_volta_post_contact_escalations_operation",
+        "ix_volta_post_contact_escalations_operation_order",
         "uq_volta_post_contact_escalations_one_unresolved",
         "uq_volta_post_contact_escalations_id_operation",
     }
@@ -423,7 +479,7 @@ def test_upgrade_downgrade_upgrade_is_reversible_and_schema_is_named(
         "ix_volta_recovery_attempts_operation"
     }
     assert indexes["volta_notifications"] == {  # type: ignore[index]
-        "ix_volta_notifications_operation",
+        "ix_volta_notifications_operation_order",
     }
     assert indexes["volta_text_mutation_idempotency"] == {  # type: ignore[index]
         "ix_volta_text_idempotency_draft",

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from yuno_backend.volta.audit.models import AuditEvent
+from yuno_backend.volta.evidence.models import AgreementEvidence
 from yuno_backend.volta.mandates.models import (
     Mandate,
     MandateAction,
@@ -208,6 +209,7 @@ class Uow:
         self.post_contact_escalations = PostContactEscalations(escalations or {})
         self.recovery_attempts = RecoveryAttempts()
         self.notifications = Notifications()
+        self.evidence = Evidence()
         self.audit_events = Audits()
         self.commits = 0
         self.rollbacks = 0
@@ -221,6 +223,7 @@ class Uow:
             dict(self.post_contact_escalations.values),
             dict(self.recovery_attempts.values),
             dict(self.notifications.values),
+            dict(self.evidence.values),
             dict(self.audit_events.values),
         )
         return self
@@ -242,6 +245,7 @@ class Uow:
                 escalations,
                 attempts,
                 notifications,
+                evidence,
                 audits,
             ) = self._snapshot
             self.commitments.values = commitments  # type: ignore[assignment]
@@ -249,8 +253,20 @@ class Uow:
             self.post_contact_escalations.values = escalations  # type: ignore[assignment]
             self.recovery_attempts.values = attempts  # type: ignore[assignment]
             self.notifications.values = notifications  # type: ignore[assignment]
+            self.evidence.values = evidence  # type: ignore[assignment]
             self.audit_events.values = audits  # type: ignore[assignment]
             self._snapshot = None
+
+
+@dataclass
+class Evidence:
+    values: dict[UUID, AgreementEvidence] = field(default_factory=dict)
+
+    async def add(self, evidence: AgreementEvidence) -> None:
+        self.values[evidence.commitment_id] = evidence
+
+    async def get_by_commitment(self, commitment_id: UUID) -> AgreementEvidence | None:
+        return self.values.get(commitment_id)
 
 
 def operation(
