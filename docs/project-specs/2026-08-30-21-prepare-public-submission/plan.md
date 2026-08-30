@@ -73,6 +73,20 @@
 
 ## Coordination and external-change boundaries
 
+### Implementation ownership and frozen public claims
+
+- Coordinator: `docs/project-specs/2026-08-30-21-prepare-public-submission/**` and final factual review of `docs/decisions/challenge-plan.md`.
+- README writer: `README.md` only.
+- Submission writer: `docs/submission/**` only.
+- Architecture writer: `docs/architecture.md` only.
+- Frontend, API, backend, infrastructure, manifests, generated contracts, and shared project specs have no Fase 21 writer.
+- Demonstrated: the deterministic browser/text journey, one active evidence-backed `CANDIDATE`, a `SIMULATED` recap, structured brief, private timestamp playback, safe recovery/escalation, audit history, and the private fallback recording.
+- Accepted with waiver: Fase 17 merged after the owner accepted its recorded Realtime limitation; qualitative voice checks and the complete two-tool provider roundtrip remain unchecked.
+- Implemented but not live-proven: the merged consent-gated outbound control and Twilio/FastAPI media bridge. Fase 20 proves the credential-free generated request and four-state UI without placing a call; the credentialed sandbox journey and broader integration are not represented as passed.
+- Final-trial only: three overlapping public switched telephone network calls, inbound recovery, and live human takeover.
+- Canonical synthetic operation: Manzanillo to Guadalajara, pickup Thursday, mandate cap MXN 9,000, and three deterministically ranked synthetic carriers. Veracruz to Puebla is the separate no-eligible-carrier escalation case. The package never calls either scenario a real booking.
+- Frozen glossary: `CANDIDATE` and `SIMULATED` are evidence lifecycles; `ACTIVE` and `SUPERSEDED` are commitment dispositions; `VERIFIED` remains unavailable without accepted external delivery.
+
 - Contract/status/evidence decisions freeze before the README, submission, architecture, and
   decision-log writers proceed on their non-overlapping paths; one writer owns each path at a time.
 - `README.md`, `docs/architecture.md`, and `docs/decisions/challenge-plan.md` are shared public files.
