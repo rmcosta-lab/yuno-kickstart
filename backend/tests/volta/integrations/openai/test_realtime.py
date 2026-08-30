@@ -745,7 +745,10 @@ def test_config_rejects_non_official_or_ambiguous_destinations(base_url: str) ->
         OpenAIRealtimeConfig(api_key=API_KEY, base_url=base_url)
 
 
-@pytest.mark.parametrize("deadline", [True, float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize(
+    "deadline",
+    [True, float("nan"), float("inf"), -float("inf"), 301, 10**1_000],
+)
 def test_config_rejects_non_finite_or_boolean_deadlines(deadline: object) -> None:
     with pytest.raises(ValueError, match="deadlines must be positive"):
         OpenAIRealtimeConfig(api_key=API_KEY, event_timeout_seconds=deadline)  # type: ignore[arg-type]

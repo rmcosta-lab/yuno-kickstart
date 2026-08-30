@@ -55,11 +55,14 @@ def _safety_identifier(value: object) -> None:
 def _freeze_json(value: object, *, field_name: str) -> JsonValue:
     try:
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise ValueError(f"{field_name} must be JSON-compatible") from exc
     if len(encoded.encode()) > MAX_JSON_BYTES:
         raise ValueError(f"{field_name} exceeds the JSON size limit")
-    return _freeze_json_unchecked(value, field_name=field_name)
+    try:
+        return _freeze_json_unchecked(value, field_name=field_name)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ValueError(f"{field_name} must be JSON-compatible") from exc
 
 
 def _freeze_json_unchecked(value: object, *, field_name: str) -> JsonValue:

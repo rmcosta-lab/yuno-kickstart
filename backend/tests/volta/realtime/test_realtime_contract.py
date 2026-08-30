@@ -196,3 +196,23 @@ def test_playback_truncation_is_immutable_and_bounded(
 def test_playback_truncation_rejects_invalid_values(values: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         RealtimePlaybackTruncation(**values)  # type: ignore[arg-type]
+
+
+def test_deep_application_json_fails_with_a_field_scoped_value_error() -> None:
+    deeply_nested: object = 0
+    for _ in range(10_000):
+        deeply_nested = [deeply_nested]
+
+    with pytest.raises(ValueError, match="tool parameters must be JSON-compatible"):
+        RealtimeToolDefinition(
+            name="deep_tool",
+            description="Reject pathological nesting.",
+            parameters={"value": deeply_nested},  # type: ignore[dict-item]
+        )
+    with pytest.raises(ValueError, match="tool result must be JSON-compatible"):
+        RealtimeToolOutput(
+            event_id="evt.deep",
+            response_event_id="evt.response",
+            call_id="call.deep",
+            result={"value": deeply_nested},  # type: ignore[dict-item]
+        )

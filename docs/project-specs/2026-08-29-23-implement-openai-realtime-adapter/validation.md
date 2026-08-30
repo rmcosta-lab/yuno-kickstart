@@ -32,7 +32,7 @@ and skipped before reading a credential or opening a network connection.
 
 ## Lifecycle, reliability, and redaction
 
-- [x] Connect, session-update, finite positive deadline validation, terminal receive cancellation, explicit close, externally cancelled close with retry, close timeout, context exit, clean disconnect, and unclean disconnect tests are deterministic and leave no socket or reader task open.
+- [x] Connect, session-update, finite positive deadlines capped at 300 seconds, terminal receive cancellation, explicit close, externally cancelled close with retry, close timeout, context exit, clean disconnect, and unclean disconnect tests are deterministic and leave no socket or reader task open.
 - [x] No established session is retried or reconnected implicitly; every failure has a safe typed terminal result for the caller.
 - [x] Object `repr`, exceptions, captured logs, diagnostics, and test failures contain no API key, authorization header, safety identifier, instructions, tool arguments/results, audio, transcript, full payload, or raw close reason.
 - [x] Synthetic fixtures use no real carrier, participant, rate, operation, or personal data.
@@ -40,9 +40,9 @@ and skipped before reading a credential or opening a network connection.
 ## Deterministic checks
 
 - [x] `uv run ruff check .` — passed.
-- [x] `uv run pytest` — passed: 302 passed, 18 skipped, 2 deselected, with one existing Starlette/httpx deprecation warning.
-- [x] `uv run pytest backend/tests/volta/realtime backend/tests/volta/integrations/openai -m 'not openai_credentialed'` — passed: 96 passed, 2 deselected.
-- [x] `make python-check` — passed: Ruff clean and 302 passed, 18 skipped, 2 deselected, with the same existing warning.
+- [x] `uv run pytest` — passed: 305 passed, 18 skipped, 2 deselected, with one existing Starlette/httpx deprecation warning.
+- [x] `uv run pytest backend/tests/volta/realtime backend/tests/volta/integrations/openai -m 'not openai_credentialed'` — passed: 99 passed, 2 deselected.
+- [x] `make python-check` — passed: Ruff clean and 305 passed, 18 skipped, 2 deselected, with the same existing warning.
 - [x] `git diff --check` — passed before and after this validation update.
 - [x] Complete worktree diff and secret/privacy review show no unrelated file, credential, ignored `.env`, raw audio, or generated evidence. The ignored `.env` was not added or modified.
 
@@ -51,6 +51,7 @@ and skipped before reading a credential or opening a network connection.
 - [x] The read-only correctness, security, and product-contract review identified six medium findings and no high or low findings; all six are covered by deterministic regression tests before publication.
 - [x] Adversarial tests prove unknown tool-call output is rejected, receive/provider failures stop subsequent writes, externally cancelled close can be retried, only the official credential destination is accepted, the English session constraint is composed into provider instructions, and deeply nested JSON becomes a typed terminal error.
 - [x] The first published-SHA review identified five further medium findings and no high or low findings. Follow-up regressions prove receive cancellation is terminal, deadlines reject booleans and non-finite floats, huge JSON integers become typed errors, safety identifiers are bounded privacy-preserving digests, and WebSocket playback truncation stays provider-neutral and correlated to received audio.
+- [x] The second published-SHA review identified two further medium boundary cases and no high or low findings. Follow-up regressions cap every deadline at 300 seconds, including huge integers, and translate deeply nested application-side tool schemas/results to field-scoped `ValueError` values.
 
 ## Separately marked OpenAI trial
 

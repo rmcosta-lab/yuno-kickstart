@@ -51,6 +51,7 @@ _SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 DEFAULT_REALTIME_MODEL = "gpt-realtime-2.1"
 MAX_TRACKED_TOOL_CALLS = 4_096
 MAX_TRACKED_AUDIO_ITEMS = 4_096
+MAX_DEADLINE_SECONDS = 300
 _OFFICIAL_REALTIME_HOST = "api.openai.com"
 _OFFICIAL_REALTIME_PATH = "/v1/realtime"
 _ENGLISH_INSTRUCTION = "Language requirement: respond only in English."
@@ -109,10 +110,11 @@ class OpenAIRealtimeConfig:
             isinstance(value, bool)
             or not isinstance(value, int | float)
             or value <= 0
+            or value > MAX_DEADLINE_SECONDS
             or (isinstance(value, float) and not math.isfinite(value))
             for value in deadlines
         ):
-            raise ValueError("Realtime deadlines must be positive")
+            raise ValueError("Realtime deadlines must be positive and at most 300 seconds")
         if not 1_024 <= self.max_message_size <= 16_777_216:
             raise ValueError("max_message_size is outside the safe supported range")
 
