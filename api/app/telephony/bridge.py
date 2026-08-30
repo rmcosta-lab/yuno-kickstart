@@ -175,7 +175,13 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                         await websocket.send_json({"event": "clear", "streamSid": stream_sid})
                     elif isinstance(event, RealtimeToolCallRequested):
                         key = tool_idempotency_key(binding, event)
-                        result = await application.delegate_tool(binding, event, key)
+                        try:
+                            result = await application.delegate_tool(binding, event, key)
+                        except HumanHandoffAuthorityError:
+                            await websocket.send_json(
+                                {"event": "clear", "streamSid": stream_sid}
+                            )
+                            continue
                         await realtime.send_tool_output(
                             RealtimeToolOutput(
                                 event_id=f"tool-output-{event.event_id}",
@@ -189,24 +195,28 @@ async def bridge_media_stream(websocket: WebSocket, application: TelephonyApplic
                 await application.wait_for_ai_authority_revoked(binding.call_session_id)
                 await websocket.send_json({"event": "clear", "streamSid": stream_sid})
 
-            tasks = {
+            media_tasks = {
                 asyncio.create_task(twilio_to_realtime()),
                 asyncio.create_task(realtime_to_twilio()),
-                asyncio.create_task(authority_to_twilio()),
             }
-            done, pending = await asyncio.wait(
-                tasks,
-                timeout=MAX_STREAM_SECONDS,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
-            if not done:
-                outcome = "TIMEOUT"
-                raise TimeoutError("media stream duration exceeded")
-            for task in done:
-                task.result()
+            authority_task = asyncio.create_task(authority_to_twilio())
+            pending = set(media_tasks)
+            try:
+                done, pending = await asyncio.wait(
+                    media_tasks,
+                    timeout=MAX_STREAM_SECONDS,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    outcome = "TIMEOUT"
+                    raise TimeoutError("media stream duration exceeded")
+                for task in done:
+                    task.result()
+            finally:
+                for task in (*pending, authority_task):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*pending, authority_task, return_exceptions=True)
     except WebSocketDisconnect:
         outcome = "DISCONNECTED"
     finally:

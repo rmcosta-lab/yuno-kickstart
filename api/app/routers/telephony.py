@@ -69,6 +69,7 @@ from app.security.realtime_origin import require_realtime_origin
 from app.telephony.bridge import MediaProtocolError, bridge_media_stream
 from app.telephony.service import (
     TelephonyApplication,
+    _OutboundCallCapacityError,
     get_telephony_application,
     get_websocket_telephony_application,
 )
@@ -100,6 +101,11 @@ def _outbound_error(request: Request, error: Exception) -> JSONResponse:
             409,
             ApiErrorCode.IDEMPOTENCY_KEY_REUSED,
             "The idempotency key belongs to a different request.",
+        ),
+        _OutboundCallCapacityError: (
+            409,
+            ApiErrorCode.STATE_CONFLICT,
+            "The outbound call capacity is currently full.",
         ),
         OutboundCallAuthenticationError: (
             502,
@@ -718,11 +724,12 @@ async def twilio_media(websocket: WebSocket) -> None:
         await websocket.close(code=1008)
         return
     application = get_websocket_telephony_application(websocket)
+    reservation = object()
     async with websocket.app.state.twilio_media_lock:
-        if websocket.app.state.twilio_media_active:
+        if len(websocket.app.state.twilio_media_active) >= 3:
             await websocket.close(code=1013)
             return
-        websocket.app.state.twilio_media_active = True
+        websocket.app.state.twilio_media_active.add(reservation)
     try:
         await websocket.accept()
         try:
@@ -735,7 +742,7 @@ async def twilio_media(websocket: WebSocket) -> None:
             await websocket.close(code=1011)
     finally:
         async with websocket.app.state.twilio_media_lock:
-            websocket.app.state.twilio_media_active = False
+            websocket.app.state.twilio_media_active.discard(reservation)
         try:
             await websocket.close(code=1000)
         except (RuntimeError, WebSocketDisconnect):

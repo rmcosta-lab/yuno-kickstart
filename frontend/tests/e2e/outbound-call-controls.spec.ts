@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import type {
+  HumanHandoffReadinessResponse,
   OperationResponse,
   OutboundCallResponseStatus,
 } from "../../src/lib/api/generated/models";
@@ -10,6 +11,18 @@ const LOWEST_RANK_SESSION_ID = "20000000-0000-4000-8000-000000000021";
 
 const timestamp = (seconds = 0) =>
   new Date(Date.UTC(2026, 7, 30, 12, 0, seconds)).toISOString();
+
+const handoffReadiness: HumanHandoffReadinessResponse = {
+  call_id: LOWEST_RANK_SESSION_ID,
+  call_status_updated_at: timestamp(1),
+  context: {
+    call_status: "IN_PROGRESS",
+    eligible_quote_summaries: [],
+    mandate_facts: ["Synthetic mandate v1"],
+    mandate_version: 1,
+    structured_call_brief: ["Synthetic call ready for coordinator handoff"],
+  },
+};
 
 function operationWithSessions(hasSessions: boolean): OperationResponse {
   return {
@@ -109,6 +122,17 @@ test("gates one authorized generated call, maps safe states, and preserves fallb
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(operationWithSessions(hasSessions)),
+      });
+    }
+
+    if (
+      request.method() === "GET" &&
+      apiPath === `/v1/calls/${LOWEST_RANK_SESSION_ID}/handoff-readiness`
+    ) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(handoffReadiness),
       });
     }
 

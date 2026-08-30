@@ -149,8 +149,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
 
 async function loadLiveOperation(page: Page) {
   await page.goto("/sessions");
-  await page.getByLabel("Demo bearer token").fill("synthetic-browser-token");
-  await page.getByRole("button", { name: "Connect live API" }).click();
+  await page.waitForTimeout(500);
   await page
     .getByRole("textbox", { name: "Live operation ID" })
     .fill(OPERATION_ID);
@@ -165,9 +164,9 @@ test("confirms once, polls durable status, and preserves transcript-free context
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  await page.route("http://localhost:8000/**", async (route) => {
+  await page.route("**/api/volta/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const path = new URL(request.url()).pathname.replace(/^\/api\/volta/, "");
     if (request.method() === "GET" && path === `/v1/operations/${OPERATION_ID}`)
       return fulfillJson(route, operation);
     if (
@@ -266,9 +265,9 @@ test("rechecks an uncertain timeout with the exact same request and no provider 
 }) => {
   const postRequests: { body: unknown; key: string }[] = [];
 
-  await page.route("http://localhost:8000/**", async (route) => {
+  await page.route("**/api/volta/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const path = new URL(request.url()).pathname.replace(/^\/api\/volta/, "");
     if (request.method() === "GET" && path === `/v1/operations/${OPERATION_ID}`)
       return fulfillJson(route, operation);
     if (
@@ -345,9 +344,9 @@ test("keeps takeover disabled until readiness succeeds and describes 409 generic
   page,
 }) => {
   let readinessAvailable = false;
-  await page.route("http://localhost:8000/**", async (route) => {
+  await page.route("**/api/volta/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const path = new URL(request.url()).pathname.replace(/^\/api\/volta/, "");
     if (request.method() === "GET" && path === `/v1/operations/${OPERATION_ID}`)
       return fulfillJson(route, operation);
     if (
